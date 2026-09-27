@@ -1,0 +1,9 @@
+# 비밀 정보 — 절대 올리면 안 됨
+.env
+browser_profile/
+
+# 만들어진 글
+posts/
+
+__pycache__/
+.venv/
