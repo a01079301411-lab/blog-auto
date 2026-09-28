@@ -63,6 +63,28 @@ def type_text(page, text):
         page.keyboard.press("Enter")
 
 
+def read_title(editor):
+    try:
+        return editor.locator(", ".join(TITLE_AREA)).first.inner_text().strip()
+    except Exception:
+        return ""
+
+
+def type_title(page, editor, title):
+    """제목을 입력하고, 앞 글자가 빠지지 않았는지 확인한다. 틀리면 지우고 다시 친다."""
+    for _ in range(3):
+        page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
+        page.keyboard.type(title, delay=30)
+        page.wait_for_timeout(500)
+        if read_title(editor) == title.strip():
+            return
+        # 제목 칸 안의 글자만 선택해서 지우고 다시 입력
+        page.keyboard.press("End")
+        page.keyboard.press("Shift+Home")
+        page.keyboard.press("Backspace")
+    print(f"⚠ 제목이 제대로 안 들어갔을 수 있어요. 발행 전에 크롬 창에서 확인해 주세요: {title}")
+
+
 def publish_post(page, title, body, auto=False):
     """글쓰기 화면을 열어 제목·본문을 입력하고 발행한다. 발행했으면 True."""
     page.goto(write_url(), wait_until="domcontentloaded")
@@ -79,12 +101,13 @@ def publish_post(page, title, body, auto=False):
     if not click_first(editor, TITLE_AREA):
         print("제목 칸을 찾지 못했어요.")
         return False
-    page.keyboard.type(title, delay=10)
+    type_title(page, editor, title)
 
     print("본문 입력 중... (글이 길면 1~2분 걸려요)")
     if not click_first(editor, BODY_AREA):
         print("본문 칸을 찾지 못했어요.")
         return False
+    page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
     type_text(page, body)
 
     if not auto:
