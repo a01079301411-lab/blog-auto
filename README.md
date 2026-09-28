@@ -22,7 +22,7 @@ copy .env.example .env
 
 4. 메모장으로 `.env` 파일을 열어서 채웁니다.
    - `BLOG_ID`: 내 블로그 주소 `blog.naver.com/아이디` 의 아이디 부분
-   - AI 키: **없어도 됩니다.** 비워 두면 ChatGPT 사이트에 직접 붙여 넣는 수동 모드로 동작해요.
+   - AI 키: **없어도 됩니다.** 비워 두면 claude.ai나 ChatGPT 사이트에 직접 붙여 넣는 수동 모드로 동작해요.
      자동으로 하려면 OpenAI 키(https://platform.openai.com/api-keys) 또는
      Claude 키(https://console.anthropic.com) 중 하나를 넣으세요. (사용한 만큼 요금이 나가요)
 
