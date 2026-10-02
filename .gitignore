@@ -7,6 +7,7 @@ output/
 logs/
 photos/
 data/history.json
+data/links_cache.json
 posts/
 
 __pycache__/

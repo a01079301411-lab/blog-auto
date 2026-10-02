@@ -25,6 +25,7 @@ CONFIRM_BUTTON = ['button[data-testid="seOnePublishBtn"]', '[class*="layer"] but
 SAVE_BUTTON = ['button[data-click-area="tpb.save"]', 'button[class*="save_btn"]', 'button:has-text("저장")']
 PHOTO_BUTTON = ["button.se-image-toolbar-button", ".se-toolbar-item-image button", 'button[data-name="image"]']
 IMAGE_COMPONENT = ".se-component.se-image"
+LINK_CARD_COMPONENT = ".se-component.se-oglink"  # 주소를 붙여 넣으면 생기는 링크 카드
 CAPTION_AREA = [".se-caption .se-text-paragraph", ".se-module-text.se-caption", ".se-caption"]
 CATEGORY_BUTTON = ['button[aria-label*="카테고리"]', '[class*="category"] button', 'button:has-text("카테고리")']
 
@@ -165,15 +166,37 @@ def insert_photo(page, editor, path, caption):
             except Exception:
                 continue
 
-    # 사진 아래 글 칸으로 커서를 옮긴다
-    below = image.locator(
+    move_below(page, editor, image)
+    return True
+
+
+def move_below(page, editor, component):
+    """사진, 링크 카드 바로 아래 글 칸으로 커서를 옮긴다."""
+    below = component.locator(
         "xpath=following-sibling::div[contains(@class,'se-text')][1]//p[contains(@class,'se-text-paragraph')]"
     )
     target = below.last if below.count() else editor.locator(".se-text-paragraph").last
     target.click()
     page.keyboard.press("End")
     page.wait_for_timeout(500)
-    return True
+
+
+def insert_link(page, editor, url):
+    """내 블로그 다른 글 주소를 붙여 넣어 링크 카드를 만든다.
+    카드가 안 만들어지면 주소가 글자(링크)로 남는다."""
+    before = editor.locator(LINK_CARD_COMPONENT).count()
+    try:
+        page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        editor.evaluate("url => navigator.clipboard.writeText(url)", url)
+        page.keyboard.press("Control+v")
+    except Exception:
+        type_line(page, url)
+    for _ in range(12):  # 링크 카드는 최대 6초 기다린다
+        page.wait_for_timeout(500)
+        if editor.locator(LINK_CARD_COMPONENT).count() > before:
+            move_below(page, editor, editor.locator(LINK_CARD_COMPONENT).last)
+            return
+    page.keyboard.press("Enter")
 
 
 def type_blocks(page, editor, blocks, photo_paths, captions):
@@ -182,9 +205,11 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
     for i, block in enumerate(blocks):
         kind = block["type"]
         if kind == "blank":
-            if i and blocks[i - 1]["type"] == "photo":
-                continue  # 사진 아래에는 에디터가 이미 새 줄을 만들어 준다
+            if i and blocks[i - 1]["type"] in ("photo", "link"):
+                continue  # 사진, 링크 아래에는 이미 새 줄이 있다
             page.keyboard.press("Enter")
+        elif kind == "link":
+            insert_link(page, editor, block["url"])
         elif kind == "photo":
             path = photo_paths.get(block["file"])
             if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):

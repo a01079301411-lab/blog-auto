@@ -18,6 +18,7 @@ import checker
 import formatter
 import generator
 import history
+import links
 import notifier
 import photos
 import publisher
@@ -63,14 +64,14 @@ def wait_for_window():
     time.sleep(max(0, (target - datetime.now()).total_seconds()))
 
 
-def write_with_check(topic, photo_set):
+def write_with_check(topic, photo_set, related):
     """글을 만들고 검사한다. 떨어지면 이유를 알려주고 1번 다시 쓴다."""
-    post = generator.generate(topic, photo_set)
-    fails = checker.check(post, topic, photo_set)
+    post = generator.generate(topic, photo_set, related)
+    fails = checker.check(post, topic, photo_set, related)
     if fails:
         log.info("품질 검사 실패, 다시 씁니다:\n- %s", "\n- ".join(fails))
-        post = generator.generate(topic, photo_set, feedback=fails)
-        fails = checker.check(post, topic, photo_set)
+        post = generator.generate(topic, photo_set, related, feedback=fails)
+        fails = checker.check(post, topic, photo_set, related)
     return post, fails
 
 
@@ -80,7 +81,7 @@ def save_preview(post, topic, blocks, fails):
     path.write_text(
         f"# {post['title']}\n\n"
         f"주제: {topic['topic']} / 키워드: {topic['keyword']} / "
-        f"제목 유형: {topic['title_type']} / 구조: {topic['variant']}\n"
+        f"제목 유형: {topic['title_type']} / 도입: {topic['hook_type']} / 구조: {topic['variant']}\n"
         f"품질 검사: {check_text}\n"
         f"사용한 회사 팩트: {', '.join(post['used_facts'])}\n"
         f"태그: {' '.join('#' + t for t in post['tags'])}\n\n"
@@ -117,16 +118,18 @@ def main():
             wait_for_window()
 
     topic = topics.pick(args.topic)
-    log.info("주제: %s / 키워드: %s / %s / 구조 %s",
-             topic["topic"], topic["keyword"], topic["title_type"], topic["variant"])
+    log.info("주제: %s / 키워드: %s / %s / %s / 구조 %s", topic["topic"], topic["keyword"],
+             topic["title_type"], topic["hook_type"], topic["variant"])
     photo_set = photos.pick(topic)
     log.info("사진: %s", f"{photo_set['folder'].name} ({len(photo_set['files'])}장)" if photo_set else "없음")
+    related = links.related(topic)
+    log.info("내부링크 후보: %s개", len(related))
 
     try:
-        post, fails = write_with_check(topic, photo_set)
+        post, fails = write_with_check(topic, photo_set, related)
     except Exception as e:
         stop(f"AI 글쓰기 실패: {e}")
-    blocks = formatter.format_body(post["body"])
+    blocks = formatter.format_body(post["body"], related)
     preview_path = save_preview(post, topic, blocks, fails)
     log.info("미리보기 저장: %s", preview_path)
     if fails:
@@ -149,7 +152,8 @@ def main():
 
     history.add({
         "topic": topic["topic"], "keyword": topic["keyword"], "title": post["title"],
-        "title_type": topic["title_type"], "variant": topic["variant"],
+        "title_type": topic["title_type"], "hook_type": topic["hook_type"], "variant": topic["variant"],
+        "opening": formatter.opening(blocks),
         "result": result["result"], "url": result["url"],
         "photo_folder": photo_set["folder"].name if photo_set else "",
     })

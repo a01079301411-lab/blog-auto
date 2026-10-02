@@ -2,7 +2,7 @@
 
 보내는 것: prompts/moving_post.md + data/company_facts.md + samples/sample_storage_post.md
           (매번 같은 부분이라 프롬프트 캐싱으로 비용을 줄인다)
-          + 이번 주제 + 사진 목록
+          + 이번 주제 + 사진 목록 + 내부링크 후보 + 최근 글 목록
 받는 것:   {"title", "body", "photo_captions", "tags", "used_facts"} JSON
 """
 import json
@@ -10,6 +10,9 @@ import logging
 
 import anthropic
 
+import formatter
+import history
+import links
 import photos
 from config import COMPANY_PHONE, DATA_DIR, MODEL, PROMPTS_DIR, SAMPLES_DIR
 
@@ -53,7 +56,15 @@ def system_prompt():
     )
 
 
-def request_text(topic, photo_set, feedback=None):
+def recent_posts_text(limit=10):
+    """최근 글의 제목과 첫 문장. AI가 이것과 다르게 쓰도록 보여준다."""
+    records = history.load()[-limit:]
+    if not records:
+        return "(아직 없음)"
+    return "\n".join(f"- 제목: {r['title']} / 첫 문장: {r.get('opening', '')}" for r in reversed(records))
+
+
+def request_text(topic, photo_set, related=None, feedback=None):
     """이번 글마다 달라지는 부분."""
     text = (
         "이번 글 정보\n"
@@ -61,9 +72,12 @@ def request_text(topic, photo_set, feedback=None):
         f"- keyword: {topic['keyword']}\n"
         f"- 이 글이 답하는 단 하나의 질문: {topic['question']}\n"
         f"- title_type: {topic['title_type']}\n"
+        f"- hook_type: {topic['hook_type']}\n"
         f"- variant: {topic['variant']}\n"
         f"- 회사 전화번호: {COMPANY_PHONE}\n\n"
-        f"photos\n{photos.describe(photo_set)}\n"
+        f"photos\n{photos.describe(photo_set)}\n\n"
+        f"related_posts\n{links.describe(related)}\n\n"
+        f"recent_posts (이 제목, 첫 문장과 다르게 쓴다)\n{recent_posts_text()}\n"
     )
     if feedback:
         text += (
@@ -74,13 +88,13 @@ def request_text(topic, photo_set, feedback=None):
     return text
 
 
-def generate(topic, photo_set, feedback=None):
+def generate(topic, photo_set, related=None, feedback=None):
     client = anthropic.Anthropic(max_retries=3)  # .env의 ANTHROPIC_API_KEY 사용, 오류 시 3회 재시도
     response = client.messages.create(
         model=MODEL,
         max_tokens=16000,
         system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": request_text(topic, photo_set, feedback)}],
+        messages=[{"role": "user", "content": request_text(topic, photo_set, related, feedback)}],
         output_config={"format": {"type": "json_schema", "schema": POST_SCHEMA}},
     )
     usage = response.usage
@@ -96,6 +110,7 @@ def generate(topic, photo_set, feedback=None):
 
     text = next(b.text for b in response.content if b.type == "text")
     post = json.loads(text)
-    post["photo_captions"] = {c["file"]: c["caption"] for c in post["photo_captions"]}
+    post["title"] = formatter.sanitize(post["title"])
+    post["photo_captions"] = {c["file"]: formatter.sanitize(c["caption"]) for c in post["photo_captions"]}
     post["tags"] = [t.replace(" ", "").lstrip("#") for t in post["tags"] if t.strip()]
     return post

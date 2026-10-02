@@ -5,8 +5,9 @@
 import difflib
 import re
 
+import formatter
 import history
-from config import COMPANY_PHONE, DATA_DIR
+from config import COMPANY_PHONE, DATA_DIR, SAMPLES_DIR
 
 MIN_CHARS = 2000
 KEYWORD_MIN, KEYWORD_MAX = 5, 8
@@ -14,10 +15,14 @@ MIN_QUESTION_HEADINGS = 3
 MIN_FAQ = 4
 MIN_FACTS = 2
 SIMILAR_TITLE = 0.75
+SIMILAR_SAMPLE_TITLE = 0.6
+SIMILAR_OPENING = 0.7
+MAX_LINKS = 3
 CTA_WORDS = ("전화", "문의", "연락", "상담")
 # 지역명 뒤에 붙어도 지역명으로 보는 글자 (예: 구미에서, 포항까지). '상주하는' 같은 말은 제외된다.
 PARTICLES = "에의은는이가을를도로시군구과와까"
 PHOTO_RE = re.compile(r"\[사진:\s*([^\]]+?)\s*\]")
+LINK_RE = re.compile(r"\[링크:\s*(\d+)\s*\]")
 
 
 def load_forbidden(path=DATA_DIR / "forbidden.md"):
@@ -44,13 +49,18 @@ def _text_lines(body):
     """사진 표시, 소제목 기호, 굵게 표시를 뺀 본문 줄."""
     lines = []
     for line in body.splitlines():
-        line = PHOTO_RE.sub("", line).replace("**", "").lstrip("#").strip()
+        line = LINK_RE.sub("", PHOTO_RE.sub("", line)).replace("**", "").lstrip("#").strip()
         if line:
             lines.append(line)
     return lines
 
 
-def check(post, topic, photo_set=None):
+def sample_title(path=SAMPLES_DIR / "sample_storage_post.md"):
+    match = re.search(r"제목:\**\s*(.+)", path.read_text(encoding="utf-8"))
+    return match.group(1).strip() if match else ""
+
+
+def check(post, topic, photo_set=None, related=None):
     title, body = post["title"], post["body"]
     lines = _text_lines(body)
     plain = "\n".join(lines)
@@ -106,11 +116,31 @@ def check(post, topic, photo_set=None):
     if unknown:
         fails.append("목록에 없는 사진을 썼어요: " + ", ".join(unknown))
 
-    # 8. 최근 글과 제목이 너무 비슷한지
+    # 8. 내부링크: 후보가 있으면 1~3개, 없는 번호는 안 됨
+    numbers = [int(n) for n in LINK_RE.findall(body)]
+    related = related or []
+    if [n for n in numbers if not 1 <= n <= len(related)]:
+        fails.append("없는 번호의 내부링크를 썼어요. related_posts 번호만 쓰세요.")
+    if related and not numbers:
+        fails.append("관련 글이 있는데 내부링크가 없어요. 1~3개 연결하세요.")
+    if len(numbers) > MAX_LINKS:
+        fails.append(f"내부링크가 {len(numbers)}개예요. {MAX_LINKS}개 이하로 줄이세요.")
+
+    # 9. 매번 다르게: 샘플 글, 최근 글과 제목·첫 문장이 비슷하면 안 됨
+    def similar(a, b):
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    sample = sample_title()
+    if sample and similar(title, sample) >= SIMILAR_SAMPLE_TITLE:
+        fails.append(f"샘플 글 제목과 문장 구조가 너무 비슷해요: {sample}")
+    first = formatter.opening(formatter.format_body(body))
     for record in history.within_days(history.load(), 60):
-        ratio = difflib.SequenceMatcher(None, title, record.get("title", "")).ratio()
-        if ratio >= SIMILAR_TITLE:
+        if similar(title, record.get("title", "")) >= SIMILAR_TITLE:
             fails.append(f"최근 글 제목과 너무 비슷해요: {record['title']}")
+            break
+    for record in history.load()[-10:]:
+        if record.get("opening") and similar(first, record["opening"]) >= SIMILAR_OPENING:
+            fails.append(f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
             break
 
     return fails

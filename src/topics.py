@@ -2,7 +2,7 @@
 
 - 최근 30일 안에 쓴 주제는 건너뛴다.
 - 파일 안의 '비율: 실내보관이사 60% / ...' 대로 섹션을 고른다.
-- 제목 유형과 구조 번호는 바로 전 글과 겹치지 않게 돌려쓴다.
+- 제목 유형, 도입 방식, 구조 번호는 바로 전 글과 겹치지 않게 돌려쓴다.
 """
 import random
 import re
@@ -11,6 +11,7 @@ import history
 from config import DATA_DIR
 
 TITLE_TYPES = ["역발상형", "숫자 목록형", "비교형", "상황 공감형"]
+HOOK_TYPES = ["현장 장면형", "질문형", "숫자 제시형", "흔한 오해 지적형", "결론 먼저형"]
 VARIANTS = [1, 2, 3, 4]
 RECENT_DAYS = 30
 
@@ -70,5 +71,6 @@ def pick(forced=None):
     return {
         **chosen,
         "title_type": _rotate(TITLE_TYPES, last.get("title_type")),
+        "hook_type": _rotate(HOOK_TYPES, last.get("hook_type")),
         "variant": _rotate(VARIANTS, last.get("variant")),
     }
