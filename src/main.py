@@ -40,6 +40,9 @@ def setup_logging():
             logging.FileHandler(LOGS_DIR / f"{datetime.now():%Y-%m-%d}.log", encoding="utf-8"),
         ],
     )
+    # AI 연결 라이브러리의 기술 메시지(HTTP Request ...)는 숨긴다
+    for noisy in ("httpx", "httpx2", "anthropic"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def stop(message):
