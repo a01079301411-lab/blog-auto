@@ -1,4 +1,4 @@
 playwright
 python-dotenv
-openai
 anthropic
+pillow

@@ -2,8 +2,13 @@
 .env
 browser_profile/
 
-# 만들어진 글
+# 실행할 때 생기는 파일
+output/
+logs/
+photos/
+data/history.json
 posts/
 
 __pycache__/
+*.pyc
 .venv/
