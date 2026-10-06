@@ -21,6 +21,8 @@ MAX_LINKS = 3
 CTA_WORDS = ("전화", "문의", "연락", "상담")
 # 지역명 뒤에 붙어도 지역명으로 보는 글자 (예: 구미에서, 포항까지). '상주하는' 같은 말은 제외된다.
 PARTICLES = "에의은는이가을를도로시군구과와까"
+# 물음표가 없어도 질문 어미(~나요, ~까요, ~나, ~는지 등)로 끝나면 질문형 소제목으로 본다
+QUESTION_END = re.compile(r"(\?|나요|까요|가요|ㄴ가|인가|는가|을까|할까|는지|인지|을지|나|까)\s*$")
 PHOTO_RE = re.compile(r"\[사진:\s*([^\]]+?)\s*\]")
 LINK_RE = re.compile(r"\[링크:\s*(\d+)\s*\]")
 
@@ -83,9 +85,14 @@ def check(post, topic, photo_set=None, related=None):
 
     # 3. 질문형 소제목, FAQ
     headings = [l.lstrip("#").strip() for l in body.splitlines() if l.strip().startswith("#")]
-    questions = [h for h in headings if h.endswith("?")]
-    if len(questions) < MIN_QUESTION_HEADINGS:
-        fails.append(f"질문형 소제목이 {len(questions)}개예요. {MIN_QUESTION_HEADINGS}개 이상이어야 해요.")
+    questions = [h for h in headings if QUESTION_END.search(h)]
+    if not headings:
+        fails.append("소제목이 없어요. 소제목은 '## '로 시작하는 줄에 따로 쓰세요.")
+    elif len(questions) < MIN_QUESTION_HEADINGS:
+        fails.append(
+            f"질문형 소제목이 {len(questions)}개예요. '## '로 시작하는 소제목 중 {MIN_QUESTION_HEADINGS}개 이상을 "
+            "물음표로 끝나는 질문으로 쓰세요. 예: ## 몇 달 맡기면 보관료는 얼마나 드나요?"
+        )
     faq = sum(1 for l in lines if re.match(r"^Q\s*[.:]", l))
     if faq < MIN_FAQ:
         fails.append(f"FAQ가 {faq}개예요. {MIN_FAQ}개 이상이어야 해요.")
