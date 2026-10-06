@@ -75,6 +75,20 @@ def write_with_check(topic, photo_set, related):
     return post, fails
 
 
+def make_post(topic, photo_set, related):
+    """글을 만들고 검사한 뒤 미리보기를 저장한다. 검사를 통과하지 못하면 멈춘다."""
+    try:
+        post, fails = write_with_check(topic, photo_set, related)
+    except Exception as e:
+        stop(f"AI 글쓰기 실패: {e}")
+    blocks = formatter.format_body(post["body"], related)
+    preview_path = save_preview(post, topic, blocks, fails)
+    log.info("미리보기 저장: %s", preview_path)
+    if fails:
+        stop("품질 검사를 2번 통과하지 못했어요. 미리보기 파일을 확인해 주세요: " + preview_path.name)
+    return post, blocks
+
+
 def save_preview(post, topic, blocks, fails):
     path = OUTPUT_DIR / f"{datetime.now():%Y-%m-%d_%H%M}_{topic['topic'].replace(' ', '')}.md"
     check_text = "통과" if not fails else "실패\n" + "\n".join(f"- {f}" for f in fails)
@@ -125,23 +139,17 @@ def main():
     related = links.related(topic)
     log.info("내부링크 후보: %s개", len(related))
 
-    try:
-        post, fails = write_with_check(topic, photo_set, related)
-    except Exception as e:
-        stop(f"AI 글쓰기 실패: {e}")
-    blocks = formatter.format_body(post["body"], related)
-    preview_path = save_preview(post, topic, blocks, fails)
-    log.info("미리보기 저장: %s", preview_path)
-    if fails:
-        stop("품질 검사를 2번 통과하지 못했어요. 미리보기 파일을 확인해 주세요: " + preview_path.name)
     if args.preview:
+        make_post(topic, photo_set, related)
         log.info("미리보기만 만들었어요. 위 파일을 열어 확인해 주세요.")
         return
 
-    photo_paths = {p.name: photos.prepare_upload(p) for p in photo_set["files"]} if photo_set else {}
+    # 로그인이 풀렸으면 AI 비용을 쓰기 전에 먼저 멈춘다
     with publisher.open_browser() as page:
         if not publisher.is_logged_in(page):
             stop("네이버 로그인이 풀렸어요. 1_네이버로그인.bat 을 실행해 주세요.")
+        post, blocks = make_post(topic, photo_set, related)
+        photo_paths = {p.name: photos.prepare_upload(p) for p in photo_set["files"]} if photo_set else {}
         try:
             result = publisher.post(
                 page, post["title"], blocks, post["tags"],
