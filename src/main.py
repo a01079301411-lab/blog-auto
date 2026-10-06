@@ -80,7 +80,7 @@ def save_preview(post, topic, blocks, fails):
     check_text = "통과" if not fails else "실패\n" + "\n".join(f"- {f}" for f in fails)
     path.write_text(
         f"# {post['title']}\n\n"
-        f"주제: {topic['topic']} / 키워드: {topic['keyword']} / "
+        f"주제: {topic['topic']} / 키워드: {topic['keyword']} / 카테고리: {topic['category'] or '기본'} / "
         f"제목 유형: {topic['title_type']} / 도입: {topic['hook_type']} / 구조: {topic['variant']}\n"
         f"품질 검사: {check_text}\n"
         f"사용한 회사 팩트: {', '.join(post['used_facts'])}\n"
@@ -145,7 +145,7 @@ def main():
         try:
             result = publisher.post(
                 page, post["title"], blocks, post["tags"],
-                photo_paths, post["photo_captions"], publish=AUTO_PUBLISH,
+                photo_paths, post["photo_captions"], publish=AUTO_PUBLISH, category=topic["category"],
             )
         except publisher.PublishError as e:
             stop(str(e))

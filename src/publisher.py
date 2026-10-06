@@ -10,7 +10,7 @@ from datetime import datetime
 
 from playwright.sync_api import sync_playwright
 
-from config import BLOG_ID, LOGS_DIR, NAVER_CATEGORY, PROFILE_DIR
+from config import BLOG_ID, LOGS_DIR, PROFILE_DIR
 
 # ── 네이버 스마트에디터 화면 요소 ──
 # 네이버가 화면을 바꾸면 여기만 고치면 된다. 여러 개를 적어 두면 앞에서부터 차례로 시도한다.
@@ -227,15 +227,15 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
     return failed_photos
 
 
-def select_category(page, editor):
+def select_category(page, editor, category):
     """발행 설정 창에서 카테고리를 고른다. 못 고르면 기본 카테고리로 발행된다."""
-    if not NAVER_CATEGORY:
+    if not category:
         return True
     if not click_first(editor, CATEGORY_BUTTON, timeout=2000):
         return False
     pause(page, 0.5, 1.5)
     try:
-        editor.get_by_text(NAVER_CATEGORY, exact=True).last.click(timeout=3000)
+        editor.get_by_text(category, exact=True).last.click(timeout=3000)
         return True
     except Exception:
         return False
@@ -249,7 +249,7 @@ def post_url(page):
     return page.url
 
 
-def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=False):
+def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=False, category=""):
     """글을 입력하고 임시저장(publish=False) 또는 발행(publish=True)한다.
 
     돌려주는 값: {"result": "draft" | "published", "url": ..., "failed_photos": [...], "warnings": [...]}
@@ -295,8 +295,8 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     if not click_first(editor, PUBLISH_BUTTON):
         raise PublishError(f"발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_publish')}")
     pause(page)  # 발행 설정 창이 뜰 때까지 대기
-    if not select_category(page, editor):
-        warnings.append(f"카테고리 '{NAVER_CATEGORY}'를 고르지 못해 기본 카테고리로 발행했어요.")
+    if not select_category(page, editor, category):
+        warnings.append(f"카테고리 '{category}'를 고르지 못해 기본 카테고리로 발행했어요.")
     if not click_first(editor, CONFIRM_BUTTON, pick_last=True):
         raise PublishError(f"발행 확인 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_confirm')}")
 

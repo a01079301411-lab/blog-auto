@@ -8,7 +8,7 @@ import random
 import re
 
 import history
-from config import DATA_DIR
+from config import DATA_DIR, NAVER_CATEGORY
 
 TITLE_TYPES = ["역발상형", "숫자 목록형", "비교형", "상황 공감형"]
 HOOK_TYPES = ["현장 장면형", "질문형", "숫자 제시형", "흔한 오해 지적형", "결론 먼저형"]
@@ -17,7 +17,7 @@ RECENT_DAYS = 30
 
 
 def load_topics(path=DATA_DIR / "topics.md"):
-    """표 한 줄 = 주제 하나. [{'section', 'topic', 'keyword', 'question'}, ...] 와 섹션별 비율을 돌려준다."""
+    """표 한 줄 = 주제 하나. [{'section', 'topic', 'keyword', 'question', 'category'}, ...] 와 섹션별 비율을 돌려준다."""
     text = path.read_text(encoding="utf-8")
     ratios = {name: int(pct) for name, pct in re.findall(r"(\S+)\s+(\d+)%", text)}
 
@@ -31,7 +31,11 @@ def load_topics(path=DATA_DIR / "topics.md"):
             continue
         if cells[0] == "주제" or set(cells[0]) <= set("-: "):
             continue  # 표 머리줄, 구분줄
-        topics.append({"section": section, "topic": cells[0], "keyword": cells[1], "question": cells[2]})
+        category = cells[3] if len(cells) > 3 else ""
+        topics.append({
+            "section": section, "topic": cells[0], "keyword": cells[1],
+            "question": cells[2], "category": category or NAVER_CATEGORY,
+        })
     return topics, ratios
 
 
