@@ -41,9 +41,9 @@ def open_browser(headless=False):
         context = p.chromium.launch_persistent_context(
             str(PROFILE_DIR),
             headless=headless,
-            viewport={"width": 1280, "height": 900},
+            no_viewport=True,  # 노트북, 데스크톱 어떤 화면이든 창 크기에 맞춘다
             locale="ko-KR",
-            args=["--disable-blink-features=AutomationControlled"],
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
         )
         page = context.pages[0] if context.pages else context.new_page()
         try:

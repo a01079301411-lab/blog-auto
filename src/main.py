@@ -51,6 +51,15 @@ def setup_logging():
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def keep_awake():
+    """노트북이 프로그램 도중에 절전 모드로 들어가지 않게 한다. (윈도우 전용, 프로그램이 끝나면 자동 해제)"""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+
+
 def stop(message):
     notifier.notify(f"[블로그 자동화] 중단: {message}")
     sys.exit(1)
@@ -151,6 +160,7 @@ def main():
     parser.add_argument("--topic", help="특정 주제로 쓰기")
     args = parser.parse_args()
     setup_logging()
+    keep_awake()
 
     if not ANTHROPIC_API_KEY:
         stop(".env에 ANTHROPIC_API_KEY가 없어요.")
