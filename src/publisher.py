@@ -49,7 +49,10 @@ def open_browser(headless=False):
         try:
             yield page
         finally:
-            context.close()
+            try:
+                context.close()
+            except Exception:
+                pass  # 창이 이미 닫혔으면 그냥 넘어간다
 
 
 def is_logged_in(page):

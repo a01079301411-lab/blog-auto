@@ -8,11 +8,13 @@
   python src/main.py --topic 장마철     특정 주제로 쓰기 (topics.md의 주제·키워드 일부 글자)
 """
 import argparse
+import json
 import logging
 import random
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import checker
 import formatter
@@ -29,6 +31,9 @@ from config import (
 )
 
 log = logging.getLogger("main")
+
+# 올리다가 실패한 글. 다음 실행 때 AI를 다시 부르지 않고 이 글을 다시 올린다.
+PENDING_FILE = OUTPUT_DIR / "pending.json"
 
 
 def setup_logging():
@@ -73,6 +78,37 @@ def write_with_check(topic, photo_set, related):
         post = generator.generate(topic, photo_set, related, feedback=fails)
         fails = checker.check(post, topic, photo_set, related)
     return post, fails
+
+
+def check_login():
+    """화면 없이 몇 초 만에 로그인 상태만 확인한다."""
+    with publisher.open_browser(headless=True) as page:
+        return publisher.is_logged_in(page)
+
+
+def save_pending(topic, photo_set, related, post, blocks):
+    data = {
+        "topic": topic, "related": related, "post": post, "blocks": blocks,
+        "photo_set": None if not photo_set else {
+            "folder": str(photo_set["folder"]), "region": photo_set["region"],
+            "kind": photo_set["kind"], "files": [str(f) for f in photo_set["files"]],
+        },
+    }
+    PENDING_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_pending():
+    """올리지 못한 글이 있으면 (topic, photo_set, related, post, blocks)를 돌려준다."""
+    if not PENDING_FILE.exists():
+        return None
+    data = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
+    photo_set = data["photo_set"]
+    if photo_set:
+        photo_set = {**photo_set, "folder": Path(photo_set["folder"]),
+                     "files": [Path(f) for f in photo_set["files"]]}
+        if not all(f.exists() for f in photo_set["files"]):
+            photo_set = None  # 사진이 옮겨졌으면 사진 없이 올린다
+    return data["topic"], photo_set, data["related"], data["post"], data["blocks"]
 
 
 def make_post(topic, photo_set, related):
@@ -131,32 +167,50 @@ def main():
         if args.schedule:
             wait_for_window()
 
-    topic = topics.pick(args.topic)
-    log.info("주제: %s / 키워드: %s / %s / %s / 구조 %s", topic["topic"], topic["keyword"],
-             topic["title_type"], topic["hook_type"], topic["variant"])
-    photo_set = photos.pick(topic)
-    log.info("사진: %s", f"{photo_set['folder'].name} ({len(photo_set['files'])}장)" if photo_set else "없음")
-    related = links.related(topic)
-    log.info("내부링크 후보: %s개", len(related))
+    if not args.preview and not check_login():
+        stop("네이버 로그인이 풀렸어요. 1_네이버로그인.bat 을 실행해 주세요.")
 
-    if args.preview:
-        make_post(topic, photo_set, related)
-        log.info("미리보기만 만들었어요. 위 파일을 열어 확인해 주세요.")
-        return
-
-    # 로그인이 풀렸으면 AI 비용을 쓰기 전에 먼저 멈춘다
-    with publisher.open_browser() as page:
-        if not publisher.is_logged_in(page):
-            stop("네이버 로그인이 풀렸어요. 1_네이버로그인.bat 을 실행해 주세요.")
+    pending = None if args.preview else load_pending()
+    if pending:
+        topic, photo_set, related, post, blocks = pending
+        log.info("지난번에 올리지 못한 글을 다시 올립니다: %s", post["title"])
+    else:
+        topic = topics.pick(args.topic)
+        log.info("주제: %s / 키워드: %s / %s / %s / 구조 %s", topic["topic"], topic["keyword"],
+                 topic["title_type"], topic["hook_type"], topic["variant"])
+        photo_set = photos.pick(topic)
+        log.info("사진: %s", f"{photo_set['folder'].name} ({len(photo_set['files'])}장)" if photo_set else "없음")
+        related = links.related(topic)
+        log.info("내부링크 후보: %s개", len(related))
         post, blocks = make_post(topic, photo_set, related)
-        photo_paths = {p.name: photos.prepare_upload(p) for p in photo_set["files"]} if photo_set else {}
-        try:
-            result = publisher.post(
-                page, post["title"], blocks, post["tags"],
-                photo_paths, post["photo_captions"], publish=AUTO_PUBLISH, category=topic["category"],
-            )
-        except publisher.PublishError as e:
-            stop(str(e))
+        if args.preview:
+            log.info("미리보기만 만들었어요. 위 파일을 열어 확인해 주세요.")
+            return
+        save_pending(topic, photo_set, related, post, blocks)
+
+    log.info("크롬을 열어 네이버에 입력합니다. 끝날 때까지 크롬 창 안을 클릭하지 마세요.")
+    photo_paths = {p.name: photos.prepare_upload(p) for p in photo_set["files"]} if photo_set else {}
+    try:
+        with publisher.open_browser() as page:
+            try:
+                result = publisher.post(
+                    page, post["title"], blocks, post["tags"],
+                    photo_paths, post["photo_captions"], publish=AUTO_PUBLISH, category=topic["category"],
+                )
+            except publisher.PublishError as e:
+                stop(f"{e}\n다시 실행하면 이 글을 그대로 다시 올립니다.")
+            except Exception as e:
+                shot = publisher.screenshot(page, "error")
+                log.error("예상하지 못한 오류: %r", e)
+                where = f" 그때 화면: {shot}" if shot else ""
+                stop(f"네이버에 입력하다 멈췄어요. 크롬 창이 닫혔거나 화면이 바뀌었을 수 있어요.{where}"
+                     "\n다시 실행하면 이 글을 그대로 다시 올립니다.")
+    except SystemExit:
+        raise
+    except Exception as e:
+        log.error("예상하지 못한 오류: %r", e)
+        stop("크롬을 열거나 닫다가 문제가 생겼어요. 다시 실행하면 이 글을 그대로 다시 올립니다.")
+    PENDING_FILE.unlink(missing_ok=True)
 
     history.add({
         "topic": topic["topic"], "keyword": topic["keyword"], "title": post["title"],
