@@ -118,8 +118,29 @@ def click_first(frame, selectors, timeout=3000, pick_last=False):
             target.click(timeout=timeout)
             return True
         except Exception:
-            continue
+            pass
+        try:
+            if target.count():  # 있는데 덮개에 가려 못 누른 경우: 덮개를 무시하고 누른다
+                target.click(timeout=timeout, force=True)
+                return True
+        except Exception:
+            pass
     return False
+
+
+def click_text(target, timeout=2000):
+    """글 칸을 클릭한다. 네이버 에디터는 깜박이는 커서와 선택 표시를 글 위에 덮어 두는데,
+    이 덮개가 클릭을 가로막으면 덮개를 무시하고 그 자리를 바로 누른다. 성공하면 True."""
+    try:
+        target.click(timeout=timeout)
+        return True
+    except Exception:
+        pass
+    try:
+        target.click(timeout=timeout, force=True)
+        return True
+    except Exception:
+        return False
 
 
 def type_line(page, text):
@@ -175,7 +196,8 @@ def insert_photo(page, editor, path, caption):
     if caption:
         for selector in CAPTION_AREA:
             try:
-                image.locator(selector).first.click(timeout=3000)
+                if not click_text(image.locator(selector).first, timeout=3000):
+                    continue
                 page.wait_for_timeout(500)
                 type_line(page, caption)
                 break
@@ -200,7 +222,7 @@ def move_below(page, editor, component):
         "xpath=following-sibling::div[contains(@class,'se-text')][1]//p[contains(@class,'se-text-paragraph')]"
     )
     target = below.last if below.count() else editor.locator(".se-text-paragraph").last
-    target.click()
+    click_text(target)
     page.keyboard.press("End")
     page.wait_for_timeout(500)
     align_center(page, editor)  # 새 글 칸은 왼쪽 정렬로 시작할 수 있어서 다시 맞춘다
@@ -247,9 +269,8 @@ def remove_url_lines(page, editor, url):
                     break
             except Exception:
                 continue
-        if found is None:
+        if found is None or not click_text(found):
             return
-        found.click()
         page.keyboard.press("End")
         page.keyboard.press("Shift+Home")
         page.keyboard.press("Backspace")  # 주소 글자 지우기
@@ -327,7 +348,7 @@ def add_tags(page, editor, tags):
 
 def type_tags_in_body(page, editor, tags):
     """태그 칸을 못 찾았을 때: 본문 끝에 #태그로 쓴다. (네이버가 발행할 때 태그로 등록한다)"""
-    editor.locator(".se-text-paragraph").last.click()
+    click_text(editor.locator(".se-text-paragraph").last)
     page.keyboard.press("End")
     page.keyboard.press("Enter")
     for tag in tags:
