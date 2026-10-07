@@ -179,8 +179,11 @@ def main():
     if not args.preview:
         done_today = history.count_today(history.load())
         if done_today >= DAILY_LIMIT:
-            log.info("오늘은 이미 %s개를 올렸어요. (하루 최대 %s개)", done_today, DAILY_LIMIT)
-            return
+            if args.schedule:  # 자동 실행은 하루 개수 제한을 지킨다
+                log.info("오늘은 이미 %s개를 올렸어요. (하루 최대 %s개)", done_today, DAILY_LIMIT)
+                return
+            # 사장님이 직접 실행할 때는 막지 않고 알려만 준다
+            log.info("참고: 오늘 %s개째 글이에요. (자동 실행은 하루 %s개까지)", done_today + 1, DAILY_LIMIT)
         if args.schedule:
             wait_for_window()
 
