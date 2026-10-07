@@ -10,7 +10,7 @@ from datetime import datetime
 
 from playwright.sync_api import sync_playwright
 
-from config import BLOG_ID, LOGS_DIR, PROFILE_DIR
+from config import BLOG_ID, COMPANY_PHONE, LOGS_DIR, PROFILE_DIR
 
 # ── 네이버 스마트에디터 화면 요소 ──
 # 네이버가 화면을 바꾸면 여기만 고치면 된다. 여러 개를 적어 두면 앞에서부터 차례로 시도한다.
@@ -38,6 +38,13 @@ ALIGN_CENTER = [
 ]
 # 굵게 버튼 (켜져 있는지 확인하는 데 쓴다)
 BOLD_BUTTON = ["button.se-bold-toolbar-button", 'button[data-name="bold"]', ".se-toolbar-item-bold button"]
+# 글자에 링크 걸기 (전화번호 줄에 tel: 링크). 주소로 카드를 만드는 '링크 카드' 창과는 다르다.
+TEXT_LINK_BUTTON = ["button.se-link-toolbar-button", ".se-toolbar-item-link button"]
+TEXT_LINK_INPUT = [
+    "input.se-custom-layer-link-input", ".se-custom-layer-link input",
+    "input[placeholder*='URL']:not(.se-popup-oglink *)", "input[placeholder*='링크']:not(.se-popup-oglink *)",
+]
+TEXT_LINK_APPLY = ["button.se-custom-layer-link-apply-button", ".se-custom-layer-link button:has-text('확인')"]
 # 발행 설정 창의 태그 입력 칸
 TAG_INPUT = ['input[placeholder*="태그"]', "#tag-input", "input[class*='tag_input']", "input[class*='tag']"]
 CATEGORY_BUTTON = ['button[aria-label*="카테고리"]', '[class*="category"] button', 'button:has-text("카테고리")']
@@ -256,15 +263,20 @@ def set_bold(page, editor, on):
     return state
 
 
+def _plain(text):
+    """띄어쓰기와 눈에 안 보이는 글자(네이버가 넣는 특수 공백)를 뺀 글자."""
+    return re.sub(r"[\s\u200b\u200c\u200d\u2060\ufeff]", "", text).rstrip("/")
+
+
 def remove_url_lines(page, editor, url):
     """주소 글자만 있는 줄을 모두 지운다. (링크 카드가 생긴 뒤 남은 주소 글자)"""
-    target = url.rstrip("/")
+    target = _plain(url)
     for _ in range(3):
         lines = editor.locator(".se-text-paragraph")
         found = None
         for i in range(lines.count()):
             try:
-                if lines.nth(i).inner_text().strip().rstrip("/") == target:
+                if _plain(lines.nth(i).inner_text()) == target:
                     found = lines.nth(i)
                     break
             except Exception:
@@ -276,6 +288,38 @@ def remove_url_lines(page, editor, url):
         page.keyboard.press("Backspace")  # 주소 글자 지우기
         page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
         page.wait_for_timeout(300)
+
+
+def add_phone_link(page, editor):
+    """방금 쓴 전화번호 줄을 선택해 tel: 링크를 건다. 모바일에서 누르면 바로 전화가 걸린다."""
+    tel = "tel:" + re.sub(r"\D", "", COMPANY_PHONE)
+    page.keyboard.press("Shift+Home")  # 방금 쓴 줄 선택
+    page.wait_for_timeout(300)
+    box = None
+    for attempt in ("shortcut", "button"):
+        if attempt == "shortcut":
+            page.keyboard.press("Control+k")
+        elif not click_first(editor, TEXT_LINK_BUTTON, timeout=1500):
+            break
+        page.wait_for_timeout(500)
+        box = next((editor.locator(sel).first for sel in TEXT_LINK_INPUT
+                    if editor.locator(sel).first.is_visible()), None)
+        if box:
+            break
+    ok = False
+    if box:
+        try:
+            box.fill(tel)
+            if not click_first(editor, TEXT_LINK_APPLY, timeout=1000):
+                page.keyboard.press("Enter")
+            ok = True
+        except Exception:
+            pass
+    page.wait_for_timeout(300)
+    if not ok:
+        page.keyboard.press("Escape")
+    page.keyboard.press("End")  # 선택 풀고 줄 끝으로
+    return ok
 
 
 def insert_link(page, editor, url):
@@ -300,8 +344,9 @@ def insert_link(page, editor, url):
 
 
 def type_blocks(page, editor, blocks, photo_paths, captions):
-    """formatter가 만든 블록을 차례로 입력한다. 사진 실패는 건너뛰고 목록으로 돌려준다."""
-    failed_photos = []
+    """formatter가 만든 블록을 차례로 입력한다.
+    실패는 건너뛰고 (넣지 못한 사진, 전화 링크를 못 건 줄) 목록으로 돌려준다."""
+    failed_photos, failed_phone_links = [], []
     for i, block in enumerate(blocks):
         kind = block["type"]
         if kind == "blank":
@@ -320,6 +365,8 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             bold = kind == "heading" or bool(block.get("bold"))
             before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
             type_line(page, block["text"])
+            if block.get("phone") and not add_phone_link(page, editor):
+                failed_phone_links.append(block["text"])
             if bold and before is None:
                 page.keyboard.press("Control+b")  # 상태를 모를 때는 켠 만큼 다시 끈다
             elif bold:
@@ -327,7 +374,7 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             page.keyboard.press("Enter")
         if i % 8 == 7:
             pause(page, 0.5, 2.0)  # 가끔 쉬어 가며 입력
-    return failed_photos
+    return failed_photos, failed_phone_links
 
 
 def add_tags(page, editor, tags):
@@ -413,13 +460,15 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
     if not align_center(page, editor):
         warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
-    failed = type_blocks(page, editor, blocks, photo_paths, captions)
+    failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
     # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
     for block in blocks:
         if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
             remove_url_lines(page, editor, block["url"])
     if failed:
         warnings.append(f"사진 {len(failed)}장을 넣지 못했어요: {', '.join(failed)}")
+    if failed_phone_links:
+        warnings.append("전화번호에 전화 링크를 걸지 못한 줄이 있어요. 번호는 글자로 들어갔어요.")
     pause(page)
 
     # 태그는 본문이 아니라 발행 설정 창의 태그 칸에 넣는다 (본문이 깔끔해진다)

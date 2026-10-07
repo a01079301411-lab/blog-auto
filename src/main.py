@@ -117,7 +117,14 @@ def load_pending():
                      "files": [Path(f) for f in photo_set["files"]]}
         if not all(f.exists() for f in photo_set["files"]):
             photo_set = None  # 사진이 옮겨졌으면 사진 없이 올린다
-    return data["topic"], photo_set, data["related"], data["post"], data["blocks"]
+    topic, related, post = data["topic"], data["related"], data["post"]
+    # 프로그램이 바뀌었을 수 있으니 지금 규칙으로 다시 정리하고 검사한다
+    fails = checker.check(post, topic, photo_set, related)
+    if fails:
+        log.info("저장해 둔 글이 지금 기준에 맞지 않아 새로 씁니다:\n- %s", "\n- ".join(fails))
+        PENDING_FILE.unlink(missing_ok=True)
+        return None
+    return topic, photo_set, related, post, formatter.format_body(post["body"], related)
 
 
 def make_post(topic, photo_set, related):

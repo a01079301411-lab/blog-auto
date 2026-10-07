@@ -5,9 +5,11 @@
 - 같은 내용(한 문단)은 3~4줄로 묶고, 내용이 바뀔 때(문단이 바뀔 때)만 한 줄 띄운다.
 - 소제목 앞에는 빈 줄 2개.
 - 특수문자는 모두 뺀다.
+- 사진은 연달아 붙이지 않고, 소제목 하나당 2장까지 문단 사이에 나눠 넣는다.
+- 전화번호가 있는 줄은 굵게 하고, 누르면 전화가 걸리는 링크를 걸 줄로 표시한다.
 
 결과는 '블록' 목록이다. 발행 프로그램이 이 목록을 보고 한 줄씩 입력한다.
-  {"type": "line", "text": "...", "bold": False}
+  {"type": "line", "text": "...", "bold": False, "phone": False}  ← phone: 전화 링크를 걸 줄
   {"type": "heading", "text": "..."}
   {"type": "photo", "file": "창고_01.jpg"}
   {"type": "link", "title": "...", "url": "https://..."}
@@ -15,7 +17,10 @@
 """
 import re
 
+from config import COMPANY_PHONE
+
 LINE_MAX = 28
+PHOTOS_PER_SECTION = 2
 PARAGRAPH_MAX_LINES = 4
 PHOTO_RE = re.compile(r"^\[사진:\s*([^\]]+?)\s*\]$")
 LINK_RE = re.compile(r"^\[링크:\s*(\d+)\s*\]$")
@@ -138,7 +143,60 @@ def format_body(body, related=None):
         else:
             paragraph.append(line)
     flush()
-    return _tidy_blanks(blocks)
+    return _tidy_blanks(_mark_phone_lines(_spread_photos(_tidy_blanks(blocks))))
+
+
+def _last_content(blocks):
+    return next((b["type"] for b in reversed(blocks) if b["type"] != "blank"), None)
+
+
+def _spread_photos(blocks):
+    """사진이 연달아 붙어 있거나(링크 카드와 붙은 것 포함) 한 소제목에 2장을 넘으면,
+    그 뒤쪽에서 글 문단이 끝나는 자리로 옮긴다. 사진은 원래 자리보다 앞으로는 옮기지 않는다."""
+    for pos, b in enumerate(blocks):
+        b["_pos"] = pos  # 원래 순서 (앞쪽 엉뚱한 소제목으로 옮겨 가지 않게)
+    pending = []
+
+    def place(blocks, limit):
+        out, count, here = [], 0, -1
+        for i, b in enumerate(blocks):
+            here = b.get("_pos", here)
+            if b["type"] == "heading":
+                count = 0
+            if b["type"] == "photo":
+                if _last_content(out) in ("photo", "link") or count >= limit:
+                    pending.append(b)
+                    continue
+                count += 1
+            out.append(b)
+            # 글 문단이 끝난 자리(빈 줄)에, 원래 이 자리보다 앞에 있던 사진을 하나 넣는다
+            nxt = next((n for n in blocks[i + 1:] if n["type"] != "blank"), None)
+            ready = [p for p in pending if p["_pos"] <= here]
+            if (b["type"] == "blank" and ready and count < limit and _last_content(out) == "line"
+                    and (nxt is None or nxt["type"] not in ("photo", "link"))):
+                pending.remove(ready[0])
+                out += [ready[0], {"type": "blank"}]
+                count += 1
+        return out
+
+    blocks = place(blocks, PHOTOS_PER_SECTION)
+    if pending:  # 자리가 모자라면 소제목당 장수 제한만 풀고 한 번 더 (붙이지 않는 규칙은 그대로)
+        blocks = place(blocks, 99)
+    if pending and _last_content(blocks) == "line":  # 그래도 남으면 글 끝 문단 뒤에 한 장
+        blocks += [{"type": "blank"}, pending.pop(0)]
+    for b in blocks:
+        b.pop("_pos", None)
+    return blocks
+
+
+def _mark_phone_lines(blocks):
+    """전화번호가 들어 있는 줄은 굵게, 전화 링크 대상으로 표시한다."""
+    digits = re.sub(r"\D", "", COMPANY_PHONE)
+    for b in blocks:
+        if b["type"] == "line" and digits and digits in re.sub(r"\D", "", b["text"]):
+            b["bold"] = True
+            b["phone"] = True
+    return blocks
 
 
 def _tidy_blanks(blocks):

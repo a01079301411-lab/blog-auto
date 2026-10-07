@@ -18,6 +18,7 @@ SIMILAR_TITLE = 0.75
 SIMILAR_SAMPLE_TITLE = 0.6
 SIMILAR_OPENING = 0.7
 MAX_LINKS = 3
+MIN_PHOTOS = 4  # 받은 사진이 이보다 적으면 받은 만큼
 CTA_WORDS = ("전화", "문의", "연락", "상담")
 # 지역명 뒤에 붙어도 지역명으로 보는 글자 (예: 구미에서, 포항까지). '상주하는' 같은 말은 제외된다.
 PARTICLES = "에의은는이가을를도로시군구과와까"
@@ -105,7 +106,8 @@ def check(post, topic, photo_set=None, related=None):
     if COMPANY_PHONE and COMPANY_PHONE not in "\n".join(lines[-15:]):
         fails.append("마무리 부분에 전화번호가 없어요.")
     if not _has_middle_cta(body, photo_set):
-        fails.append("본문 중간(사진 바로 아래)에 연락 유도 문장이 없어요.")
+        fails.append("본문 중간(강점 사진 바로 아래)에 전화번호가 들어간 연락 유도가 없어요. "
+                     "예: 전화 상담 " + (COMPANY_PHONE or "전화번호"))
 
     # 6. 금지 표현
     regions, phrases = load_forbidden()
@@ -122,6 +124,10 @@ def check(post, topic, photo_set=None, related=None):
     unknown = [f for f in PHOTO_RE.findall(body) if f not in allowed]
     if unknown:
         fails.append("목록에 없는 사진을 썼어요: " + ", ".join(unknown))
+    used = set(PHOTO_RE.findall(body)) & allowed
+    if allowed and len(used) < min(len(allowed), MIN_PHOTOS):
+        fails.append(f"사진을 {len(used)}장만 썼어요. 받은 사진 {len(allowed)}장 중 "
+                     f"{min(len(allowed), MIN_PHOTOS)}장 이상을 소제목마다 나눠 넣으세요.")
 
     # 8. 내부링크: 후보가 있으면 1~3개, 없는 번호는 안 됨
     numbers = [int(n) for n in LINK_RE.findall(body)]
@@ -154,15 +160,22 @@ def check(post, topic, photo_set=None, related=None):
 
 
 def _has_middle_cta(body, photo_set):
-    """본문 앞쪽 80% 안에서, 사진 바로 아래(4줄 이내)에 연락 유도 문장이 있는지.
-    사진이 없는 글이면 본문 중간(20~80%)에 연락 유도 문장이 있는지만 본다."""
+    """본문 중간(앞쪽 85% 안)에 전화번호가 들어간 연락 유도가 있는지.
+    사진이 있는 글이면 그 연락 유도가 사진 바로 아래(4줄 이내)에 있어야 한다."""
+    digits = re.sub(r"\D", "", COMPANY_PHONE)
+    if not digits:
+        return True
     raw = [l.strip() for l in body.splitlines() if l.strip()]
-    end = int(len(raw) * 0.8)
+    end = int(len(raw) * 0.85)
+
+    def has_phone(line):
+        return digits in re.sub(r"\D", "", line)
+
     if photo_set:
         for i, line in enumerate(raw[:end]):
             if PHOTO_RE.fullmatch(line):
                 after = [l for l in raw[i + 1:i + 5] if not PHOTO_RE.fullmatch(l)]
-                if any(w in l for l in after for w in CTA_WORDS):
+                if any(has_phone(l) for l in after):
                     return True
         return False
-    return any(w in l for l in raw[int(len(raw) * 0.2):end] for w in CTA_WORDS)
+    return any(has_phone(l) for l in raw[int(len(raw) * 0.2):end])
