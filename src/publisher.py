@@ -3,6 +3,7 @@
 제목 입력·본문 입력·발행 버튼 누르기는 실제 네이버에서 동작을 확인한 코드다.
 사람처럼 보이게 동작 사이사이에 1~3초씩 무작위로 쉰다.
 """
+import logging
 import random
 import re
 from contextlib import contextmanager
@@ -11,6 +12,8 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 from config import BLOG_ID, COMPANY_PHONE, LOGS_DIR, PROFILE_DIR
+
+log = logging.getLogger(__name__)
 
 # ── 네이버 스마트에디터 화면 요소 ──
 # 네이버가 화면을 바꾸면 여기만 고치면 된다. 여러 개를 적어 두면 앞에서부터 차례로 시도한다.
@@ -268,26 +271,56 @@ def _plain(text):
     return re.sub(r"[\s\u200b\u200c\u200d\u2060\ufeff]", "", text).rstrip("/")
 
 
+def _undo_if_card_lost(page, editor, cards_before):
+    """링크 카드가 줄었으면(지우기 키가 카드를 지웠으면) 되돌린다. 카드를 지켰으면 True."""
+    for _ in range(3):
+        if editor.locator(LINK_CARD_COMPONENT).count() >= cards_before:
+            return True
+        page.keyboard.press("Control+z")
+        page.wait_for_timeout(500)
+    return editor.locator(LINK_CARD_COMPONENT).count() >= cards_before
+
+
 def remove_url_lines(page, editor, url):
-    """주소 글자만 있는 줄을 모두 지운다. (링크 카드가 생긴 뒤 남은 주소 글자)"""
+    """주소 글자만 있는 줄을 지운다. (링크 카드가 생긴 뒤 남은 주소 글자)
+    지우다가 링크 카드가 사라지면 바로 되돌리고 멈춘다. 돌려주는 값: 'removed', 'none', 'kept_card'"""
     target = _plain(url)
+    result = "none"
     for _ in range(3):
         lines = editor.locator(".se-text-paragraph")
         found = None
         for i in range(lines.count()):
             try:
-                if _plain(lines.nth(i).inner_text()) == target:
-                    found = lines.nth(i)
+                line = lines.nth(i)
+                box = line.bounding_box()
+                # 높이가 없는(안 보이는) 줄을 누르면 카드가 눌릴 수 있어서 건너뛴다
+                if _plain(line.inner_text()) == target and box and box["height"] > 5:
+                    found = line
                     break
             except Exception:
                 continue
         if found is None or not click_text(found):
-            return
+            return result
+        cards_before = editor.locator(LINK_CARD_COMPONENT).count()
         page.keyboard.press("End")
         page.keyboard.press("Shift+Home")
         page.keyboard.press("Backspace")  # 주소 글자 지우기
-        page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
         page.wait_for_timeout(300)
+        if editor.locator(LINK_CARD_COMPONENT).count() < cards_before:
+            # 지우기 키가 카드를 지웠다 → 되돌리고, 주소 글자는 남겨 둔 채 멈춘다
+            return "kept_card" if _undo_if_card_lost(page, editor, cards_before) else "card_lost"
+        result = "removed"
+        try:
+            line_left = found.is_visible() and _plain(found.inner_text()) == ""
+        except Exception:
+            line_left = False
+        if line_left:
+            page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
+            page.wait_for_timeout(300)
+            if editor.locator(LINK_CARD_COMPONENT).count() < cards_before:
+                _undo_if_card_lost(page, editor, cards_before)
+                return result
+    return result
 
 
 def add_phone_link(page, editor):
@@ -335,12 +368,14 @@ def insert_link(page, editor, url):
     for _ in range(20):  # 링크 카드는 최대 10초 기다린다
         page.wait_for_timeout(500)
         if editor.locator(LINK_CARD_COMPONENT).count() > before:
-            card = editor.locator(LINK_CARD_COMPONENT).last
             page.wait_for_timeout(500)
-            remove_url_lines(page, editor, url)
-            move_below(page, editor, card)
-            return
+            cleanup = remove_url_lines(page, editor, url)
+            log.info("내부링크: 카드 생성됨, 주소 글자 정리=%s (%s)", cleanup, url)
+            move_below(page, editor, editor.locator(LINK_CARD_COMPONENT).last)
+            return True
+    log.info("내부링크: 10초 안에 카드가 안 생김, 주소 글자로 남김 (%s)", url)
     page.keyboard.press("Enter")
+    return False
 
 
 def type_blocks(page, editor, blocks, photo_paths, captions):
@@ -465,6 +500,11 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     for block in blocks:
         if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
             remove_url_lines(page, editor, block["url"])
+    wanted = sum(1 for b in blocks if b["type"] == "link")
+    cards = editor.locator(LINK_CARD_COMPONENT).count()
+    log.info("내부링크: 넣을 링크 %s개, 글에 있는 링크 카드 %s개", wanted, cards)
+    if cards < wanted:
+        warnings.append(f"내부링크 {wanted}개 중 링크 카드가 {cards}개만 들어갔어요.")
     if failed:
         warnings.append(f"사진 {len(failed)}장을 넣지 못했어요: {', '.join(failed)}")
     if failed_phone_links:

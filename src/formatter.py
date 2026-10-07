@@ -24,6 +24,7 @@ PHOTOS_PER_SECTION = 2
 PARAGRAPH_MAX_LINES = 4
 PHOTO_RE = re.compile(r"^\[사진:\s*([^\]]+?)\s*\]$")
 LINK_RE = re.compile(r"^\[링크:\s*(\d+)\s*\]$")
+MARKER_SPLIT = re.compile(r"(\[(?:사진|링크):[^\]]+\])")
 LIST_RE = re.compile(r"^(- |[A-Z]\. |Q\. |\*\*Q|\d+\. )")
 
 # ── 특수문자 정리 ──
@@ -118,7 +119,13 @@ def format_body(body, related=None):
             blocks.append({"type": "blank"})
             paragraph.clear()
 
+    # AI가 [사진:...], [링크:...] 표시를 문장 중간에 쓴 경우에도 따로 떼어 낸다
+    raw_lines = []
     for raw in body.splitlines():
+        parts = [x.strip() for x in MARKER_SPLIT.split(raw)]
+        raw_lines += [x for x in parts if x] if len(parts) > 1 else [raw]
+
+    for raw in raw_lines:
         line = raw.strip()
         photo, link = PHOTO_RE.match(line), LINK_RE.match(line)
         if not line:
