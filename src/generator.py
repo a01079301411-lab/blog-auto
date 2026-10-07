@@ -90,13 +90,16 @@ def request_text(topic, photo_set, related=None, feedback=None):
 
 def generate(topic, photo_set, related=None, feedback=None):
     client = anthropic.Anthropic(max_retries=3)  # .env의 ANTHROPIC_API_KEY 사용, 오류 시 3회 재시도
-    response = client.messages.create(
+    # AI는 글을 쓰기 전에 생각도 하는데, 그 생각도 글자 수 한도에 포함된다.
+    # 한도가 작으면 글이 중간에 끊기므로 넉넉히 주고, 오래 걸려도 끊기지 않게 스트리밍으로 받는다.
+    with client.messages.stream(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=32000,
         system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": request_text(topic, photo_set, related, feedback)}],
         output_config={"format": {"type": "json_schema", "schema": POST_SCHEMA}},
-    )
+    ) as stream:
+        response = stream.get_final_message()
     usage = response.usage
     log.info(
         "AI 사용량: 입력 %s, 캐시 읽음 %s, 캐시 저장 %s, 출력 %s",
