@@ -87,7 +87,8 @@ def _paragraph_blocks(paragraph):
     if any(LIST_RE.match(line) for line in paragraph):
         # 목록, FAQ, 보기(A, B, C)는 한 줄에 하나씩, 사이를 띄우지 않는다
         for line in paragraph:
-            bold = line.startswith("**") and line.endswith("**")
+            # **굵게** 표시가 있거나 FAQ 질문(Q.)이면 굵게
+            bold = (line.startswith("**") and line.endswith("**")) or bool(re.match(r"^\**Q\s*[.:]", line))
             text = sanitize(re.sub(r"^- ", "", line))
             for sentence in _split_sentences(text):
                 blocks += [{"type": "line", "text": t, "bold": bold} for t in wrap(sentence)]

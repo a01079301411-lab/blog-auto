@@ -36,6 +36,8 @@ ALIGN_CENTER = [
     "button[class*='align-center']", 'button[data-value="center"]',
     'button:has-text("가운데 정렬")', 'button[aria-label*="가운데"]',
 ]
+# 굵게 버튼 (켜져 있는지 확인하는 데 쓴다)
+BOLD_BUTTON = ["button.se-bold-toolbar-button", 'button[data-name="bold"]', ".se-toolbar-item-bold button"]
 # 발행 설정 창의 태그 입력 칸
 TAG_INPUT = ['input[placeholder*="태그"]', "#tag-input", "input[class*='tag_input']", "input[class*='tag']"]
 CATEGORY_BUTTON = ['button[aria-label*="카테고리"]', '[class*="category"] button', 'button:has-text("카테고리")']
@@ -192,24 +194,6 @@ def align_center(page, editor):
     return click_first(editor, ALIGN_CENTER, timeout=1500)
 
 
-def remove_pasted_url(page, editor, card, url):
-    """링크 카드가 생긴 뒤 위에 남은 주소 글자 줄을 지운다."""
-    above = card.locator(
-        "xpath=preceding-sibling::div[contains(@class,'se-text')][1]//p[contains(@class,'se-text-paragraph')]"
-    )
-    if not above.count():
-        return
-    line = above.last
-    if url.split("//")[-1] not in line.inner_text():
-        return
-    line.click()
-    page.keyboard.press("End")
-    page.keyboard.press("Shift+Home")
-    page.keyboard.press("Backspace")  # 주소 글자 지우기
-    page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
-    page.wait_for_timeout(300)
-
-
 def move_below(page, editor, component):
     """사진, 링크 카드 바로 아래 글 칸으로 커서를 옮긴다."""
     below = component.locator(
@@ -222,6 +206,57 @@ def move_below(page, editor, component):
     align_center(page, editor)  # 새 글 칸은 왼쪽 정렬로 시작할 수 있어서 다시 맞춘다
 
 
+def bold_is_on(editor):
+    """지금 굵게가 켜져 있는지. 모르면 None."""
+    for selector in BOLD_BUTTON:
+        button = editor.locator(selector).first
+        try:
+            if button.count():
+                state = (button.get_attribute("class") or "") + " " + (button.get_attribute("aria-pressed") or "")
+                return "selected" in state or "true" in state or "active" in state
+        except Exception:
+            continue
+    try:
+        return bool(editor.evaluate("document.queryCommandState('bold')"))
+    except Exception:
+        return None
+
+
+def set_bold(page, editor, on):
+    """굵게를 켜거나 끈다. 누를 때마다 바뀌는 버튼이라, 지금 상태를 보고 필요할 때만 누른다."""
+    state = bold_is_on(editor)
+    if state is None:
+        if on:  # 상태를 모르면 켤 때만 누르고, 끌 때는 type_blocks가 짝을 맞춰 누른다
+            page.keyboard.press("Control+b")
+        return state
+    if state != on:
+        page.keyboard.press("Control+b")
+    return state
+
+
+def remove_url_lines(page, editor, url):
+    """주소 글자만 있는 줄을 모두 지운다. (링크 카드가 생긴 뒤 남은 주소 글자)"""
+    target = url.rstrip("/")
+    for _ in range(3):
+        lines = editor.locator(".se-text-paragraph")
+        found = None
+        for i in range(lines.count()):
+            try:
+                if lines.nth(i).inner_text().strip().rstrip("/") == target:
+                    found = lines.nth(i)
+                    break
+            except Exception:
+                continue
+        if found is None:
+            return
+        found.click()
+        page.keyboard.press("End")
+        page.keyboard.press("Shift+Home")
+        page.keyboard.press("Backspace")  # 주소 글자 지우기
+        page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
+        page.wait_for_timeout(300)
+
+
 def insert_link(page, editor, url):
     """내 블로그 다른 글 주소를 붙여 넣어 링크 카드를 만든다.
     카드가 안 만들어지면 주소가 글자(링크)로 남는다."""
@@ -232,11 +267,12 @@ def insert_link(page, editor, url):
         page.keyboard.press("Control+v")
     except Exception:
         type_line(page, url)
-    for _ in range(12):  # 링크 카드는 최대 6초 기다린다
+    for _ in range(20):  # 링크 카드는 최대 10초 기다린다
         page.wait_for_timeout(500)
         if editor.locator(LINK_CARD_COMPONENT).count() > before:
             card = editor.locator(LINK_CARD_COMPONENT).last
-            remove_pasted_url(page, editor, card, url)
+            page.wait_for_timeout(500)
+            remove_url_lines(page, editor, url)
             move_below(page, editor, card)
             return
     page.keyboard.press("Enter")
@@ -260,12 +296,13 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):
                 failed_photos.append(block["file"])
         else:
-            bold = kind == "heading" or block.get("bold")
-            if bold:
-                page.keyboard.press("Control+b")
+            bold = kind == "heading" or bool(block.get("bold"))
+            before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
             type_line(page, block["text"])
-            if bold:
-                page.keyboard.press("Control+b")
+            if bold and before is None:
+                page.keyboard.press("Control+b")  # 상태를 모를 때는 켠 만큼 다시 끈다
+            elif bold:
+                set_bold(page, editor, False)
             page.keyboard.press("Enter")
         if i % 8 == 7:
             pause(page, 0.5, 2.0)  # 가끔 쉬어 가며 입력
@@ -356,6 +393,10 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     if not align_center(page, editor):
         warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
     failed = type_blocks(page, editor, blocks, photo_paths, captions)
+    # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
+    for block in blocks:
+        if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
+            remove_url_lines(page, editor, block["url"])
     if failed:
         warnings.append(f"사진 {len(failed)}장을 넣지 못했어요: {', '.join(failed)}")
     pause(page)
