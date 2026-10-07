@@ -27,6 +27,17 @@ PHOTO_BUTTON = ["button.se-image-toolbar-button", ".se-toolbar-item-image button
 IMAGE_COMPONENT = ".se-component.se-image"
 LINK_CARD_COMPONENT = ".se-component.se-oglink"  # 주소를 붙여 넣으면 생기는 링크 카드
 CAPTION_AREA = [".se-caption .se-text-paragraph", ".se-module-text.se-caption", ".se-caption"]
+# 가운데 정렬: 정렬 버튼을 눌러 목록을 연 뒤 '가운데'를 고른다
+ALIGN_BUTTON = [
+    ".se-toolbar-item-align button", "button[class*='align'][class*='toolbar-button']",
+    'button[data-name="align-drop-down-with-justify"]', 'button[data-name="align"]',
+]
+ALIGN_CENTER = [
+    "button[class*='align-center']", 'button[data-value="center"]',
+    'button:has-text("가운데 정렬")', 'button[aria-label*="가운데"]',
+]
+# 발행 설정 창의 태그 입력 칸
+TAG_INPUT = ['input[placeholder*="태그"]', "#tag-input", "input[class*='tag_input']", "input[class*='tag']"]
 CATEGORY_BUTTON = ['button[aria-label*="카테고리"]', '[class*="category"] button', 'button:has-text("카테고리")']
 
 
@@ -173,6 +184,32 @@ def insert_photo(page, editor, path, caption):
     return True
 
 
+def align_center(page, editor):
+    """지금 커서가 있는 줄부터 가운데 정렬로 바꾼다. 성공하면 True."""
+    if not click_first(editor, ALIGN_BUTTON, timeout=1500):
+        return False
+    page.wait_for_timeout(300)
+    return click_first(editor, ALIGN_CENTER, timeout=1500)
+
+
+def remove_pasted_url(page, editor, card, url):
+    """링크 카드가 생긴 뒤 위에 남은 주소 글자 줄을 지운다."""
+    above = card.locator(
+        "xpath=preceding-sibling::div[contains(@class,'se-text')][1]//p[contains(@class,'se-text-paragraph')]"
+    )
+    if not above.count():
+        return
+    line = above.last
+    if url.split("//")[-1] not in line.inner_text():
+        return
+    line.click()
+    page.keyboard.press("End")
+    page.keyboard.press("Shift+Home")
+    page.keyboard.press("Backspace")  # 주소 글자 지우기
+    page.keyboard.press("Backspace")  # 남은 빈 줄 지우기
+    page.wait_for_timeout(300)
+
+
 def move_below(page, editor, component):
     """사진, 링크 카드 바로 아래 글 칸으로 커서를 옮긴다."""
     below = component.locator(
@@ -182,6 +219,7 @@ def move_below(page, editor, component):
     target.click()
     page.keyboard.press("End")
     page.wait_for_timeout(500)
+    align_center(page, editor)  # 새 글 칸은 왼쪽 정렬로 시작할 수 있어서 다시 맞춘다
 
 
 def insert_link(page, editor, url):
@@ -197,7 +235,9 @@ def insert_link(page, editor, url):
     for _ in range(12):  # 링크 카드는 최대 6초 기다린다
         page.wait_for_timeout(500)
         if editor.locator(LINK_CARD_COMPONENT).count() > before:
-            move_below(page, editor, editor.locator(LINK_CARD_COMPONENT).last)
+            card = editor.locator(LINK_CARD_COMPONENT).last
+            remove_pasted_url(page, editor, card, url)
+            move_below(page, editor, card)
             return
     page.keyboard.press("Enter")
 
@@ -210,6 +250,8 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
         if kind == "blank":
             if i and blocks[i - 1]["type"] in ("photo", "link"):
                 continue  # 사진, 링크 아래에는 이미 새 줄이 있다
+            if i + 1 < len(blocks) and blocks[i + 1]["type"] == "photo":
+                continue  # 사진은 지금 줄 아래에 들어가므로 빈 줄을 더 만들지 않는다
             page.keyboard.press("Enter")
         elif kind == "link":
             insert_link(page, editor, block["url"])
@@ -228,6 +270,38 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
         if i % 8 == 7:
             pause(page, 0.5, 2.0)  # 가끔 쉬어 가며 입력
     return failed_photos
+
+
+def add_tags(page, editor, tags):
+    """발행 설정 창의 태그 칸에 태그를 하나씩 넣는다. (발행 설정 창이 열려 있어야 한다)"""
+    for selector in TAG_INPUT:
+        box = editor.locator(selector).first
+        try:
+            box.click(timeout=2000)
+        except Exception:
+            continue
+        for tag in tags:
+            type_line(page, tag)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(200)
+        return True
+    return False
+
+
+def type_tags_in_body(page, editor, tags):
+    """태그 칸을 못 찾았을 때: 본문 끝에 #태그로 쓴다. (네이버가 발행할 때 태그로 등록한다)"""
+    editor.locator(".se-text-paragraph").last.click()
+    page.keyboard.press("End")
+    page.keyboard.press("Enter")
+    for tag in tags:
+        type_line(page, f"#{tag}")
+        page.keyboard.press("Space")
+
+
+def open_publish_layer(page, editor):
+    if not click_first(editor, PUBLISH_BUTTON):
+        raise PublishError(f"발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_publish')}")
+    pause(page)  # 발행 설정 창이 뜰 때까지 대기
 
 
 def select_category(page, editor, category):
@@ -279,25 +353,33 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     if not click_first(editor, BODY_AREA):
         raise PublishError(f"본문 칸을 찾지 못했어요. 화면: {screenshot(page, 'no_body')}")
     page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
+    if not align_center(page, editor):
+        warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
     failed = type_blocks(page, editor, blocks, photo_paths, captions)
-    if tags:  # 본문 끝에 #태그를 쓰면 네이버가 태그로 등록한다
-        page.keyboard.press("Enter")
-        for tag in tags:
-            type_line(page, f"#{tag}")
-            page.keyboard.press("Space")
     if failed:
         warnings.append(f"사진 {len(failed)}장을 넣지 못했어요: {', '.join(failed)}")
     pause(page)
 
+    # 태그는 본문이 아니라 발행 설정 창의 태그 칸에 넣는다 (본문이 깔끔해진다)
+    open_publish_layer(page, editor)
+    tags_ok = add_tags(page, editor, tags) if tags else True
+
     if not publish:
+        page.keyboard.press("Escape")  # 발행 설정 창 닫기
+        page.wait_for_timeout(500)
+        if editor.locator(", ".join(CONFIRM_BUTTON)).first.is_visible():
+            click_first(editor, PUBLISH_BUTTON)  # Esc로 안 닫히면 발행 버튼을 다시 눌러 닫는다
+            page.wait_for_timeout(500)
+        if not tags_ok:
+            type_tags_in_body(page, editor, tags)
+            warnings.append("태그 칸을 찾지 못해 본문 끝에 #태그로 넣었어요.")
         if not click_first(editor, SAVE_BUTTON):
             raise PublishError(f"임시저장 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_save')}")
         page.wait_for_timeout(3000)
         return {"result": "draft", "url": page.url, "failed_photos": failed, "warnings": warnings}
 
-    if not click_first(editor, PUBLISH_BUTTON):
-        raise PublishError(f"발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_publish')}")
-    pause(page)  # 발행 설정 창이 뜰 때까지 대기
+    if not tags_ok:
+        warnings.append("태그 칸을 찾지 못해 태그 없이 발행했어요.")
     if not select_category(page, editor, category):
         warnings.append(f"카테고리 '{category}'를 고르지 못해 기본 카테고리로 발행했어요.")
     if not click_first(editor, CONFIRM_BUTTON, pick_last=True):

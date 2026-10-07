@@ -188,7 +188,7 @@ def main():
         topic = topics.pick(args.topic)
         log.info("주제: %s / 키워드: %s / %s / %s / 구조 %s", topic["topic"], topic["keyword"],
                  topic["title_type"], topic["hook_type"], topic["variant"])
-        photo_set = photos.pick(topic)
+        photo_set = photos.add_descriptions(photos.pick(topic))
         log.info("사진: %s", f"{photo_set['folder'].name} ({len(photo_set['files'])}장)" if photo_set else "없음")
         related = links.related(topic)
         log.info("내부링크 후보: %s개", len(related))
