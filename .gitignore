@@ -8,6 +8,9 @@ logs/
 photos/
 data/history.json
 data/links_cache.json
+backup/
+.update_state.json
+*.새버전
 posts/
 
 __pycache__/
