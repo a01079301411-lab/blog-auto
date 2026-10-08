@@ -66,10 +66,12 @@ def main():
 
         if current is not None and rel.startswith(USER_EDITABLE):
             if rel in state and fingerprint(current) != state[rel]:
-                # 사장님이 고친 파일: 덮어쓰지 않고 새 버전을 옆에 둔다
-                target.with_name(target.name + ".새버전").write_bytes(data)
+                # 사장님이 고친 파일은 덮어쓰지 않는다.
+                # 우리 쪽 새 버전이 실제로 바뀌었을 때만 '.새버전'으로 옆에 둔다.
+                if new_state[rel] != state[rel]:
+                    target.with_name(target.name + ".새버전").write_bytes(data)
+                    kept.append(rel)
                 new_state[rel] = state[rel]
-                kept.append(rel)
                 continue
             (backup_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, backup_dir / rel)
