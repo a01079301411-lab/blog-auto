@@ -41,6 +41,13 @@ ALIGN_CENTER = [
 ]
 # 굵게 버튼 (켜져 있는지 확인하는 데 쓴다)
 BOLD_BUTTON = ["button.se-bold-toolbar-button", 'button[data-name="bold"]', ".se-toolbar-item-bold button"]
+# 에디터 위쪽 '링크' 버튼으로 링크 카드 넣기 (주소 입력 → 검색 → 확인)
+OGLINK_BUTTON = ["button.se-oglink-toolbar-button", ".se-toolbar-item-oglink button", 'button[data-name="oglink"]']
+OGLINK_INPUT = ["input.se-popup-oglink-input", ".se-popup-oglink input", "[class*='oglink'] input[type='text']"]
+OGLINK_SEARCH = ["button.se-popup-oglink-button", ".se-popup-oglink button[class*='search']",
+                 "[class*='oglink'] button:has-text('검색')"]
+OGLINK_CONFIRM = ["button.se-popup-button-confirm", ".se-popup-oglink button:has-text('확인')",
+                  "[class*='popup'] button:has-text('확인')"]
 # 글자에 링크 걸기 (전화번호 줄에 tel: 링크). 주소로 카드를 만드는 '링크 카드' 창과는 다르다.
 TEXT_LINK_BUTTON = ["button.se-link-toolbar-button", ".se-toolbar-item-link button"]
 TEXT_LINK_INPUT = [
@@ -355,26 +362,71 @@ def add_phone_link(page, editor):
     return ok
 
 
-def insert_link(page, editor, url):
-    """내 블로그 다른 글 주소를 붙여 넣어 링크 카드를 만든다.
-    카드가 안 만들어지면 주소가 글자(링크)로 남는다."""
+def _visible(editor, selectors):
+    for selector in selectors:
+        target = editor.locator(selector).first
+        try:
+            if target.count() and target.is_visible():
+                return target
+        except Exception:
+            continue
+    return None
+
+
+def _link_card_by_toolbar(page, editor, url):
+    """에디터 위쪽 '링크' 버튼으로 카드를 만든다. 클립보드가 필요 없고 주소 글자도 남지 않는다."""
+    before = editor.locator(LINK_CARD_COMPONENT).count()
+    if not click_first(editor, OGLINK_BUTTON, timeout=2000):
+        return False, "링크 버튼 없음"
+    page.wait_for_timeout(800)
+    box = _visible(editor, OGLINK_INPUT)
+    if box is None:
+        page.keyboard.press("Escape")
+        return False, "주소 입력 칸 없음"
+    box.fill(url)
+    if not click_first(editor, OGLINK_SEARCH, timeout=1500):
+        page.keyboard.press("Enter")
+    for _ in range(20):  # 미리보기가 뜨면 '확인'을 누른다 (최대 10초)
+        page.wait_for_timeout(500)
+        if editor.locator(LINK_CARD_COMPONENT).count() > before:
+            return True, "링크 버튼"
+        click_first(editor, OGLINK_CONFIRM, timeout=300)
+    page.keyboard.press("Escape")
+    return False, "확인 후에도 카드 없음"
+
+
+def _link_card_by_paste(page, editor, url):
+    """주소를 붙여 넣어 카드를 만든다 (예전 방식). 남은 주소 글자는 지운다."""
     before = editor.locator(LINK_CARD_COMPONENT).count()
     try:
         page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        page.bring_to_front()
         editor.evaluate("url => navigator.clipboard.writeText(url)", url)
         page.keyboard.press("Control+v")
-    except Exception:
-        type_line(page, url)
+    except Exception as e:
+        return False, f"클립보드 사용 불가: {e.__class__.__name__}"
     for _ in range(20):  # 링크 카드는 최대 10초 기다린다
         page.wait_for_timeout(500)
         if editor.locator(LINK_CARD_COMPONENT).count() > before:
             page.wait_for_timeout(500)
-            cleanup = remove_url_lines(page, editor, url)
-            log.info("내부링크: 카드 생성됨, 주소 글자 정리=%s (%s)", cleanup, url)
+            return True, f"붙여 넣기, 주소 글자 정리={remove_url_lines(page, editor, url)}"
+    remove_url_lines(page, editor, url)  # 카드가 안 생겼으면 붙여 넣은 주소 글자도 남기지 않는다
+    return False, "붙여 넣었지만 카드 안 생김"
+
+
+def insert_link(page, editor, url):
+    """내 블로그 다른 글을 링크 카드로 넣는다. '링크' 버튼 → 안 되면 붙여 넣기 순서로 시도한다.
+    둘 다 안 되면 그 순간 화면을 logs 폴더에 저장한다."""
+    reasons = []
+    for method in (_link_card_by_toolbar, _link_card_by_paste):
+        ok, how = method(page, editor, url)
+        if ok:
+            log.info("내부링크: 카드 생성됨 (%s) %s", how, url)
             move_below(page, editor, editor.locator(LINK_CARD_COMPONENT).last)
             return True
-    log.info("내부링크: 10초 안에 카드가 안 생김, 주소 글자로 남김 (%s)", url)
-    page.keyboard.press("Enter")
+        reasons.append(how)
+    shot = screenshot(page, "link_fail")
+    log.info("내부링크: 카드를 못 만들었어요 (%s) %s 화면: %s", " / ".join(reasons), url, shot)
     return False
 
 
