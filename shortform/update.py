@@ -44,11 +44,34 @@ def _values(text: str) -> dict[str, str]:
     return out
 
 
+def _render(template: str, values: dict[str, str], extra: dict[str, str]) -> str:
+    """배포된 settings.ini 모양(주석·순서) 그대로, 값만 사용자 값으로 채운다."""
+    lines = []
+    for line in template.splitlines():
+        m = _LINE.match(line)
+        if m and not line.lstrip().startswith(("#", ";")) and m.group(2) in values:
+            line = f"{m.group(1)}{m.group(2)}{m.group(3)}{values[m.group(2)]}".rstrip()
+        lines.append(line)
+    if extra:  # 사용자가 직접 추가한 항목은 끝에 그대로 둔다
+        lines += [""] + [f"{k} = {v}" for k, v in extra.items()]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _write_if_changed(path: str, old_text: str, new_text: str) -> bool:
+    norm = lambda t: t.replace("\r\n", "\n").rstrip()
+    if norm(old_text) == norm(new_text):
+        return False
+    with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write(new_text)
+    return True
+
+
 def merge_settings(root: str, shipped: str) -> list[str]:
     """새로 배포된 기본값을 사용자 settings.ini에 반영한다.
 
-    사용자가 직접 고친 값(이전 기본값과 다른 값)은 건드리지 않고,
-    기본값 그대로인 항목만 새 기본값으로 바꾼다. 새로 생긴 항목은 추가한다.
+    사용자가 직접 고친 값(이전 기본값과 다른 값)은 그대로 두고, 기본값 그대로인
+    항목만 새 기본값으로 바꾼다. 새로 생긴 항목은 설명과 함께 들어가고, 파일 모양은
+    배포된 settings.ini와 같게 다시 정리한다.
     """
     path = os.path.join(root, "settings.ini")
     base_path = os.path.join(root, SETTINGS_BASE)
@@ -62,32 +85,40 @@ def merge_settings(root: str, shipped: str) -> list[str]:
     new = _values(shipped)
     mine = _values(text)
 
-    changed = []
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        m = _LINE.match(line)
-        if not m or line.lstrip().startswith(("#", ";")):
-            continue
-        key, value = m.group(2), m.group(4)
-        if key in new and value == base.get(key) and value != new[key]:
-            lines[i] = f"{m.group(1)}{key}{m.group(3)}{new[key]}"
-            changed.append(f"{key}: {value} → {new[key]}")
-    shipped_lines = shipped.splitlines()
-    for key in [k for k in new if k not in mine]:  # 새로 생긴 설정 (설명 주석도 같이)
-        at = next(i for i, ln in enumerate(shipped_lines)
-                  if (m := _LINE.match(ln)) and m.group(2) == key and not ln.lstrip().startswith("#"))
-        start = at
-        while start > 0 and shipped_lines[start - 1].lstrip().startswith(("#", ";")):
-            start -= 1
-        lines += [""] + shipped_lines[start:at + 1]
-        changed.append(f"{key} = {new[key]} (새 설정)")
-
-    if changed:
-        with open(path, "w", encoding="utf-8", newline="\r\n") as f:
-            f.write("\n".join(lines) + "\n")
+    changed, values = [], {}
+    for key, default in new.items():
+        if key not in mine:
+            values[key] = default
+            changed.append(f"{key} = {default} (새 설정)")
+        elif mine[key] == base.get(key) and mine[key] != default:
+            values[key] = default
+            changed.append(f"{key}: {mine[key]} → {default}")
+        else:
+            values[key] = mine[key]
+    extra = {k: v for k, v in mine.items() if k not in new}
+    _write_if_changed(path, text, _render(shipped, values, extra))
     with open(base_path, "w", encoding="utf-8") as f:
         f.write(shipped)
     return changed
+
+
+def tidy_settings(root: str = ROOT) -> None:
+    """settings.ini를 마지막으로 받은 기본 파일 모양대로 정리한다 (값은 그대로).
+
+    예전 업데이트 코드가 새 설정을 주석 없이 끝에 붙여 둔 경우를 바로잡는다.
+    """
+    path = os.path.join(root, "settings.ini")
+    try:
+        with open(os.path.join(root, SETTINGS_BASE), encoding="utf-8") as f:
+            template = f.read()
+        with open(path, encoding="utf-8-sig") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return
+    mine, shipped = _values(text), _values(template)
+    values = {k: mine.get(k, v) for k, v in shipped.items()}
+    extra = {k: v for k, v in mine.items() if k not in shipped}
+    _write_if_changed(path, text, _render(template, values, extra))
 
 
 def update(root: str = ROOT, url: str = ZIP_URL) -> list[str]:

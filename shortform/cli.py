@@ -294,6 +294,10 @@ def cmd_auto(args) -> None:
     """settings.ini를 읽어 shorts를 실행한다 (run.bat 끌어다 놓기용)."""
     import configparser
 
+    from .update import tidy_settings
+
+    if os.path.abspath(args.settings) == os.path.abspath(SETTINGS):
+        tidy_settings()  # 예전 업데이트가 흐트러뜨린 설정 파일 모양 정리
     cfg = configparser.ConfigParser()
     if not cfg.read(args.settings, encoding="utf-8-sig"):  # 메모장이 붙이는 BOM 처리
         raise RuntimeError(f"설정 파일을 찾을 수 없어요: {args.settings}")
