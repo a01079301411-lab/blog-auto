@@ -30,10 +30,17 @@ line and end it at the end of a line. The transcript comes from speech recogniti
 infer the intended words when a line is slightly garbled.
 
 For each clip also write, in the transcript's language:
-- title: the hook headline shown above the video, in exactly two short lines separated
-  by "\\n" (each line at most 14 characters). The first line sets up, the second line
-  is the punch, e.g. "망하는 사장들의\\n공통점 1가지". Make people stop scrolling, but
-  do not promise anything the clip does not deliver.
+- title: the hook headline shown above the video, 2 lines (at most 3) separated by
+  "\\n", each line at most 13 characters. Wrap the 1-2 most striking words in curly
+  braces; they are shown in an accent color. The first line sets up, the last line is
+  the punch, e.g. "사장님 속터지는\\n{진상 직원}의 한마디" or "망하는 사장님의\\n{치명적 실수}".
+  Make people stop scrolling, but do not promise anything the clip does not deliver.
+- label: a short teaser shown in a small badge above the title, at most 10 characters,
+  e.g. "당신만 몰랐던..".
+- speaker: who is talking, as "name / role" (e.g. "권기준 / 꼴통사장 대표"), using the
+  information about the video when available.
+- bottom: a one-line viewer reaction shown at the bottom, at most 14 characters,
+  e.g. "나 같아도 열 받겠다".
 - keywords: 2-5 words or short phrases that appear verbatim in the clip's speech and
   carry its impact; they are highlighted in the subtitles.
 - caption: an upload description of 1-2 sentences followed by 3-5 hashtags.
@@ -50,14 +57,18 @@ SCHEMA = {
                 "properties": {
                     "start": {"type": "number", "description": "seconds"},
                     "end": {"type": "number", "description": "seconds"},
-                    "title": {"type": "string", "description": "two-line hook headline"},
+                    "title": {"type": "string", "description": "hook headline, {accent}"},
+                    "label": {"type": "string"},
+                    "speaker": {"type": "string"},
+                    "bottom": {"type": "string"},
                     "keywords": {"type": "array", "items": {"type": "string"}},
                     "caption": {"type": "string", "description": "upload description + hashtags"},
                     "reason": {"type": "string", "description": "why this works as a short"},
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title", "keywords", "caption", "reason", "score"],
+                "required": ["start", "end", "title", "label", "speaker", "bottom", "keywords",
+                             "caption", "reason", "score"],
                 "additionalProperties": False,
             },
         }
@@ -76,6 +87,9 @@ class Highlight:
     score: int = 0
     keywords: list[str] = field(default_factory=list)
     caption: str = ""
+    label: str = ""
+    speaker: str = ""
+    bottom: str = ""
 
 
 def format_transcript(sentences: list[Sentence]) -> str:
@@ -129,7 +143,8 @@ def _ask_claude(client, sentences: list[Sentence], count: int,
         raise RuntimeError("응답이 너무 길어 잘렸습니다. --count를 줄여 보세요.")
     text = next(b.text for b in response.content if b.type == "text")
     return [Highlight(float(h["start"]), float(h["end"]), h["title"].replace("\\n", "\n"),
-                      h["reason"], int(h["score"]), h["keywords"], h["caption"])
+                      h["reason"], int(h["score"]), h["keywords"], h["caption"],
+                      h["label"], h["speaker"], h["bottom"])
             for h in json.loads(text)["highlights"]]
 
 
@@ -193,9 +208,9 @@ def clean(
 
 
 def parse_ranges(text: str) -> list[Highlight]:
-    """'60-120,5:00-5:45=망하는 사장들의/공통점' 형식의 수동 구간 지정.
+    """'60-120,5:00-5:45=망하는 사장님의/{치명적 실수}' 형식의 수동 구간 지정.
 
-    '=' 뒤는 상단 제목(선택)이고, '/'로 두 줄을 나눈다.
+    '=' 뒤는 상단 제목(선택)이고, '/'로 줄을 나누고 {중괄호}로 강조한다.
     """
     def sec(t: str) -> float:
         total = 0.0

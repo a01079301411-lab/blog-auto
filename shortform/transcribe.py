@@ -61,6 +61,35 @@ def _extract_audio(src: str, start: float, end: float, out: str) -> None:
                "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", out])
 
 
+def _load_model(model: str, device: str):
+    from faster_whisper import WhisperModel  # 무거운 import는 필요할 때만
+
+    print(f"  Whisper 모델 불러오는 중: {model}")
+    try:
+        return WhisperModel(model, device=device,
+                            compute_type="int8" if device == "cpu" else "auto")
+    except Exception as e:
+        raise RuntimeError(
+            f"Whisper 모델 '{model}'을 불러오지 못했습니다. 첫 실행 때는 모델을 "
+            f"내려받으므로 인터넷 연결이 필요해요.\n  ({type(e).__name__}: {e})"
+        ) from e
+
+
+def _transcribe_chunk(whisper, path: str, s: float, e: float,
+                      language: str | None, label: str) -> Transcript:
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = os.path.join(tmp, "chunk.wav")
+        _extract_audio(path, s, e, wav)
+        segs, info = whisper.transcribe(
+            wav, language=language, word_timestamps=True, vad_filter=True)
+        chunk = Transcript([], [], info.language)
+        for seg in segs:  # 제너레이터: 순회하면서 인식이 진행된다
+            chunk.sentences.append(Sentence(seg.start + s, seg.end + s, seg.text.strip()))
+            chunk.words.extend(Word(w.start + s, w.end + s, w.word) for w in seg.words or [])
+            print(f"\r{label}  {_fmt(seg.end + s)}", end="", flush=True)
+    return chunk
+
+
 def transcribe(
     path: str,
     *,
@@ -68,6 +97,7 @@ def transcribe(
     language: str | None = "ko",
     cache: str | None = None,
     chunk_minutes: float = 10,
+    device: str = "auto",
 ) -> Transcript:
     """영상의 음성을 텍스트로 변환한다. cache 경로가 있으면 결과를 재사용한다."""
     if cache and os.path.exists(cache):
@@ -86,8 +116,6 @@ def transcribe(
     parts_dir = (cache or os.path.join(tempfile.gettempdir(), "shortform")) + ".parts"
     os.makedirs(parts_dir, exist_ok=True)
 
-    from faster_whisper import WhisperModel  # 무거운 import는 필요할 때만
-
     whisper = None
     sentences: list[Sentence] = []
     words: list[Word] = []
@@ -100,27 +128,20 @@ def transcribe(
             chunk = Transcript.load(part)
             print(f"{label} (저장된 결과 사용)")
         else:
-            if whisper is None:
-                print(f"  Whisper 모델 불러오는 중: {model}")
+            for attempt in range(2):
+                if whisper is None:
+                    whisper = _load_model(model, device)
                 try:
-                    whisper = WhisperModel(model, device="auto", compute_type="auto")
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Whisper 모델 '{model}'을 불러오지 못했습니다. 첫 실행 때는 모델을 "
-                        f"내려받으므로 인터넷 연결이 필요해요.\n  ({type(e).__name__}: {e})"
-                    ) from e
-            with tempfile.TemporaryDirectory() as tmp:
-                wav = os.path.join(tmp, "chunk.wav")
-                _extract_audio(path, s, e, wav)
-                segs, info = whisper.transcribe(
-                    wav, language=language, word_timestamps=True, vad_filter=True)
-                chunk = Transcript([], [], info.language)
-                for seg in segs:  # 제너레이터: 순회하면서 인식이 진행된다
-                    chunk.sentences.append(
-                        Sentence(seg.start + s, seg.end + s, seg.text.strip()))
-                    chunk.words.extend(Word(w.start + s, w.end + s, w.word)
-                                       for w in seg.words or [])
-                    print(f"\r{label}  {_fmt(seg.end + s)}", end="", flush=True)
+                    chunk = _transcribe_chunk(whisper, path, s, e, language, label)
+                    break
+                except RuntimeError as err:
+                    # NVIDIA 그래픽카드는 있는데 CUDA 라이브러리가 없으면 여기서 실패한다
+                    msg = str(err).lower()
+                    if attempt or device == "cpu" or not any(
+                            k in msg for k in ("cuda", "cublas", "cudnn")):
+                        raise
+                    print(f"\n  GPU를 쓸 수 없어 CPU로 바꿔서 다시 시도합니다 ({err})")
+                    device, whisper = "cpu", None
             chunk.save(part)
             done_secs += e - s
             remaining = sum(b - a for a, b in bounds[i:])

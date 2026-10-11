@@ -9,11 +9,6 @@ import tempfile
 
 Segment = tuple[float, float]
 
-SHORTS_W, SHORTS_H = 1080, 1920
-# title/blur 레이아웃에서 원본(16:9) 영상이 놓이는 세로 위치
-VIDEO_H = SHORTS_W * 9 // 16 // 2 * 2  # 606
-VIDEO_TOP = (SHORTS_H - VIDEO_H) // 2
-VIDEO_BOTTOM = VIDEO_TOP + VIDEO_H
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -39,34 +34,11 @@ def _escape_filter_path(path: str) -> str:
     return path.replace(":", r"\:").replace("'", r"\'")
 
 
-def layout_filter(layout: str) -> str:
-    """[v] 입력을 받아 [vl]을 출력하는 레이아웃 필터."""
-    if layout == "original":
-        return "[v]null[vl]"
-    if layout == "crop":
-        return (f"[v]crop='min(iw,ih*9/16)':ih,"
-                f"scale={SHORTS_W}:{SHORTS_H},setsar=1[vl]")
-    # 원본을 가로 1080 상자에 맞춰 화면 가운데에 놓는다
-    fit = (f"scale={SHORTS_W}:{VIDEO_H}:force_original_aspect_ratio=decrease,"
-           f"pad={SHORTS_W}:{VIDEO_H}:(ow-iw)/2:(oh-ih)/2")
-    if layout == "title":  # 검은 배경 + 위 제목 + 아래 자막
-        return f"[v]{fit},pad={SHORTS_W}:{SHORTS_H}:0:{VIDEO_TOP}:black,setsar=1[vl]"
-    if layout == "blur":  # 흐린 배경 + 위 제목 + 아래 자막
-        return (f"[v]split[bg0][fg0];"
-                f"[bg0]scale={SHORTS_W}:{SHORTS_H}:force_original_aspect_ratio=increase,"
-                f"crop={SHORTS_W}:{SHORTS_H},boxblur=20:5,eq=brightness=-0.15[bg];"
-                f"[fg0]{fit}[fg];"
-                f"[bg][fg]overlay=0:{VIDEO_TOP},setsar=1[vl]")
-    raise ValueError(f"알 수 없는 레이아웃: {layout}")
-
-
-def subtitle_style(layout: str, font: str | None) -> str:
-    vertical = layout != "original"
+def subtitle_style(font: str | None) -> str:
+    """가로 원본 영상에 SRT 자막을 입힐 때의 스타일."""
     style = [
-        f"Fontsize={14 if vertical else 18}",
-        "PrimaryColour=&H00FFFFFF", "OutlineColour=&H00000000",
-        "BorderStyle=1", "Outline=2", "Shadow=0", "Bold=1",
-        "Alignment=2", f"MarginV={70 if vertical else 25}",
+        "Fontsize=18", "PrimaryColour=&H00FFFFFF", "OutlineColour=&H00000000",
+        "BorderStyle=1", "Outline=2", "Shadow=0", "Bold=1", "Alignment=2", "MarginV=25",
     ]
     if font:
         style.append(f"FontName={font}")
@@ -78,7 +50,7 @@ def render(
     segments: list[Segment],
     out: str,
     *,
-    layout: str = "original",
+    video_filter: str | None = None,
     srt: str | None = None,
     font: str | None = None,
 ) -> None:
@@ -99,11 +71,11 @@ def render(
         parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
         labels.append(f"[v{i}][a{i}]")
     parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[v][a]")
-    parts.append(layout_filter(layout))
+    parts.append(video_filter or "[v]null[vl]")
     if srt:
         sub = f"[vl]subtitles=filename='{_escape_filter_path(srt)}'"
         if not srt.endswith(".ass"):  # ASS는 파일 안에 스타일이 있다
-            sub += f":force_style='{subtitle_style(layout, font)}'"
+            sub += f":force_style='{subtitle_style(font)}'"
         parts.append(sub + "[vout]")
     else:
         parts.append("[vl]null[vout]")
