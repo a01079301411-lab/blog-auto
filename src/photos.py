@@ -71,7 +71,8 @@ SERVICE_WORDS = {
     "이전설치": ["이전설치", "침대", "에어컨", "가구", "헹거", "행거", "분해", "조립"],
 }
 SHARED_DIR_NAME = "공용"  # 어느 글에나 쓸 수 있는 회사 사진 (창고 전경, 차량, 작업 모습)
-SHARED_COUNT = 4
+SHARED_COUNT = 8  # 공용 사진은 한 글에 이만큼 (소제목 4~6개 x 2장 정도에 맞춤)
+DESCRIBE_BATCH = 10  # AI에게 한 번에 보여주는 사진 수
 
 
 def _group(text):
@@ -113,16 +114,17 @@ def pick(topic):
         if not _matches(info["kind"], topic):
             continue
         files = _images(folder)
-        if files:
-            return {**info, "files": files[:MAX_PHOTOS]}
+        if files:  # 몇 장까지 쓸지는 add_descriptions 가 쓸 수 있는 사진만 세어서 정한다
+            return {**info, "files": files}
 
     names = ", ".join(f.name for f in folders) or "없음"
     log.info("이번 주제(%s)에 맞는 현장 사진 폴더가 없어요. 지금 있는 폴더: %s", topic["topic"], names)
     shared = PHOTO_DIR / SHARED_DIR_NAME
-    if shared.is_dir() and _images(shared):
-        files = random.sample(_images(shared), min(SHARED_COUNT, len(_images(shared))))
-        log.info("공용 사진 폴더에서 %s장을 씁니다.", len(files))
-        return {"folder": shared, "region": "", "kind": "회사 사진", "files": files, "shared": True}
+    files = _images(shared) if shared.is_dir() else []
+    if files:
+        log.info("공용 사진 폴더(%s장)에서 최대 %s장을 골라 씁니다.", len(files), SHARED_COUNT)
+        return {"folder": shared, "region": "", "kind": "회사 사진",
+                "files": random.sample(files, len(files)), "shared": True}  # 매번 순서를 섞는다
     return None
 
 
@@ -163,23 +165,35 @@ def _ask_ai(folder, files):
 
 
 def add_descriptions(photo_set):
-    """사진마다 AI 설명을 붙이고, 쓰면 안 되는 사진(개인정보 등)은 뺀다. 한 번 본 사진은 다시 묻지 않는다."""
+    """사진마다 AI 설명을 붙이고, 쓰면 안 되는 사진(개인정보 등)은 뺀다. 한 번 본 사진은 다시 묻지 않는다.
+    뺀 사진이 있으면 다음 사진으로 채워서, 쓸 수 있는 사진을 최대 장수까지 모은다."""
     if not photo_set:
         return photo_set
+    limit = SHARED_COUNT if photo_set.get("shared") else MAX_PHOTOS
     cache_path = photo_set["folder"] / DESC_FILE
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
-    new = [p for p in photo_set["files"] if p.name not in cache]
-    if new:
-        log.info("AI가 사진 %s장을 보고 있어요...", len(new))
-        try:
-            cache.update(_ask_ai(photo_set["folder"], new))
-            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception as e:  # 실패해도 사진 이름만으로 계속한다
-            log.warning("사진 설명을 만들지 못했어요: %s", e)
-    skipped = [p.name for p in photo_set["files"] if not cache.get(p.name, {}).get("usable", True)]
+    files, skipped = [], []
+    all_files = photo_set["files"]
+    for start in range(0, len(all_files), DESCRIBE_BATCH):
+        batch = all_files[start:start + DESCRIBE_BATCH]
+        new = [p for p in batch if p.name not in cache]
+        if new:
+            log.info("AI가 사진 %s장을 보고 있어요...", len(new))
+            try:
+                cache.update(_ask_ai(photo_set["folder"], new))
+                cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as e:  # 실패해도 사진 이름만으로 계속한다
+                log.warning("사진 설명을 만들지 못했어요: %s", e)
+        for p in batch:
+            if cache.get(p.name, {}).get("usable", True):
+                files.append(p)
+            else:
+                skipped.append(p.name)
+        if len(files) >= limit:
+            break
     if skipped:
         log.info("개인정보가 보이거나 쓰기 어려운 사진은 뺐어요: %s", ", ".join(skipped))
-    files = [p for p in photo_set["files"] if p.name not in skipped]
+    files = files[:limit]
     if not files:
         return None
     return {**photo_set, "files": files,

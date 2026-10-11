@@ -378,8 +378,12 @@ def _link_card_by_toolbar(page, editor, url):
     before = editor.locator(LINK_CARD_COMPONENT).count()
     if not click_first(editor, OGLINK_BUTTON, timeout=2000):
         return False, "링크 버튼 없음"
-    page.wait_for_timeout(800)
-    box = _visible(editor, OGLINK_INPUT)
+    box = None
+    for _ in range(10):  # 처음 여는 링크 창은 늦게 뜰 때가 있어서 최대 5초 기다린다
+        page.wait_for_timeout(500)
+        box = _visible(editor, OGLINK_INPUT)
+        if box is not None:
+            break
     if box is None:
         page.keyboard.press("Escape")
         return False, "주소 입력 칸 없음"
@@ -418,7 +422,8 @@ def insert_link(page, editor, url):
     """내 블로그 다른 글을 링크 카드로 넣는다. '링크' 버튼 → 안 되면 붙여 넣기 순서로 시도한다.
     둘 다 안 되면 그 순간 화면을 logs 폴더에 저장한다."""
     reasons = []
-    for method in (_link_card_by_toolbar, _link_card_by_paste):
+    # 링크 버튼이 첫 번째에 실패하는 경우가 있어서 한 번 더 해 보고, 그래도 안 되면 붙여 넣기
+    for method in (_link_card_by_toolbar, _link_card_by_toolbar, _link_card_by_paste):
         ok, how = method(page, editor, url)
         if ok:
             log.info("내부링크: 카드 생성됨 (%s) %s", how, url)
