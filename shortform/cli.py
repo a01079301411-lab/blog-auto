@@ -138,7 +138,7 @@ def cmd_auto(args) -> None:
 
     argv = ["shorts", args.input, "-o", out,
             "--style", c.get("style", "green"),
-            "-n", c.get("count", "7"),
+            "-n", c.get("count", "10"),
             "--min-len", c.get("min_len", "20"),
             "--max-len", c.get("max_len", "60"),
             "--focus", c.get("focus", "0.5"),

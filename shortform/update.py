@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -18,8 +19,69 @@ ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/{BRANCH}"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 사용자가 고쳐 쓰는 파일은 이미 있으면 덮어쓰지 않는다
+# 사용자가 고쳐 쓰는 파일은 이미 있으면 덮어쓰지 않는다 (settings.ini는 아래에서 병합)
 KEEP = {"settings.ini"}
+
+# 마지막으로 받은 기본 settings.ini. 사용자가 바꾼 값과 기본값을 구분하는 데 쓴다
+SETTINGS_BASE = ".settings_base.ini"
+
+# 병합 기능이 생기기 전에 배포한 settings.ini 값 (기준 파일이 없을 때 사용)
+FIRST_BASE = {
+    "style": "green", "count": "7", "min_len": "20", "max_len": "60",
+    "context": "꼴통사장 권기준 대표의 사업 강의. 창업, 매출, 사장 마인드, 크리에이터로 돈 버는 법",
+    "speaker": "권기준 / 꼴통사장 대표", "focus": "0.5", "model": "small", "font": "",
+}
+
+_LINE = re.compile(r"^(\s*)([A-Za-z_]+)(\s*=\s*)(.*?)\s*$")
+
+
+def _values(text: str) -> dict[str, str]:
+    out = {}
+    for line in text.splitlines():
+        m = _LINE.match(line)
+        if m and not line.lstrip().startswith(("#", ";")):
+            out[m.group(2)] = m.group(4)
+    return out
+
+
+def merge_settings(root: str, shipped: str) -> list[str]:
+    """새로 배포된 기본값을 사용자 settings.ini에 반영한다.
+
+    사용자가 직접 고친 값(이전 기본값과 다른 값)은 건드리지 않고,
+    기본값 그대로인 항목만 새 기본값으로 바꾼다. 새로 생긴 항목은 추가한다.
+    """
+    path = os.path.join(root, "settings.ini")
+    base_path = os.path.join(root, SETTINGS_BASE)
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read()
+    try:
+        with open(base_path, encoding="utf-8") as f:
+            base = _values(f.read())
+    except FileNotFoundError:
+        base = FIRST_BASE
+    new = _values(shipped)
+    mine = _values(text)
+
+    changed = []
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        m = _LINE.match(line)
+        if not m or line.lstrip().startswith(("#", ";")):
+            continue
+        key, value = m.group(2), m.group(4)
+        if key in new and value == base.get(key) and value != new[key]:
+            lines[i] = f"{m.group(1)}{key}{m.group(3)}{new[key]}"
+            changed.append(f"{key}: {value} → {new[key]}")
+    for key in new.keys() - mine.keys():  # 새로 생긴 설정
+        lines.append(f"{key} = {new[key]}")
+        changed.append(f"{key} = {new[key]} (새 설정)")
+
+    if changed:
+        with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+            f.write("\n".join(lines) + "\n")
+    with open(base_path, "w", encoding="utf-8") as f:
+        f.write(shipped)
+    return changed
 
 
 def update(root: str = ROOT, url: str = ZIP_URL) -> list[str]:
@@ -38,6 +100,9 @@ def update(root: str = ROOT, url: str = ZIP_URL) -> list[str]:
                 continue
             dest = os.path.join(root, *rel.split("/"))
             if rel in KEEP and os.path.exists(dest):
+                if rel == "settings.ini":
+                    shipped = zf.read(info).decode("utf-8-sig").replace("\r\n", "\n")
+                    changed += [f"settings.ini ({c})" for c in merge_settings(root, shipped)]
                 continue
             new = zf.read(info)
             try:

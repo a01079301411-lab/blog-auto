@@ -5,3 +5,4 @@ shorts_out/
 *.mp4
 *.srt
 *.transcript.json
+.settings_base.ini
