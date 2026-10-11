@@ -1,0 +1,18 @@
+# 비밀 정보 — 절대 올리면 안 됨
+.env
+browser_profile/
+
+# 실행할 때 생기는 파일
+output/
+logs/
+photos/
+data/history.json
+data/links_cache.json
+backup/
+.update_state.json
+*.새버전
+posts/
+
+__pycache__/
+*.pyc
+.venv/
