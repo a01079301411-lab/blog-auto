@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import warnings
 from dataclasses import asdict, dataclass
 
 from . import media
@@ -62,6 +63,12 @@ def _extract_audio(src: str, start: float, end: float, out: str) -> None:
 
 
 def _load_model(model: str, device: str):
+    # Windows에서 모델을 내려받을 때 나오는 영어 경고(심볼릭 링크, 비로그인 다운로드)는
+    # 동작에 문제가 없으므로 숨긴다
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+    warnings.filterwarnings("ignore", module="huggingface_hub")
+
     from faster_whisper import WhisperModel  # 무거운 import는 필요할 때만
 
     print(f"  Whisper 모델 불러오는 중: {model} (처음엔 모델 내려받기로 몇 분 걸려요)", flush=True)
