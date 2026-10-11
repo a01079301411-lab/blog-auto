@@ -5,7 +5,9 @@
   ├─ 2026-10-01_수성구_보관이사/   ← 날짜_지역_작업종류 (폴더 이름만 규칙대로)
   │   ├─ IMG_1234.jpg             ← 사진 파일 이름은 아무거나 괜찮다. AI가 사진을 보고 무슨 사진인지 알아낸다.
   │   └─ ...
-  ├─ 공용/                         ← 어느 글에나 쓸 수 있는 회사 사진 (맞는 현장 폴더가 없을 때 사용)
+  ├─ 공용/                         ← 맞는 현장 폴더가 없을 때 쓰는 회사 사진
+  │   ├─ 보관이사/  포장이사/  사무실관공서/  이전설치/   ← 글 종류별로 나눈 사진 (먼저 여기서 고름)
+  │   └─ (공용 폴더 바로 안의 사진)                       ← 종류별 폴더가 비었을 때 사용
   └─ 사용완료/                     ← 다 쓴 폴더는 프로그램이 여기로 옮긴다
 """
 import base64
@@ -72,6 +74,8 @@ SERVICE_WORDS = {
 }
 SHARED_DIR_NAME = "공용"  # 어느 글에나 쓸 수 있는 회사 사진 (창고 전경, 차량, 작업 모습)
 SHARED_COUNT = 6  # 공용 사진은 한 글에 이만큼
+# 공용 폴더 안에 글 종류별로 나눈 폴더. 폴더 이름 -> 서비스 묶음은 SERVICE_WORDS 로 알아본다
+SHARED_SECTORS = ["보관이사", "포장이사", "사무실관공서", "이전설치"]
 DESCRIBE_BATCH = 10  # AI에게 한 번에 보여주는 사진 수
 
 
@@ -120,11 +124,23 @@ def pick(topic):
     names = ", ".join(f.name for f in folders) or "없음"
     log.info("이번 주제(%s)에 맞는 현장 사진 폴더가 없어요. 지금 있는 폴더: %s", topic["topic"], names)
     shared = PHOTO_DIR / SHARED_DIR_NAME
-    files = _images(shared) if shared.is_dir() else []
+    if not shared.is_dir():
+        return None
+    for name in SHARED_SECTORS:  # 종류별 폴더가 없으면 만들어 둔다 (사장님이 사진만 넣으면 되게)
+        (shared / name).mkdir(exist_ok=True)
+    topic_group = topic["section"].split(" ")[0] if topic.get("section") else None
+    for sector in sorted(f for f in shared.iterdir() if f.is_dir()):
+        files = _images(sector)
+        if files and _group(sector.name) == topic_group:
+            log.info("공용/%s 폴더(%s장)에서 최대 %s장을 골라 씁니다.", sector.name, len(files), SHARED_COUNT)
+            return {"folder": sector, "region": "", "kind": sector.name,
+                    "files": random.sample(files, len(files)), "shared": True}  # 매번 순서를 섞는다
+    files = _images(shared)
     if files:
-        log.info("공용 사진 폴더(%s장)에서 최대 %s장을 골라 씁니다.", len(files), SHARED_COUNT)
+        log.info("공용 안에 이 주제 종류 폴더 사진이 없어서, 공용 폴더(%s장)에서 최대 %s장을 골라 씁니다.",
+                 len(files), SHARED_COUNT)
         return {"folder": shared, "region": "", "kind": "회사 사진",
-                "files": random.sample(files, len(files)), "shared": True}  # 매번 순서를 섞는다
+                "files": random.sample(files, len(files)), "shared": True}
     return None
 
 
