@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+shorts_out/
+*.mp4
+*.srt
+*.transcript.json
