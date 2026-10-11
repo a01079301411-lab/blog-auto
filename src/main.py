@@ -101,6 +101,7 @@ def save_pending(topic, photo_set, related, post, blocks):
         "photo_set": None if not photo_set else {
             "folder": str(photo_set["folder"]), "region": photo_set["region"],
             "kind": photo_set["kind"], "files": [str(f) for f in photo_set["files"]],
+            "shared": bool(photo_set.get("shared")),
         },
     }
     PENDING_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

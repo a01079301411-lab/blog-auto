@@ -5,12 +5,14 @@
   ├─ 2026-10-01_수성구_보관이사/   ← 날짜_지역_작업종류 (폴더 이름만 규칙대로)
   │   ├─ IMG_1234.jpg             ← 사진 파일 이름은 아무거나 괜찮다. AI가 사진을 보고 무슨 사진인지 알아낸다.
   │   └─ ...
+  ├─ 공용/                         ← 어느 글에나 쓸 수 있는 회사 사진 (맞는 현장 폴더가 없을 때 사용)
   └─ 사용완료/                     ← 다 쓴 폴더는 프로그램이 여기로 옮긴다
 """
 import base64
 import io
 import json
 import logging
+import random
 import shutil
 
 from PIL import Image, ImageOps
@@ -61,29 +63,66 @@ def _folder_info(folder):
     }
 
 
+# 폴더 작업종류 이름이 어느 서비스 묶음인지 알아보는 말들 (topics.md 섹션 이름 맨 앞 단어와 같다)
+SERVICE_WORDS = {
+    "보관이사": ["보관", "창고"],
+    "포장이사": ["포장", "가정", "일반이사", "원룸", "아파트", "반포장"],
+    "기업이사": ["사무실", "관공서", "공공기관", "청사", "기관", "기업", "학원", "병원", "학교", "회사"],
+    "이전설치": ["이전설치", "침대", "에어컨", "가구", "헹거", "행거", "분해", "조립"],
+}
+SHARED_DIR_NAME = "공용"  # 어느 글에나 쓸 수 있는 회사 사진 (창고 전경, 차량, 작업 모습)
+SHARED_COUNT = 4
+
+
+def _group(text):
+    for group, words in SERVICE_WORDS.items():
+        if any(w in text for w in words):
+            return group
+    return None
+
+
 def _matches(kind, topic):
-    """폴더 작업종류(보관이사, 포장이사, 이전설치 ...)가 주제와 맞는지."""
+    """폴더 작업종류(보관이사, 사무실이사, 관공서이전 ...)가 주제와 맞는지."""
     if not kind:
         return False
     text = topic["topic"] + topic["keyword"] + topic["section"]
     short = kind.replace("이사", "")  # '보관이사' 폴더는 '실내보관' 주제와도 맞게
-    return kind in text or (len(short) >= 2 and short in text)
+    if kind in text or (len(short) >= 2 and short in text):
+        return True
+    # 서비스 묶음으로 비교: '관공서이전' 폴더는 '기업이사' 주제와 맞는다
+    topic_group = topic["section"].split(" ")[0] if topic.get("section") else None
+    return topic_group in SERVICE_WORDS and _group(kind) == topic_group
+
+
+def _images(folder):
+    return sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTS)
 
 
 def pick(topic):
-    """주제에 맞는 안 쓴 사진 폴더를 고른다. 맞는 폴더가 없으면 None (아무 사진이나 넣지 않음)."""
+    """주제에 맞는 안 쓴 현장 폴더를 고른다.
+    없으면 '공용' 폴더에서 몇 장을 고른다. 그것도 없으면 None (아무 사진이나 넣지 않음)."""
     if not PHOTO_DIR.is_dir():
+        log.info("사진 폴더를 찾지 못했어요: %s (.env의 PHOTO_DIR 확인)", PHOTO_DIR)
         return None
     folders = sorted(
-        f for f in PHOTO_DIR.iterdir() if f.is_dir() and f.name != USED_DIR_NAME
+        f for f in PHOTO_DIR.iterdir()
+        if f.is_dir() and f.name not in (USED_DIR_NAME, SHARED_DIR_NAME)
     )
     for folder in folders:  # 날짜가 이름 앞에 있어서 오래된 폴더부터
         info = _folder_info(folder)
         if not _matches(info["kind"], topic):
             continue
-        files = sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTS)
+        files = _images(folder)
         if files:
             return {**info, "files": files[:MAX_PHOTOS]}
+
+    names = ", ".join(f.name for f in folders) or "없음"
+    log.info("이번 주제(%s)에 맞는 현장 사진 폴더가 없어요. 지금 있는 폴더: %s", topic["topic"], names)
+    shared = PHOTO_DIR / SHARED_DIR_NAME
+    if shared.is_dir() and _images(shared):
+        files = random.sample(_images(shared), min(SHARED_COUNT, len(_images(shared))))
+        log.info("공용 사진 폴더에서 %s장을 씁니다.", len(files))
+        return {"folder": shared, "region": "", "kind": "회사 사진", "files": files, "shared": True}
     return None
 
 
@@ -179,7 +218,7 @@ def prepare_upload(path):
 
 
 def mark_used(photo_set):
-    if not photo_set:
+    if not photo_set or photo_set.get("shared"):  # 공용 사진은 계속 다시 쓴다
         return
     used_dir = PHOTO_DIR / USED_DIR_NAME
     used_dir.mkdir(exist_ok=True)
