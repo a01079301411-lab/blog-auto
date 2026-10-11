@@ -122,15 +122,77 @@ def dump_style(style: Style) -> str:
 
 # ---------- 영상 배치 (FFmpeg 필터) ----------
 
-def video_filter(style: Style, focus: float = 0.5) -> str:
-    """[v] 입력 → [vl] 출력. focus는 좌우로 잘라낼 때 남길 위치 (0=왼쪽, 1=오른쪽)."""
+def _piecewise(points: list[tuple[float, float]], var: str = "t") -> str:
+    """(시간, 값) 점들을 잇는 꺾은선을 FFmpeg 수식으로 만든다 (중첩 없이 구간별 합)."""
+    if len(points) == 1:
+        return f"{points[0][1]:.4f}"
+    terms = [f"lt({var},{points[0][0]:.3f})*{points[0][1]:.4f}"]
+    for (t0, v0), (t1, v1) in zip(points, points[1:]):
+        if t1 <= t0:
+            continue
+        slope = (v1 - v0) / (t1 - t0)
+        terms.append(f"gte({var},{t0:.3f})*lt({var},{t1:.3f})*({v0:.4f}+{slope:.5f}*({var}-{t0:.3f}))")
+    terms.append(f"gte({var},{points[-1][0]:.3f})*{points[-1][1]:.4f}")
+    return "+".join(terms)
+
+
+def _simplify(points: list[tuple[float, float]], tol: float = 0.004) -> list[tuple[float, float]]:
+    """거의 일직선인 중간 점은 빼서 수식을 짧게 한다."""
+    if len(points) <= 2:
+        return points
+    out = [points[0]]
+    for prev, cur, nxt in zip(points, points[1:], points[2:]):
+        (t0, v0), (t1, v1), (t2, v2) = out[-1], cur, nxt
+        expect = v0 + (v2 - v0) * (t1 - t0) / (t2 - t0) if t2 > t0 else v1
+        if abs(v1 - expect) > tol:
+            out.append(cur)
+    out.append(points[-1])
+    return out
+
+
+ZOOM_AMOUNT = 0.12   # 핵심 단어에서 12% 확대
+ZOOM_IN, ZOOM_HOLD, ZOOM_OUT = 0.12, 0.9, 0.35
+
+
+def _zoom_expr(times: list[float], var: str = "it") -> str:
+    terms = []
+    for a in times:
+        b, c, d = a + ZOOM_IN, a + ZOOM_IN + ZOOM_HOLD, a + ZOOM_IN + ZOOM_HOLD + ZOOM_OUT
+        terms.append(f"gte({var},{a:.3f})*lt({var},{b:.3f})*({var}-{a:.3f})/{ZOOM_IN}")
+        terms.append(f"gte({var},{b:.3f})*lt({var},{c:.3f})")
+        terms.append(f"gte({var},{c:.3f})*lt({var},{d:.3f})*(1-({var}-{c:.3f})/{ZOOM_OUT})")
+    return f"1+{ZOOM_AMOUNT}*(" + "+".join(terms) + ")"
+
+
+def video_filter(
+    style: Style,
+    focus: float = 0.5,
+    *,
+    path: list[tuple[float, float]] | None = None,
+    zooms: list[float] | None = None,
+    fps: str = "30",
+) -> str:
+    """[v] 입력 → [vl] 출력.
+
+    focus: 좌우로 잘라낼 때 남길 위치 (0=왼쪽, 1=오른쪽).
+    path: (숏폼 시간, 얼굴 가운데 x 비율) 목록. 있으면 화면이 얼굴을 따라간다.
+    zooms: 확대 효과를 줄 시간(초) 목록.
+    """
     bw, bh = W, style.video_height
     if style.video_fit == "fill":
+        if path:
+            c = _piecewise(_simplify(path))
+            x = f"'clip(({c})*iw-ow/2,0,iw-ow)'"
+        else:
+            x = f"(iw-{bw})*{focus:.3f}"
         box = (f"scale={bw}:{bh}:force_original_aspect_ratio=increase,"
-               f"crop={bw}:{bh}:(iw-{bw})*{focus:.3f}:(ih-{bh})/2")
+               f"crop={bw}:{bh}:{x}:(ih-{bh})/2")
     else:
         box = (f"scale={bw}:{bh}:force_original_aspect_ratio=decrease,"
                f"pad={bw}:{bh}:(ow-iw)/2:(oh-ih)/2")
+    if zooms:
+        box += (f",zoompan=z='{_zoom_expr(zooms)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2'"
+                f":d=1:s={bw}x{bh}:fps={fps}")
     if bh >= H:
         return f"[v]{box},setsar=1[vl]"
     if style.background == "blur":

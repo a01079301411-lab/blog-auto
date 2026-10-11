@@ -2,14 +2,20 @@
 from __future__ import annotations
 
 import argparse
+import glob
+import json
 import os
+import random
 import re
 import sys
+from dataclasses import asdict
 
 from . import media
+from . import face, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
 from .styles import PRESETS, dump_style, load_style, video_filter, write_ass
+from .subfix import fix_cues
 from .subtitles import build_cues, remap, words_in_range, write_srt
 from .transcribe import transcribe
 
@@ -35,6 +41,40 @@ def _get_transcript(args, path: str, workdir: str):
                       device=args.device)
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+AUDIO_EXT = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")
+
+
+def _audio_files(folder: str) -> list[str]:
+    if not folder or not os.path.isdir(folder):
+        return []
+    return sorted(f for f in glob.glob(os.path.join(folder, "*"))
+                  if f.lower().endswith(AUDIO_EXT))
+
+
+def _to_output_time(t: float, keeps: list[media.Segment]) -> float | None:
+    """원본 시간 → 무음을 잘라낸 숏폼 시간. 잘려나간 곳이면 None."""
+    offset = 0.0
+    for s, e in keeps:
+        if s <= t <= e:
+            return offset + t - s
+        offset += e - s
+    return None
+
+
+def _zoom_times(cues, keywords: list[str], *, gap: float = 3.0, limit: int = 4) -> list[float]:
+    """핵심 단어가 나오는 자막 시작 시간. 너무 자주 확대하지 않게 간격을 둔다."""
+    kws = [k.replace(" ", "") for k in keywords if k.strip()]
+    times: list[float] = []
+    for c in cues:
+        if any(k in c.text.replace(" ", "") for k in kws):
+            if c.start >= 0.3 and (not times or c.start - times[-1] >= gap):
+                times.append(c.start)
+        if len(times) == limit:
+            break
+    return times
+
+
 def _render_clip(args, src, start, end, out, transcript, style=None,
                  highlight: Highlight | None = None) -> None:
     """style이 None이면 원본 비율 그대로, 있으면 세로 숏폼으로 만든다."""
@@ -44,24 +84,80 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     kept = sum(e - s for s, e in keeps)
     print(f"  {_hms(end - start)} → {_hms(kept)} (무음 {_hms(end - start - kept)} 제거, "
           f"{len(keeps)}개 조각)")
-    cues = []
-    if transcript is not None:
-        cues = build_cues(remap(words_in_range(transcript.words, start, end), keeps),
-                          max_chars=args.max_chars)
+    words = remap(words_in_range(transcript.words, start, end), keeps) if transcript else []
+
     if style is None:
         subs = None
         if transcript is not None:
             subs = os.path.splitext(out)[0] + ".srt"
-            write_srt(cues, subs)
+            write_srt(build_cues(words, max_chars=args.max_chars), subs)
         media.render_long(src, keeps, out, srt=subs, font=args.font)
-    else:
-        h = highlight or Highlight(start, end, "")
-        subs = os.path.splitext(out)[0] + ".ass"
-        write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
-                  speaker=args.speaker or h.speaker, bottom=h.bottom, keywords=h.keywords)
-        media.render_long(src, keeps, out, video_filter=video_filter(style, args.focus),
-                          srt=subs)
+        print(f"  저장: {out}")
+        return
+
+    h = highlight or Highlight(start, end, "")
+    speaker = args.speaker or h.speaker
+
+    # 1) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식)
+    cues = None
+    if words and args.fix_subtitles:
+        print("  자막 다듬는 중 (오타 교정·줄 나누기)...")
+        cues = fix_cues(words, max_chars=args.max_chars,
+                        context=" ".join(filter(None, [args.context, speaker])))
+    if cues is None:
+        cues = build_cues(words, max_chars=args.max_chars)
+
+    # 2) 얼굴 따라가기
+    samples, path = [], None
+    if args.focus == "auto" and style.video_fit == "fill":
+        print("  얼굴 위치 찾는 중...")
+        try:
+            samples = face.detect(src, start, end)
+        except Exception as e:  # 얼굴 인식이 안 되면 가운데로
+            print(f"  (얼굴 따라가기 건너뜀: {e})")
+        mapped = [(ot, x, size) for t, x, size in samples
+                  if (ot := _to_output_time(t, keeps)) is not None]
+        if any(x is not None for _, x, _ in mapped):
+            path = face.smooth_path(mapped)
+    focus = 0.5 if args.focus == "auto" else float(args.focus)
+
+    # 3) 핵심 단어에서 확대 + 효과음
+    zooms = _zoom_times(cues, h.keywords) if args.zoom else []
+    sfx = None
+    if zooms and args.sfx:
+        mine = _audio_files(os.path.join(ROOT, "sfx"))
+        sfx = random.choice(mine) if mine else os.path.join(ROOT, "shortform", "assets", "whoosh.wav")
+
+    # 4) 배경음악
+    bgm = None
+    tracks = _audio_files(args.bgm)
+    if tracks:
+        bgm = tracks[args.clip_index % len(tracks)]  # 숏폼마다 돌아가며 사용
+        print(f"  배경음악: {os.path.basename(bgm)}")
+
+    subs = os.path.splitext(out)[0] + ".ass"
+    write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
+              speaker=speaker, bottom=h.bottom, keywords=h.keywords)
+    vf = video_filter(style, focus, path=path, zooms=zooms, fps=media.frame_rate(src))
+    media.render(src, keeps, out, video_filter=vf, srt=subs,
+                 bgm=bgm, bgm_volume=args.bgm_volume, sfx=sfx, sfx_times=zooms)
     print(f"  저장: {out}")
+
+    # 5) 썸네일: 얼굴이 가장 크게 잡힌 장면 + 제목
+    if args.thumbnail:
+        t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
+        x = next((x for st, x, _ in samples if st >= t and x is not None), None)
+        thumb_ass = os.path.splitext(out)[0] + ".thumb.ass"
+        write_ass(thumb_ass, style, [], duration=1, title=h.title, label=h.label)
+        tvf = video_filter(style, focus, path=[(0.0, x)] if x is not None else None)
+        thumb = os.path.splitext(out)[0] + ".jpg"
+        try:
+            media.snapshot(src, t, thumb, video_filter=tvf, ass=thumb_ass)
+            print(f"  썸네일: {thumb}")
+        except RuntimeError as e:
+            print(f"  (썸네일 만들기 실패: {e})")
+        finally:
+            os.remove(thumb_ass)
 
 
 def cmd_silence(args) -> None:
@@ -87,6 +183,23 @@ def _safe_name(text: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", text).strip("_")[:40] or "clip"
 
 
+def _load_picks(path: str, count: int) -> list[Highlight] | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+    if data.get("count") != count:
+        return None  # 개수 설정이 바뀌었으면 새로 고른다
+    return [Highlight(**h) for h in data["highlights"]]
+
+
+def _save_picks(path: str, count: int, highlights: list[Highlight]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"count": count, "highlights": [asdict(h) for h in highlights]},
+                  f, ensure_ascii=False, indent=1)
+
+
 def cmd_shorts(args) -> None:
     style = load_style(args.style, font=args.font)
     os.makedirs(args.output, exist_ok=True)
@@ -94,24 +207,39 @@ def cmd_shorts(args) -> None:
     need_transcript = not args.no_subtitles or not args.ranges
     transcript = _get_transcript(args, args.input, args.output) if need_transcript else None
 
+    picks_path = os.path.join(args.output, "highlights.json")
     if args.ranges:
         highlights = parse_ranges(args.ranges)
+    elif (highlights := _load_picks(picks_path, args.count)) is not None:
+        print(f"[하이라이트] 지난번에 고른 {len(highlights)}개를 다시 써요. "
+              f"(새로 고르려면 결과 폴더의 highlights.json을 지우세요)")
     else:
         print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
         highlights = pick_highlights(transcript.sentences, count=args.count,
                                      min_len=args.min_len, max_len=args.max_len,
                                      context=args.context or "")
+        _save_picks(picks_path, args.count, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
 
-    for i, h in enumerate(highlights, 1):
+    numbered = list(enumerate(highlights, 1))
+    if args.review:
+        chosen = review.review(os.path.join(args.output, "숏폼_고르기.txt"), highlights)
+        _save_picks(picks_path, args.count, highlights)  # 고친 제목·구간도 저장
+        numbered = [(i, h) for i, h in numbered if h in chosen]
+        if not numbered:
+            sys.exit("고른 숏폼이 없어요.")
+
+    made = []
+    for n, (i, h) in enumerate(numbered, 1):
         h.start, h.end = max(0.0, h.start), min(total, h.end)
         name = h.title.replace("\n", " ").replace("{", "").replace("}", "") or f"clip{i}"
         score = f"  점수 {h.score}/10" if h.score else ""
-        print(f"\n[{i}/{len(highlights)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
+        print(f"\n[{n}/{len(numbered)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
         if h.reason:
             print(f"  이유: {h.reason}")
         out = os.path.join(args.output, f"{i:02}_{_safe_name(name)}.mp4")
+        args.clip_index = i - 1
         _render_clip(args, args.input, h.start, h.end, out,
                      None if args.no_subtitles else transcript, style, h)
         if h.caption or h.title:
@@ -120,6 +248,42 @@ def cmd_shorts(args) -> None:
                         f"[하단 문구] {h.bottom}\n\n[업로드 설명]\n{h.caption}\n\n"
                         f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
                         f"[선정 이유] {h.reason}\n")
+        made.append((out, h))
+
+    if args.upload != "no":
+        _upload_all(args.output, made, args.upload)
+
+
+def _upload_all(folder: str, made: list[tuple[str, Highlight]], privacy: str) -> None:
+    from . import youtube
+
+    log_path = os.path.join(folder, "uploaded.json")
+    try:
+        with open(log_path, encoding="utf-8") as f:
+            done = json.load(f)
+    except (FileNotFoundError, ValueError):
+        done = {}
+    print(f"\n[유튜브 업로드] {len(made)}개 ({privacy})")
+    for out, h in made:
+        key = os.path.basename(out)
+        if key in done:
+            print(f"  이미 올림: {key} → {done[key]}")
+            continue
+        print(f"  {key}")
+        try:
+            url = youtube.upload(out, title=h.title or key, description=h.caption,
+                                 privacy=privacy, thumbnail=os.path.splitext(out)[0] + ".jpg")
+        except Exception as e:
+            msg = str(e)
+            if "quotaExceeded" in msg or "uploadLimitExceeded" in msg:
+                print("  오늘 업로드 한도를 다 썼어요. 내일 같은 영상을 다시 끌어다 놓으면 "
+                      "남은 것만 올려요.")
+                break
+            raise RuntimeError(f"유튜브 업로드 실패: {e}") from e
+        done[key] = url
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(done, f, ensure_ascii=False, indent=1)
+        print(f"  → {url}")
 
 
 SETTINGS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -141,8 +305,16 @@ def cmd_auto(args) -> None:
             "-n", c.get("count", "10"),
             "--min-len", c.get("min_len", "20"),
             "--max-len", c.get("max_len", "60"),
-            "--focus", c.get("focus", "0.5"),
-            "--model", c.get("model", "small")]
+            "--focus", c.get("focus", "auto"),
+            "--model", c.get("model", "small"),
+            "--fix-subtitles", c.get("fix_subtitles", "yes"),
+            "--review", c.get("review", "yes"),
+            "--zoom", c.get("zoom", "yes"),
+            "--sfx", c.get("sfx", "yes"),
+            "--bgm", os.path.join(ROOT, "bgm"),
+            "--bgm-volume", c.get("bgm_volume", "0.15"),
+            "--thumbnail", c.get("thumbnail", "yes"),
+            "--upload", c.get("upload", "no")]
     for key in ("context", "speaker", "font"):
         if c.get(key, "").strip():
             argv += [f"--{key}", c[key].strip()]
@@ -156,6 +328,24 @@ def cmd_auto(args) -> None:
 
 def cmd_style(args) -> None:
     print(dump_style(load_style(args.name)))
+
+
+def _yesno(v: str) -> bool:
+    v = str(v).strip().lower()
+    if v in ("yes", "y", "true", "1", "on", "예", "네", "o"):
+        return True
+    if v in ("no", "n", "false", "0", "off", "아니오", "아니요", "x"):
+        return False
+    raise argparse.ArgumentTypeError(f"yes 또는 no로 적어 주세요: {v}")
+
+
+def _focus(v: str) -> str | float:
+    if str(v).strip().lower() == "auto":
+        return "auto"
+    try:
+        return min(max(float(v), 0.0), 1.0)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"auto 또는 0~1 숫자로 적어 주세요: {v}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -195,9 +385,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--style", default="green",
                    help="디자인: " + ", ".join(PRESETS) + " 또는 JSON 파일 (기본 green)")
     s.add_argument("--speaker", help="인물 소개 문구 직접 지정. 예: '권기준 / 꼴통사장 대표'")
-    s.add_argument("--focus", type=float, default=0.5,
-                   help="영상을 좌우로 잘라낼 때 남길 위치 0~1 (0.3이면 왼쪽 사람 쪽)")
+    s.add_argument("--focus", type=_focus, default="auto",
+                   help="auto: 얼굴 따라가기 (기본) / 0~1: 고정 위치 (0.3이면 왼쪽)")
     s.add_argument("--no-subtitles", action="store_true", help="자막 안 넣음")
+    s.add_argument("--fix-subtitles", type=_yesno, default=True,
+                   help="Claude로 자막 오타 교정·줄 나누기 yes/no (기본 yes)")
+    s.add_argument("--review", type=_yesno, default=False,
+                   help="만들기 전에 메모장으로 목록을 보고 고르기 yes/no")
+    s.add_argument("--zoom", type=_yesno, default=True, help="핵심 단어에서 화면 확대 yes/no")
+    s.add_argument("--sfx", type=_yesno, default=True, help="확대할 때 효과음 yes/no")
+    s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
+    s.add_argument("--bgm-volume", type=float, default=0.15, help="배경음악 볼륨 0~1")
+    s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
+    s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
+                   help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")
     s.set_defaults(func=cmd_shorts)
 
     s = sub.add_parser("silence", parents=[common], help="영상 전체의 무음 구간 잘라내기")

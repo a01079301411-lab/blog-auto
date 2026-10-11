@@ -42,6 +42,33 @@ def probe(path: str) -> dict:
     return json.loads(out)
 
 
+def frame_rate(path: str) -> str:
+    """원본 영상의 프레임레이트 (예: '30000/1001'). 확대 효과 필터에 넘긴다."""
+    for st in probe(path)["streams"]:
+        if st.get("codec_type") == "video":
+            rate = st.get("avg_frame_rate") or st.get("r_frame_rate") or "30"
+            if rate not in ("0/0", "0"):
+                return rate
+    return "30"
+
+
+def snapshot(src: str, t: float, out: str, *, video_filter: str, ass: str | None = None) -> None:
+    """t초 장면 한 장을 숏폼 화면 구성으로 저장한다 (썸네일용)."""
+    with tempfile.TemporaryDirectory() as work:
+        graph = video_filter.replace("[v]", "[0:v]", 1)
+        if ass:
+            shutil.copyfile(ass, os.path.join(work, "subs.ass"))
+            graph += ";[vl]subtitles=filename=subs.ass[vout]"
+        else:
+            graph += ";[vl]null[vout]"
+        with open(os.path.join(work, "filter.txt"), "w", encoding="utf-8") as f:
+            f.write(graph)
+        run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+             "-ss", f"{max(t, 0):.3f}", "-i", os.path.abspath(src),
+             *filter_script_args("filter.txt"), "-map", "[vout]",
+             "-frames:v", "1", "-q:v", "2", os.path.abspath(out)], cwd=work)
+
+
 def duration(path: str) -> float:
     return float(probe(path)["format"]["duration"])
 
@@ -65,6 +92,11 @@ def render(
     video_filter: str | None = None,
     srt: str | None = None,
     font: str | None = None,
+    bgm: str | None = None,
+    bgm_volume: float = 0.15,
+    sfx: str | None = None,
+    sfx_times: list[float] | None = None,
+    sfx_volume: float = 0.6,
 ) -> None:
     """src에서 segments 구간만 이어붙여 out으로 렌더링한다.
 
@@ -84,6 +116,38 @@ def render(
         labels.append(f"[v{i}][a{i}]")
     parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[v][a]")
     parts.append(video_filter or "[v]null[vl]")
+
+    # 배경음악·효과음 섞기
+    inputs: list[str] = []
+    n_inputs = 1  # 0번은 원본 영상
+    duration = sum(e - s for s, e in segments)
+    mix = ["[a]"]
+    if bgm:
+        idx, n_inputs = n_inputs, n_inputs + 1
+        inputs += ["-stream_loop", "-1", "-i", os.path.abspath(bgm)]
+        fade = max(duration - 1.5, 0)
+        parts.append("[a]asplit[voice][key]")
+        parts.append(f"[{idx}:a]aresample=48000,volume={bgm_volume:.3f},atrim=0:{duration:.3f},"
+                     f"afade=t=in:d=0.5,afade=t=out:st={fade:.3f}:d=1.5[bg0]")
+        # 말할 때 배경음악을 자동으로 줄인다 (사이드체인 덕킹)
+        parts.append("[bg0][key]sidechaincompress=threshold=0.03:ratio=6:attack=30:release=500[bg]")
+        mix = ["[voice]", "[bg]"]
+    if sfx and sfx_times:
+        idx, n_inputs = n_inputs, n_inputs + 1
+        inputs += ["-i", os.path.abspath(sfx)]
+        n = len(sfx_times)
+        outs = "".join(f"[sx{k}]" for k in range(n))
+        parts.append(f"[{idx}:a]aresample=48000,volume={sfx_volume:.3f},asplit={n}{outs}" if n > 1
+                     else f"[{idx}:a]aresample=48000,volume={sfx_volume:.3f}[sx0]")
+        for k, t in enumerate(sfx_times):
+            ms = max(int(t * 1000) - 150, 0)  # 확대 직전에 '휙'
+            parts.append(f"[sx{k}]adelay=delays={ms}:all=1[sd{k}]")
+            mix.append(f"[sd{k}]")
+    if len(mix) > 1:
+        parts.append(f"{''.join(mix)}amix=inputs={len(mix)}:duration=first:normalize=0[aout]")
+        audio_label = "[aout]"
+    else:
+        audio_label = "[a]"
     with tempfile.TemporaryDirectory() as work:
         if srt:
             # 자막 경로를 필터 안에 쓰면 Windows 드라이브 문자(C:)·한글·따옴표 이스케이프가
@@ -103,8 +167,9 @@ def render(
         run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-ss", f"{base:.3f}", "-to", f"{end:.3f}", "-i", os.path.abspath(src),
+            *inputs,
             *filter_script_args("filter.txt"),
-            "-map", "[vout]", "-map", "[a]",
+            "-map", "[vout]", "-map", audio_label,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",

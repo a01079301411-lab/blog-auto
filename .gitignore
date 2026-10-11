@@ -6,3 +6,5 @@ shorts_out/
 *.srt
 *.transcript.json
 .settings_base.ini
+client_secret.json
+youtube_token.json

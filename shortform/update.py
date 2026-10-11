@@ -72,8 +72,14 @@ def merge_settings(root: str, shipped: str) -> list[str]:
         if key in new and value == base.get(key) and value != new[key]:
             lines[i] = f"{m.group(1)}{key}{m.group(3)}{new[key]}"
             changed.append(f"{key}: {value} → {new[key]}")
-    for key in new.keys() - mine.keys():  # 새로 생긴 설정
-        lines.append(f"{key} = {new[key]}")
+    shipped_lines = shipped.splitlines()
+    for key in [k for k in new if k not in mine]:  # 새로 생긴 설정 (설명 주석도 같이)
+        at = next(i for i, ln in enumerate(shipped_lines)
+                  if (m := _LINE.match(ln)) and m.group(2) == key and not ln.lstrip().startswith("#"))
+        start = at
+        while start > 0 and shipped_lines[start - 1].lstrip().startswith(("#", ";")):
+            start -= 1
+        lines += [""] + shipped_lines[start:at + 1]
         changed.append(f"{key} = {new[key]} (새 설정)")
 
     if changed:
