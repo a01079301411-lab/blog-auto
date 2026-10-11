@@ -64,7 +64,7 @@ def _extract_audio(src: str, start: float, end: float, out: str) -> None:
 def _load_model(model: str, device: str):
     from faster_whisper import WhisperModel  # 무거운 import는 필요할 때만
 
-    print(f"  Whisper 모델 불러오는 중: {model}")
+    print(f"  Whisper 모델 불러오는 중: {model} (처음엔 모델 내려받기로 몇 분 걸려요)", flush=True)
     try:
         return WhisperModel(model, device=device,
                             compute_type="int8" if device == "cpu" else "auto")
@@ -107,7 +107,9 @@ def transcribe(
     total = media.duration(path)
     chunk_len = chunk_minutes * 60
     if total > chunk_len * 1.5:
-        print("  긴 영상이라 무음 지점을 기준으로 나눠서 인식합니다...")
+        print("  긴 영상이라 무음 지점을 기준으로 나눠서 인식합니다.")
+        print(f"  오디오 전체를 훑는 중... (영상 {_fmt(total)} 기준 몇 분 걸려요. "
+              "화면이 멈춰 보여도 진행 중이에요)", flush=True)
         cuts = split_points(detect_silences(path, min_silence=0.3), total, chunk_len)
     else:
         cuts = []
