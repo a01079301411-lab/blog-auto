@@ -13,7 +13,10 @@ import subprocess
 import tempfile
 import time
 import warnings
+import wave
 from dataclasses import asdict, dataclass
+
+import numpy as np
 
 from . import media
 from .silence import detect_silences, split_points
@@ -62,6 +65,13 @@ def _extract_audio(src: str, start: float, end: float, out: str) -> None:
                "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", out])
 
 
+def _read_wav(path: str) -> np.ndarray:
+    """16kHz 모노 16비트 WAV → Whisper가 받는 float32 배열."""
+    with wave.open(path, "rb") as w:
+        data = w.readframes(w.getnframes())
+    return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def _load_model(model: str, device: str):
     # Windows에서 모델을 내려받을 때 나오는 영어 경고(심볼릭 링크, 비로그인 다운로드)는
     # 동작에 문제가 없으므로 숨긴다
@@ -87,8 +97,10 @@ def _transcribe_chunk(whisper, path: str, s: float, e: float,
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "chunk.wav")
         _extract_audio(path, s, e, wav)
+        # 파일 경로 대신 오디오 데이터를 넘긴다. 경로를 주면 faster-whisper가 PyAV로
+        # 파일을 여는데, PyAV 16 이상과 faster-whisper 1.2.1이 서로 맞지 않아 실패한다
         segs, info = whisper.transcribe(
-            wav, language=language, word_timestamps=True, vad_filter=True)
+            _read_wav(wav), language=language, word_timestamps=True, vad_filter=True)
         chunk = Transcript([], [], info.language)
         for seg in segs:  # 제너레이터: 순회하면서 인식이 진행된다
             chunk.sentences.append(Sentence(seg.start + s, seg.end + s, seg.text.strip()))
