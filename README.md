@@ -62,14 +62,15 @@
 
 **영상 파일을 `run.bat` 위로 끌어다 놓으면** 끝이에요. 다 되면 결과 폴더(`영상이름_shorts`)가 자동으로 열려요.
 
-설정은 `run.bat`을 **메모장으로 열어서** 맨 위를 바꾸면 돼요.
+설정은 **`settings.ini`를 메모장으로 열어서** 바꾸면 돼요.
 
-```bat
-set STYLE=green
-set COUNT=7
-set CONTEXT=꼴통사장 권기준 대표의 사업 강의. 창업, 매출, 사장 마인드, 크리에이터로 돈 버는 법
-set SPEAKER=권기준 / 꼴통사장 대표
-set MODEL=small
+```ini
+style = green
+count = 7
+context = 꼴통사장 권기준 대표의 사업 강의. 창업, 매출, 사장 마인드, 크리에이터로 돈 버는 법
+speaker = 권기준 / 꼴통사장 대표
+focus = 0.5
+model = small
 ```
 
 ### 결과물
@@ -164,6 +165,7 @@ python -m shortform style green > 내스타일.json
 
 ```
 install.bat / run.bat   Windows 설치·실행
+settings.ini            run.bat 설정
 shortform/
   cli.py          명령줄 인터페이스
   transcribe.py   음성 인식 (faster-whisper, 조각 단위 + 이어하기)

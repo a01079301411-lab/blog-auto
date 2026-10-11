@@ -29,7 +29,8 @@ def detect_silences(
     cmd += ["-i", path, "-vn",
             "-af", f"silencedetect=noise={noise_db}dB:d={min_silence}",
             "-f", "null", "-"]
-    stderr = subprocess.run(cmd, capture_output=True, text=True).stderr
+    stderr = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                            errors="replace").stderr
 
     silences: list[Segment] = []
     cur: float | None = None

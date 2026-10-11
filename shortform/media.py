@@ -1,8 +1,10 @@
 """FFmpeg 호출 헬퍼."""
 from __future__ import annotations
 
+import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,11 +13,27 @@ Segment = tuple[float, float]
 
 
 
-def run(cmd: list[str]) -> subprocess.CompletedProcess:
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+def run(cmd: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
+    # FFmpeg 출력은 UTF-8이다. Windows 기본 인코딩(cp949)으로 읽으면 한글에서 깨진다
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", cwd=cwd)
     if proc.returncode != 0:
         raise RuntimeError(f"명령 실패: {' '.join(cmd[:4])}...\n{proc.stderr[-2000:]}")
     return proc
+
+
+@functools.cache
+def _ffmpeg_major() -> int:
+    out = run(["ffmpeg", "-hide_banner", "-version"]).stdout
+    m = re.search(r"ffmpeg version n?(\d+)\.", out)
+    return int(m.group(1)) if m else 7  # git 빌드 등 버전을 못 읽으면 최신으로 간주
+
+
+def filter_script_args(path: str) -> list[str]:
+    """필터를 파일에서 읽는 옵션. FFmpeg 7부터 '-/filter_complex 파일'로 바뀌었다."""
+    if _ffmpeg_major() >= 7:
+        return ["-/filter_complex", path]
+    return ["-filter_complex_script", path]
 
 
 def probe(path: str) -> dict:
@@ -26,12 +44,6 @@ def probe(path: str) -> dict:
 
 def duration(path: str) -> float:
     return float(probe(path)["format"]["duration"])
-
-
-def _escape_filter_path(path: str) -> str:
-    # 필터 그래프 안에서 쓰는 파일 경로 이스케이프 (Windows 경로의 ':' 포함)
-    path = os.path.abspath(path).replace("\\", "/")
-    return path.replace(":", r"\:").replace("'", r"\'")
 
 
 def subtitle_style(font: str | None) -> str:
@@ -72,32 +84,33 @@ def render(
         labels.append(f"[v{i}][a{i}]")
     parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[v][a]")
     parts.append(video_filter or "[v]null[vl]")
-    if srt:
-        sub = f"[vl]subtitles=filename='{_escape_filter_path(srt)}'"
-        if not srt.endswith(".ass"):  # ASS는 파일 안에 스타일이 있다
-            sub += f":force_style='{subtitle_style(font)}'"
-        parts.append(sub + "[vout]")
-    else:
-        parts.append("[vl]null[vout]")
+    with tempfile.TemporaryDirectory() as work:
+        if srt:
+            # 자막 경로를 필터 안에 쓰면 Windows 드라이브 문자(C:)·한글·따옴표 이스케이프가
+            # 까다로우므로, 영문 이름으로 복사해 두고 그 폴더에서 FFmpeg을 실행한다
+            ext = os.path.splitext(srt)[1]
+            shutil.copyfile(srt, os.path.join(work, "subs" + ext))
+            sub = f"[vl]subtitles=filename=subs{ext}"
+            if ext != ".ass":  # ASS는 파일 안에 스타일이 있다
+                sub += f":force_style='{subtitle_style(font)}'"
+            parts.append(sub + "[vout]")
+        else:
+            parts.append("[vl]null[vout]")
 
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
-                                     encoding="utf-8") as f:
-        f.write(";\n".join(parts))
-        script = f.name
-    try:
+        script = os.path.join(work, "filter.txt")
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(";\n".join(parts))
         run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", f"{base:.3f}", "-to", f"{end:.3f}", "-i", src,
-            "-filter_complex_script", script,
+            "-ss", f"{base:.3f}", "-to", f"{end:.3f}", "-i", os.path.abspath(src),
+            *filter_script_args("filter.txt"),
             "-map", "[vout]", "-map", "[a]",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart",
-            out,
-        ])
-    finally:
-        os.unlink(script)
+            os.path.abspath(out),
+        ], cwd=work)
 
 
 def _group(segments: list[Segment], max_span: float,

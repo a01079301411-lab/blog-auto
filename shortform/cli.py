@@ -122,6 +122,38 @@ def cmd_shorts(args) -> None:
                         f"[선정 이유] {h.reason}\n")
 
 
+SETTINGS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "settings.ini")
+
+
+def cmd_auto(args) -> None:
+    """settings.ini를 읽어 shorts를 실행한다 (run.bat 끌어다 놓기용)."""
+    import configparser
+
+    cfg = configparser.ConfigParser()
+    if not cfg.read(args.settings, encoding="utf-8-sig"):  # 메모장이 붙이는 BOM 처리
+        raise RuntimeError(f"설정 파일을 찾을 수 없어요: {args.settings}")
+    c = cfg["shorts"] if cfg.has_section("shorts") else {}
+    out = os.path.splitext(os.path.abspath(args.input))[0] + "_shorts"
+
+    argv = ["shorts", args.input, "-o", out,
+            "--style", c.get("style", "green"),
+            "-n", c.get("count", "7"),
+            "--min-len", c.get("min_len", "20"),
+            "--max-len", c.get("max_len", "60"),
+            "--focus", c.get("focus", "0.5"),
+            "--model", c.get("model", "small")]
+    for key in ("context", "speaker", "font"):
+        if c.get(key, "").strip():
+            argv += [f"--{key}", c[key].strip()]
+    shorts_args = build_parser().parse_args(argv)
+    shorts_args.func(shorts_args)
+
+    print(f"\n완료! 결과 폴더: {out}")
+    if hasattr(os, "startfile"):  # Windows: 결과 폴더 열기
+        os.startfile(out)
+
+
 def cmd_style(args) -> None:
     print(dump_style(load_style(args.name)))
 
@@ -178,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-o", "--output", help="SRT 저장 경로")
     s.add_argument("--burn", metavar="OUT.mp4", help="자막을 영상에 입혀서 저장")
     s.set_defaults(func=cmd_subtitle)
+    s = sub.add_parser("auto", help="settings.ini 설정으로 숏폼 만들기 (run.bat이 사용)")
+    s.add_argument("input")
+    s.add_argument("--settings", default=SETTINGS)
+    s.set_defaults(func=cmd_auto)
+
     s = sub.add_parser("style", help="스타일 설정을 JSON으로 출력 (내 스타일 만들기용)")
     s.add_argument("name", nargs="?", default="green")
     s.set_defaults(func=cmd_style)
