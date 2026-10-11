@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import re
 import sys
-import tempfile
 
 from . import media
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
-from .subtitles import build_cues, remap, words_in_range, write_srt
+from .subtitles import build_cues, remap, words_in_range, write_ass, write_srt
 from .transcribe import transcribe
 
 
@@ -34,19 +34,34 @@ def _get_transcript(args, path: str, workdir: str):
     return transcribe(path, model=args.model, language=args.language or None, cache=cache)
 
 
-def _render_clip(args, src, start, end, out, transcript, layout) -> None:
+def _default_font() -> str:
+    return {"Windows": "Malgun Gothic", "Darwin": "Apple SD Gothic Neo"}.get(
+        platform.system(), "Noto Sans CJK KR")
+
+
+def _render_clip(args, src, start, end, out, transcript, layout,
+                 highlight: Highlight | None = None) -> None:
     keeps = _cut_ranges(args, src, start, end)
-    kept = sum(e - s for s, e in keeps)
     if not keeps:
         raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
+    kept = sum(e - s for s, e in keeps)
     print(f"  {_hms(end - start)} → {_hms(kept)} (무음 {_hms(end - start - kept)} 제거, "
           f"{len(keeps)}개 조각)")
-    srt = None
+    subs = None
     if transcript is not None:
-        words = remap(words_in_range(transcript.words, start, end), keeps)
-        srt = os.path.splitext(out)[0] + ".srt"
-        write_srt(build_cues(words, max_chars=args.max_chars), srt)
-    media.render_long(src, keeps, out, layout=layout, srt=srt, font=args.font)
+        cues = build_cues(remap(words_in_range(transcript.words, start, end), keeps),
+                          max_chars=args.max_chars)
+        if layout == "original":
+            subs = os.path.splitext(out)[0] + ".srt"
+            write_srt(cues, subs)
+        else:
+            subs = os.path.splitext(out)[0] + ".ass"
+            write_ass(cues, subs, duration=kept, font=args.font,
+                      title=highlight.title if highlight and layout != "crop" else "",
+                      keywords=highlight.keywords if highlight else [],
+                      video_top=media.VIDEO_TOP, video_bottom=media.VIDEO_BOTTOM,
+                      subs_below_video=layout != "crop")
+    media.render_long(src, keeps, out, layout=layout, srt=subs, font=args.font)
     print(f"  저장: {out}")
 
 
@@ -84,19 +99,26 @@ def cmd_shorts(args) -> None:
     else:
         print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
         highlights = pick_highlights(transcript.sentences, count=args.count,
-                                     min_len=args.min_len, max_len=args.max_len)
+                                     min_len=args.min_len, max_len=args.max_len,
+                                     context=args.context or "")
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
 
     for i, h in enumerate(highlights, 1):
         h.start, h.end = max(0.0, h.start), min(total, h.end)
+        name = h.title.replace("\n", " ") or f"clip{i}"
         score = f"  점수 {h.score}/10" if h.score else ""
-        print(f"\n[{i}/{len(highlights)}] {h.title}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
+        print(f"\n[{i}/{len(highlights)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
         if h.reason:
             print(f"  이유: {h.reason}")
-        out = os.path.join(args.output, f"{i:02}_{_safe_name(h.title)}.mp4")
+        out = os.path.join(args.output, f"{i:02}_{_safe_name(name)}.mp4")
         _render_clip(args, args.input, h.start, h.end, out,
-                     None if args.no_subtitles else transcript, args.layout)
+                     None if args.no_subtitles else transcript, args.layout, h)
+        if h.caption or h.title:
+            with open(os.path.splitext(out)[0] + ".txt", "w", encoding="utf-8") as f:
+                f.write(f"[제목]\n{h.title}\n\n[업로드 설명]\n{h.caption}\n\n"
+                        f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
+                        f"[선정 이유] {h.reason}\n")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,8 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--model", default="small",
                    help="Whisper 모델: tiny/base/small/medium/large-v3 (기본 small)")
     g.add_argument("--language", default="ko", help="음성 언어 (기본 ko, 빈 값이면 자동 감지)")
-    g.add_argument("--font", help="자막 폰트 이름 (예: 'NanumGothic', 'Malgun Gothic')")
-    g.add_argument("--max-chars", type=int, default=16, help="자막 한 줄 최대 글자 수")
+    g.add_argument("--font", default=_default_font(),
+                   help="자막 폰트 이름 (기본: Windows 'Malgun Gothic', 예: 'NanumGothic')")
+    g.add_argument("--max-chars", type=int, default=14, help="자막 한 덩어리 최대 글자 수")
 
     p = argparse.ArgumentParser(prog="python -m shortform",
                                 description="롱폼 영상 → 숏폼 하이라이트 자동 편집기")
@@ -127,9 +150,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-n", "--count", type=int, default=3, help="만들 숏폼 개수")
     s.add_argument("--min-len", type=float, default=20, help="클립 최소 길이(초)")
     s.add_argument("--max-len", type=float, default=60, help="클립 최대 길이(초)")
-    s.add_argument("--ranges", help="AI 대신 직접 구간 지정. 예: '60-120,5:00-5:45'")
-    s.add_argument("--layout", choices=["blur", "crop", "original"], default="blur",
-                   help="blur: 흐린 배경 위에 원본 / crop: 가운데 잘라 꽉 채움")
+    s.add_argument("--context",
+                   help="영상 설명 (누가, 무슨 내용인지). 하이라이트·제목 품질이 좋아져요")
+    s.add_argument("--ranges",
+                   help="AI 대신 직접 구간 지정. 예: '1:00-1:45=망하는 사장들의/공통점,5:00-5:40'")
+    s.add_argument("--layout", choices=["title", "blur", "crop", "original"], default="title",
+                   help="title: 검은 배경+위 제목+아래 자막 (기본) / blur: 흐린 배경 / "
+                        "crop: 가운데 잘라 꽉 채움 / original: 원본 비율")
     s.add_argument("--no-subtitles", action="store_true", help="자막 안 넣음")
     s.set_defaults(func=cmd_shorts)
 

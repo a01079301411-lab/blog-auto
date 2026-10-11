@@ -10,6 +10,10 @@ import tempfile
 Segment = tuple[float, float]
 
 SHORTS_W, SHORTS_H = 1080, 1920
+# title/blur 레이아웃에서 원본(16:9) 영상이 놓이는 세로 위치
+VIDEO_H = SHORTS_W * 9 // 16 // 2 * 2  # 606
+VIDEO_TOP = (SHORTS_H - VIDEO_H) // 2
+VIDEO_BOTTOM = VIDEO_TOP + VIDEO_H
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -42,12 +46,17 @@ def layout_filter(layout: str) -> str:
     if layout == "crop":
         return (f"[v]crop='min(iw,ih*9/16)':ih,"
                 f"scale={SHORTS_W}:{SHORTS_H},setsar=1[vl]")
-    if layout == "blur":
+    # 원본을 가로 1080 상자에 맞춰 화면 가운데에 놓는다
+    fit = (f"scale={SHORTS_W}:{VIDEO_H}:force_original_aspect_ratio=decrease,"
+           f"pad={SHORTS_W}:{VIDEO_H}:(ow-iw)/2:(oh-ih)/2")
+    if layout == "title":  # 검은 배경 + 위 제목 + 아래 자막
+        return f"[v]{fit},pad={SHORTS_W}:{SHORTS_H}:0:{VIDEO_TOP}:black,setsar=1[vl]"
+    if layout == "blur":  # 흐린 배경 + 위 제목 + 아래 자막
         return (f"[v]split[bg0][fg0];"
                 f"[bg0]scale={SHORTS_W}:{SHORTS_H}:force_original_aspect_ratio=increase,"
-                f"crop={SHORTS_W}:{SHORTS_H},boxblur=20:5[bg];"
-                f"[fg0]scale={SHORTS_W}:-2[fg];"
-                f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[vl]")
+                f"crop={SHORTS_W}:{SHORTS_H},boxblur=20:5,eq=brightness=-0.15[bg];"
+                f"[fg0]{fit}[fg];"
+                f"[bg][fg]overlay=0:{VIDEO_TOP},setsar=1[vl]")
     raise ValueError(f"알 수 없는 레이아웃: {layout}")
 
 
@@ -92,9 +101,10 @@ def render(
     parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[v][a]")
     parts.append(layout_filter(layout))
     if srt:
-        style = subtitle_style(layout, font)
-        parts.append(f"[vl]subtitles=filename='{_escape_filter_path(srt)}'"
-                     f":force_style='{style}'[vout]")
+        sub = f"[vl]subtitles=filename='{_escape_filter_path(srt)}'"
+        if not srt.endswith(".ass"):  # ASS는 파일 안에 스타일이 있다
+            sub += f":force_style='{subtitle_style(layout, font)}'"
+        parts.append(sub + "[vout]")
     else:
         parts.append("[vl]null[vout]")
 

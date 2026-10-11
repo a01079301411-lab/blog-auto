@@ -3,26 +3,41 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_left, bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .transcribe import Sentence
 
 MODEL = "claude-opus-5-5"
 
 SYSTEM_PROMPT = """\
-You are an experienced short-form video editor (YouTube Shorts, Reels, TikTok).
+You are an experienced short-form video editor (YouTube Shorts, Reels, TikTok) who
+makes viral clips from long talks, lectures and interviews, especially Korean
+business, money and self-improvement content.
 You receive a timestamped transcript of a long-form video and pick the moments that
 would work best as standalone vertical short clips.
 
 A good clip:
 - makes sense on its own without the rest of the video (no dangling "as I said earlier")
-- has a hook in the first 3 seconds: a surprising claim, a question, a strong opinion,
-  a punchline, or a concrete useful tip
+- has a hook in the first 3 seconds: a provocative claim, a blunt opinion, a specific
+  number (money, revenue, years), a common mistake, or a question viewers ask themselves
+- delivers a payoff: a concrete lesson, a punchline, a story with a turn, or a line
+  that viewers will want to argue about or share in the comments
 - ends on a complete thought, not mid-sentence
 - does not overlap with other clips you pick
 
 Use only timestamps that appear in the transcript: start each clip at the start of a
-line and end it at the end of a line. Write the title in the transcript's language.
+line and end it at the end of a line. The transcript comes from speech recognition, so
+infer the intended words when a line is slightly garbled.
+
+For each clip also write, in the transcript's language:
+- title: the hook headline shown above the video, in exactly two short lines separated
+  by "\\n" (each line at most 14 characters). The first line sets up, the second line
+  is the punch, e.g. "망하는 사장들의\\n공통점 1가지". Make people stop scrolling, but
+  do not promise anything the clip does not deliver.
+- keywords: 2-5 words or short phrases that appear verbatim in the clip's speech and
+  carry its impact; they are highlighted in the subtitles.
+- caption: an upload description of 1-2 sentences followed by 3-5 hashtags.
+
 Order the clips from best to worst and score each one honestly."""
 
 SCHEMA = {
@@ -35,12 +50,14 @@ SCHEMA = {
                 "properties": {
                     "start": {"type": "number", "description": "seconds"},
                     "end": {"type": "number", "description": "seconds"},
-                    "title": {"type": "string", "description": "short catchy title"},
+                    "title": {"type": "string", "description": "two-line hook headline"},
+                    "keywords": {"type": "array", "items": {"type": "string"}},
+                    "caption": {"type": "string", "description": "upload description + hashtags"},
                     "reason": {"type": "string", "description": "why this works as a short"},
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title", "reason", "score"],
+                "required": ["start", "end", "title", "keywords", "caption", "reason", "score"],
                 "additionalProperties": False,
             },
         }
@@ -57,6 +74,8 @@ class Highlight:
     title: str
     reason: str = ""
     score: int = 0
+    keywords: list[str] = field(default_factory=list)
+    caption: str = ""
 
 
 def format_transcript(sentences: list[Sentence]) -> str:
@@ -80,7 +99,8 @@ def _windows(sentences: list[Sentence], max_chars: int) -> list[list[Sentence]]:
 
 
 def _ask_claude(client, sentences: list[Sentence], count: int,
-                min_len: float, max_len: float) -> list[Highlight]:
+                min_len: float, max_len: float, context: str) -> list[Highlight]:
+    about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
     # 대본이 길면 응답 대기 시간도 길어지므로 스트리밍으로 받는다
     with client.beta.messages.stream(
         model=MODEL,
@@ -95,7 +115,7 @@ def _ask_claude(client, sentences: list[Sentence], count: int,
         messages=[{
             "role": "user",
             "content": (
-                f"<transcript>\n{format_transcript(sentences)}\n</transcript>\n\n"
+                f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>\n\n"
                 f"Pick up to {count} clips, each between {min_len:.0f} and "
                 f"{max_len:.0f} seconds long."
             ),
@@ -108,8 +128,8 @@ def _ask_claude(client, sentences: list[Sentence], count: int,
     if response.stop_reason == "max_tokens":
         raise RuntimeError("응답이 너무 길어 잘렸습니다. --count를 줄여 보세요.")
     text = next(b.text for b in response.content if b.type == "text")
-    return [Highlight(float(h["start"]), float(h["end"]), h["title"], h["reason"],
-                      int(h["score"]))
+    return [Highlight(float(h["start"]), float(h["end"]), h["title"].replace("\\n", "\n"),
+                      h["reason"], int(h["score"]), h["keywords"], h["caption"])
             for h in json.loads(text)["highlights"]]
 
 
@@ -119,6 +139,7 @@ def pick_highlights(
     count: int = 3,
     min_len: float = 20,
     max_len: float = 60,
+    context: str = "",
 ) -> list[Highlight]:
     import anthropic
 
@@ -130,7 +151,7 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         # 구간별로 넉넉히 뽑은 뒤 점수순으로 전체에서 고른다
         want = count if len(windows) == 1 else min(count, max(3, count // len(windows) + 2))
-        picked += _ask_claude(client, window, want, min_len, max_len)
+        picked += _ask_claude(client, window, want, min_len, max_len, context)
     picked.sort(key=lambda h: -h.score)  # 같은 점수는 Claude가 매긴 순서 유지
     return clean(picked, sentences, count=count, min_len=min_len, max_len=max_len)
 
@@ -172,7 +193,10 @@ def clean(
 
 
 def parse_ranges(text: str) -> list[Highlight]:
-    """'60-120,5:00-5:45' 형식의 수동 구간 지정."""
+    """'60-120,5:00-5:45=망하는 사장들의/공통점' 형식의 수동 구간 지정.
+
+    '=' 뒤는 상단 제목(선택)이고, '/'로 두 줄을 나눈다.
+    """
     def sec(t: str) -> float:
         total = 0.0
         for part in t.strip().split(":"):
@@ -181,6 +205,7 @@ def parse_ranges(text: str) -> list[Highlight]:
 
     out = []
     for i, r in enumerate(filter(None, text.split(",")), 1):
+        r, _, title = r.partition("=")
         a, b = r.split("-")
-        out.append(Highlight(sec(a), sec(b), f"clip{i}"))
+        out.append(Highlight(sec(a), sec(b), title.strip().replace("/", "\n")))
     return out

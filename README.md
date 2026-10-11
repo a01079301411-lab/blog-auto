@@ -20,11 +20,12 @@ export ANTHROPIC_API_KEY=sk-ant-...   # 하이라이트 자동 선정에만 필�
 ### 사용법
 
 ```bash
-# 하이라이트 숏폼 3개 만들기 (자막 + 무음 제거 + 세로 화면)
-python -m shortform shorts video.mp4 -o shorts_out -n 3
+# 하이라이트 숏폼 5개 만들기 (상단 제목 + 키워드 강조 자막 + 무음 제거 + 세로 화면)
+python -m shortform shorts video.mp4 -o shorts_out -n 5 \
+  --context "꼴통사장 권기준의 사업 강의. 창업, 매출, 사장 마인드에 대한 이야기"
 
-# 구간을 직접 지정 (AI 안 씀)
-python -m shortform shorts video.mp4 --ranges "1:20-2:05,10:00-10:40"
+# 구간과 제목을 직접 지정 (AI 안 씀). '/'로 제목 두 줄을 나눠요
+python -m shortform shorts video.mp4 --ranges "1:20-2:05=망하는 사장들의/공통점 1가지,10:00-10:40"
 
 # 영상 전체의 무음만 잘라내기
 python -m shortform silence video.mp4 -o video_cut.mp4
@@ -37,12 +38,19 @@ python -m shortform subtitle video.mp4 --burn video_sub.mp4
 
 | 옵션 | 설명 |
 |---|---|
-| `--layout blur\|crop\|original` | blur: 흐린 배경 위에 원본 영상 (기본값) / crop: 가운데를 잘라 화면 꽉 채움 |
+| `--context "..."` | 영상 설명 (누가, 무슨 내용인지). 하이라이트와 제목이 더 정확해져요 |
+| `--layout title\|blur\|crop\|original` | title: 검은 배경 + 위 제목 + 아래 자막 (기본값) / blur: 같은 구성에 흐린 배경 / crop: 가운데를 잘라 화면 꽉 채움 |
 | `--model small` | Whisper 모델. `medium`이나 `large-v3`가 더 정확하지만 느려요 |
-| `--font "NanumGothic"` | 자막 폰트 (한글 폰트 권장) |
+| `--font "NanumGothic"` | 자막 폰트 (기본: Windows는 맑은 고딕) |
 | `--noise -35 --min-silence 0.5` | 무음 판단 기준. 배경음이 있는 영상이면 `--noise -30` 정도로 올려 보세요 |
 | `--padding 0.15` | 자른 부분 앞뒤에 남길 여유. 말이 뚝뚝 끊기면 늘려 보세요 |
 | `--min-len 20 --max-len 60` | 숏폼 길이 범위(초) |
+
+숏폼마다 결과물이 이렇게 나와요.
+
+- `01_제목.mp4`: 완성된 숏폼 영상
+- `01_제목.txt`: 제목, 업로드 설명과 해시태그, 원본 구간, 선정 이유
+- `01_제목.ass`: 자막 파일 (직접 고쳐서 다시 입힐 수 있어요)
 
 음성 인식 결과는 `출력폴더/<영상이름>.<모델>.transcript.json`에 저장되고, 다시 실행하면 재사용해요.
 

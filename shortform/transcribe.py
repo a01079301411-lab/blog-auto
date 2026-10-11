@@ -102,7 +102,13 @@ def transcribe(
         else:
             if whisper is None:
                 print(f"  Whisper 모델 불러오는 중: {model}")
-                whisper = WhisperModel(model, device="auto", compute_type="auto")
+                try:
+                    whisper = WhisperModel(model, device="auto", compute_type="auto")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Whisper 모델 '{model}'을 불러오지 못했습니다. 첫 실행 때는 모델을 "
+                        f"내려받으므로 인터넷 연결이 필요해요.\n  ({type(e).__name__}: {e})"
+                    ) from e
             with tempfile.TemporaryDirectory() as tmp:
                 wav = os.path.join(tmp, "chunk.wav")
                 _extract_audio(path, s, e, wav)
