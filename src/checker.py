@@ -129,15 +129,13 @@ def check(post, topic, photo_set=None, related=None):
         fails.append(f"사진을 {len(used)}장만 썼어요. 받은 사진 {len(allowed)}장 중 "
                      f"{min(len(allowed), MIN_PHOTOS)}장 이상을 소제목마다 나눠 넣으세요.")
 
-    # 8. 내부링크: 후보가 2개 이상이면 2~3개, 1개면 1개, 없는 번호는 안 됨
+    # 8. 내부링크: 후보가 있으면 1~3개, 없는 번호는 안 됨
     numbers = [int(n) for n in LINK_RE.findall(body)]
     related = related or []
     if [n for n in numbers if not 1 <= n <= len(related)]:
         fails.append("없는 번호의 내부링크를 썼어요. related_posts 번호만 쓰세요.")
     if related and not numbers:
-        fails.append("관련 글이 있는데 내부링크가 없어요. 2~3개 연결하세요.")
-    elif len(related) >= 2 and len(set(numbers)) < 2:
-        fails.append("관련 글이 2개 이상 있는데 내부링크가 1개뿐이에요. 서로 다른 글 2~3개를 연결하세요.")
+        fails.append("관련 글이 있는데 내부링크가 없어요. 1~3개 연결하세요.")
     if len(numbers) > MAX_LINKS:
         fails.append(f"내부링크가 {len(numbers)}개예요. {MAX_LINKS}개 이하로 줄이세요.")
 

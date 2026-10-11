@@ -28,6 +28,7 @@ CONFIRM_BUTTON = ['button[data-testid="seOnePublishBtn"]', '[class*="layer"] but
 SAVE_BUTTON = ['button[data-click-area="tpb.save"]', 'button[class*="save_btn"]', 'button:has-text("저장")']
 PHOTO_BUTTON = ["button.se-image-toolbar-button", ".se-toolbar-item-image button", 'button[data-name="image"]']
 IMAGE_COMPONENT = ".se-component.se-image"
+BODY_PARAGRAPH = ".se-component.se-text .se-text-paragraph"  # 본문 글 칸 (사진 캡션 칸은 빼고)
 LINK_CARD_COMPONENT = ".se-component.se-oglink"  # 주소를 붙여 넣으면 생기는 링크 카드
 CAPTION_AREA = [".se-caption .se-text-paragraph", ".se-module-text.se-caption", ".se-caption"]
 # 가운데 정렬: 정렬 버튼을 눌러 목록을 연 뒤 '가운데'를 고른다
@@ -238,11 +239,23 @@ def move_below(page, editor, component):
     below = component.locator(
         "xpath=following-sibling::div[contains(@class,'se-text')][1]//p[contains(@class,'se-text-paragraph')]"
     )
-    target = below.last if below.count() else editor.locator(".se-text-paragraph").last
+    if below.count():
+        click_text(below.last)
+        page.keyboard.press("End")
+        page.wait_for_timeout(500)
+        align_center(page, editor)  # 새 글 칸은 왼쪽 정렬로 시작할 수 있어서 다시 맞춘다
+    else:
+        go_to_end(page, editor)
+
+
+def go_to_end(page, editor):
+    """커서를 글 맨 끝 본문 칸으로 옮긴다.
+    사진 캡션 칸에 커서가 남으면 다음 글이 캡션에 들어가고 사진끼리 붙어 버려서, 캡션 칸은 고르지 않는다."""
+    target = editor.locator(BODY_PARAGRAPH).last
     click_text(target)
     page.keyboard.press("End")
     page.wait_for_timeout(500)
-    align_center(page, editor)  # 새 글 칸은 왼쪽 정렬로 시작할 수 있어서 다시 맞춘다
+    align_center(page, editor)
 
 
 def bold_is_on(editor):
@@ -385,6 +398,7 @@ def _link_card_by_toolbar(page, editor, url):
         if box is not None:
             break
     if box is None:
+        screenshot(page, "link_popup")  # 링크 버튼을 누른 직후 화면 (원인 확인용)
         page.keyboard.press("Escape")
         return False, "주소 입력 칸 없음"
     box.fill(url)
@@ -432,6 +446,7 @@ def insert_link(page, editor, url):
         reasons.append(how)
     shot = screenshot(page, "link_fail")
     log.info("내부링크: 카드를 못 만들었어요 (%s) %s 화면: %s", " / ".join(reasons), url, shot)
+    go_to_end(page, editor)  # 실패하고 커서가 엉뚱한 곳에 있으면 다음 글이 위쪽에 들어간다
     return False
 
 
@@ -453,6 +468,7 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             path = photo_paths.get(block["file"])
             if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):
                 failed_photos.append(block["file"])
+                go_to_end(page, editor)
         else:
             bold = kind == "heading" or bool(block.get("bold"))
             before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
