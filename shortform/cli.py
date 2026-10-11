@@ -14,6 +14,11 @@ from .subtitles import build_cues, remap, words_in_range, write_srt
 from .transcribe import transcribe
 
 
+def _hms(t: float) -> str:
+    t = round(t)
+    return f"{t // 3600}:{t % 3600 // 60:02}:{t % 60:02}" if t >= 3600 else f"{t // 60}:{t % 60:02}"
+
+
 def _cut_ranges(args, path: str, start: float, end: float) -> list[media.Segment]:
     if args.no_silence_cut:
         return [(start, end)]
@@ -32,20 +37,22 @@ def _get_transcript(args, path: str, workdir: str):
 def _render_clip(args, src, start, end, out, transcript, layout) -> None:
     keeps = _cut_ranges(args, src, start, end)
     kept = sum(e - s for s, e in keeps)
-    print(f"  {end - start:.1f}s → {kept:.1f}s (무음 {end - start - kept:.1f}s 제거, "
+    if not keeps:
+        raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
+    print(f"  {_hms(end - start)} → {_hms(kept)} (무음 {_hms(end - start - kept)} 제거, "
           f"{len(keeps)}개 조각)")
     srt = None
     if transcript is not None:
         words = remap(words_in_range(transcript.words, start, end), keeps)
         srt = os.path.splitext(out)[0] + ".srt"
         write_srt(build_cues(words, max_chars=args.max_chars), srt)
-    media.render(src, keeps, out, layout=layout, srt=srt, font=args.font)
+    media.render_long(src, keeps, out, layout=layout, srt=srt, font=args.font)
     print(f"  저장: {out}")
 
 
 def cmd_silence(args) -> None:
     out = args.output or os.path.splitext(args.input)[0] + "_cut.mp4"
-    print("[무음 구간 제거]")
+    print("[무음 구간 제거] 무음 구간 찾는 중... (긴 영상은 몇 분 걸려요)")
     _render_clip(args, args.input, 0.0, media.duration(args.input), out, None, "original")
 
 
@@ -83,7 +90,8 @@ def cmd_shorts(args) -> None:
 
     for i, h in enumerate(highlights, 1):
         h.start, h.end = max(0.0, h.start), min(total, h.end)
-        print(f"\n[{i}/{len(highlights)}] {h.title}  ({h.start:.1f}s ~ {h.end:.1f}s)")
+        score = f"  점수 {h.score}/10" if h.score else ""
+        print(f"\n[{i}/{len(highlights)}] {h.title}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
         if h.reason:
             print(f"  이유: {h.reason}")
         out = os.path.join(args.output, f"{i:02}_{_safe_name(h.title)}.mp4")
@@ -144,3 +152,5 @@ def main(argv: list[str] | None = None) -> None:
         args.func(args)
     except RuntimeError as e:
         sys.exit(f"오류: {e}")
+    except KeyboardInterrupt:
+        sys.exit("\n중단했습니다. 같은 명령을 다시 실행하면 끝난 부분부터 이어서 진행해요.")

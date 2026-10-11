@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 
 from .transcribe import Sentence
@@ -22,7 +23,7 @@ A good clip:
 
 Use only timestamps that appear in the transcript: start each clip at the start of a
 line and end it at the end of a line. Write the title in the transcript's language.
-Order the clips from best to worst."""
+Order the clips from best to worst and score each one honestly."""
 
 SCHEMA = {
     "type": "object",
@@ -36,8 +37,10 @@ SCHEMA = {
                     "end": {"type": "number", "description": "seconds"},
                     "title": {"type": "string", "description": "short catchy title"},
                     "reason": {"type": "string", "description": "why this works as a short"},
+                    "score": {"type": "integer",
+                              "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title", "reason"],
+                "required": ["start", "end", "title", "reason", "score"],
                 "additionalProperties": False,
             },
         }
@@ -53,25 +56,35 @@ class Highlight:
     end: float
     title: str
     reason: str = ""
+    score: int = 0
 
 
 def format_transcript(sentences: list[Sentence]) -> str:
     return "\n".join(f"[{s.start:.1f}-{s.end:.1f}] {s.text}" for s in sentences)
 
 
-def pick_highlights(
-    sentences: list[Sentence],
-    *,
-    count: int = 3,
-    min_len: float = 20,
-    max_len: float = 60,
-) -> list[Highlight]:
-    import anthropic
+# 한 번에 보낼 대본 최대 글자 수. 이보다 긴 대본(대략 10시간 이상)은 나눠서 보낸다.
+MAX_CHARS_PER_REQUEST = 400_000
 
-    client = anthropic.Anthropic()
-    response = client.beta.messages.create(
+
+def _windows(sentences: list[Sentence], max_chars: int) -> list[list[Sentence]]:
+    windows: list[list[Sentence]] = [[]]
+    size = 0
+    for s in sentences:
+        if windows[-1] and size + len(s.text) + 20 > max_chars:
+            windows.append([])
+            size = 0
+        windows[-1].append(s)
+        size += len(s.text) + 20
+    return windows
+
+
+def _ask_claude(client, sentences: list[Sentence], count: int,
+                min_len: float, max_len: float) -> list[Highlight]:
+    # 대본이 길면 응답 대기 시간도 길어지므로 스트리밍으로 받는다
+    with client.beta.messages.stream(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=32000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         output_config={
@@ -87,15 +100,38 @@ def pick_highlights(
                 f"{max_len:.0f} seconds long."
             ),
         }],
-    )
+    ) as stream:
+        response = stream.get_final_message()
+
     if response.stop_reason == "refusal":
         raise RuntimeError("Claude가 요청을 거절했습니다.")
     if response.stop_reason == "max_tokens":
         raise RuntimeError("응답이 너무 길어 잘렸습니다. --count를 줄여 보세요.")
     text = next(b.text for b in response.content if b.type == "text")
-    raw = json.loads(text)["highlights"]
-    picked = [Highlight(float(h["start"]), float(h["end"]), h["title"], h["reason"])
-              for h in raw]
+    return [Highlight(float(h["start"]), float(h["end"]), h["title"], h["reason"],
+                      int(h["score"]))
+            for h in json.loads(text)["highlights"]]
+
+
+def pick_highlights(
+    sentences: list[Sentence],
+    *,
+    count: int = 3,
+    min_len: float = 20,
+    max_len: float = 60,
+) -> list[Highlight]:
+    import anthropic
+
+    client = anthropic.Anthropic()
+    windows = _windows(sentences, MAX_CHARS_PER_REQUEST)
+    picked: list[Highlight] = []
+    for i, window in enumerate(windows, 1):
+        if len(windows) > 1:
+            print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
+        # 구간별로 넉넉히 뽑은 뒤 점수순으로 전체에서 고른다
+        want = count if len(windows) == 1 else min(count, max(3, count // len(windows) + 2))
+        picked += _ask_claude(client, window, want, min_len, max_len)
+    picked.sort(key=lambda h: -h.score)  # 같은 점수는 Claude가 매긴 순서 유지
     return clean(picked, sentences, count=count, min_len=min_len, max_len=max_len)
 
 
@@ -110,16 +146,21 @@ def clean(
     """문장 경계에 맞추고, 길이를 보정하고, 겹치는 구간을 제거한다."""
     if not sentences:
         return []
-    starts = [s.start for s in sentences]
-    ends = [s.end for s in sentences]
+    starts = sorted(s.start for s in sentences)
+    ends = sorted(s.end for s in sentences)
+
+    def nearest(sorted_ts: list[float], t: float) -> float:
+        i = bisect_left(sorted_ts, t)
+        return min(sorted_ts[max(i - 1, 0):i + 1], key=lambda x: abs(x - t))
+
     out: list[Highlight] = []
     for h in highlights:
         # 가장 가까운 문장 시작/끝으로 맞춘다
-        h.start = min(starts, key=lambda t: abs(t - h.start))
-        h.end = min(ends, key=lambda t: abs(t - h.end))
+        h.start = nearest(starts, h.start)
+        h.end = nearest(ends, h.end)
         if h.end - h.start > max_len:  # 너무 길면 max_len 안의 마지막 문장 끝에서 자른다
-            fit = [t for t in ends if h.start < t <= h.start + max_len]
-            h.end = max(fit) if fit else h.start + max_len
+            i = bisect_right(ends, h.start + max_len) - 1
+            h.end = ends[i] if i >= 0 and ends[i] > h.start else h.start + max_len
         if h.end - h.start < min_len * 0.5:
             continue
         if any(h.start < o.end and o.start < h.end for o in out):

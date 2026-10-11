@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -115,3 +116,58 @@ def render(
         ])
     finally:
         os.unlink(script)
+
+
+def _group(segments: list[Segment], max_span: float,
+           max_count: int) -> list[list[Segment]]:
+    groups: list[list[Segment]] = [[]]
+    for seg in segments:
+        g = groups[-1]
+        if g and (seg[1] - g[0][0] > max_span or len(g) >= max_count):
+            groups.append([])
+        groups[-1].append(seg)
+    return groups
+
+
+def render_long(
+    src: str,
+    segments: list[Segment],
+    out: str,
+    *,
+    group_minutes: float = 3,
+    group_count: int = 40,
+    **kwargs,
+) -> None:
+    """수천 개의 조각이 나오는 긴 영상용 render.
+
+    조각이 많을수록 한 번의 FFmpeg 호출이 급격히 느려지므로, 원본 기준
+    group_minutes 분량 / group_count 조각씩 나눠 렌더링한 뒤 이어붙인다.
+    조각 파일을 남겨두므로 중간에 멈춰도 다시 실행하면 이어서 진행한다.
+    """
+    groups = _group(segments, group_minutes * 60, group_count)
+    if len(groups) == 1:
+        render(src, segments, out, **kwargs)
+        return
+
+    parts_dir = out + ".parts"
+    os.makedirs(parts_dir, exist_ok=True)
+    parts = []
+    for i, group in enumerate(groups, 1):
+        part = os.path.join(parts_dir, f"{i:04}_{group[0][0]:.2f}_{group[-1][1]:.2f}.mp4")
+        parts.append(part)
+        if os.path.exists(part):
+            print(f"  [{i}/{len(groups)}] 저장된 조각 사용")
+            continue
+        print(f"  [{i}/{len(groups)}] 렌더링 중... ({len(group)}개 조각)")
+        tmp = part + ".tmp.mp4"
+        render(src, group, tmp, **kwargs)
+        os.replace(tmp, part)
+
+    listing = os.path.join(parts_dir, "list.txt")
+    with open(listing, "w", encoding="utf-8") as f:
+        for p in parts:
+            f.write("file '{}'\n".format(os.path.abspath(p).replace("'", r"'\''")))
+    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+         "-f", "concat", "-safe", "0", "-i", listing,
+         "-c", "copy", "-movflags", "+faststart", out])
+    shutil.rmtree(parts_dir, ignore_errors=True)

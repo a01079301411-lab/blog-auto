@@ -68,3 +68,22 @@ def keep_segments(
     if cursor < end:
         keeps.append((cursor, end))
     return [(s, e) for s, e in keeps if e - s >= min_keep]
+
+
+def split_points(
+    silences: list[Segment],
+    total: float,
+    chunk_len: float,
+    *,
+    search: float = 60.0,
+) -> list[float]:
+    """약 chunk_len 간격으로, 가능하면 무음 한가운데에서 자를 지점을 고른다."""
+    mids = [(s + e) / 2 for s, e in silences if e != float("inf")]
+    cuts: list[float] = []
+    target = chunk_len
+    while target < total - chunk_len * 0.5:
+        near = [m for m in mids if abs(m - target) <= search and (not cuts or m > cuts[-1])]
+        cut = min(near, key=lambda m: abs(m - target)) if near else target
+        cuts.append(cut)
+        target = cut + chunk_len
+    return cuts
