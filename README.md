@@ -73,6 +73,14 @@ focus = 0.5
 model = small
 ```
 
+### 자동 업데이트
+
+`run.bat`을 실행할 때마다 GitHub에서 최신 버전을 확인하고 바뀐 파일만 자동으로 받아와요. 따로 다시 내려받을 필요가 없어요.
+
+- `settings.ini`는 덮어쓰지 않아요.
+- 인터넷이 안 되면 업데이트를 건너뛰고 지금 버전으로 실행해요.
+- 영상 없이 `run.bat`을 더블클릭하면 업데이트만 해요.
+
 ### 결과물
 
 숏폼마다 파일이 세 개씩 나와요.
@@ -166,6 +174,8 @@ python -m shortform style green > 내스타일.json
 ```
 install.bat / run.bat   Windows 설치·실행
 settings.ini            run.bat 설정
+shortform/launcher.py   run.bat 실행기 (업데이트 → 숏폼 만들기)
+shortform/update.py     GitHub 자동 업데이트
 shortform/
   cli.py          명령줄 인터페이스
   transcribe.py   음성 인식 (faster-whisper, 조각 단위 + 이어하기)
