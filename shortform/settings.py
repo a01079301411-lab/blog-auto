@@ -11,7 +11,7 @@ DEFAULTS = {
     "accounts": "", "per_account": "3",
     "style": "green", "count": "10", "min_len": "20", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
-    "review": "yes", "fix_subtitles": "yes", "zoom": "yes", "sfx": "yes",
+    "review": "yes", "fix_subtitles": "yes", "zoom": "no", "sfx": "no",
     "bgm_volume": "0.15", "thumbnail": "yes", "upload": "no",
 }
 

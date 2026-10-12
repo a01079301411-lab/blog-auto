@@ -260,7 +260,8 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
         hs = pick_highlights(transcript.sentences, count=args.per_account,
                              min_len=args.min_len, max_len=args.max_len,
                              context=args.context or "", account=acct,
-                             exclude=[(h.start, h.end) for h in picked])
+                             exclude=[(h.start, h.end) for h in picked],
+                             words=transcript.words)
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -281,7 +282,9 @@ def cmd_shorts(args) -> None:
     transcript = _get_transcript(args, args.input, args.output) if need_transcript else None
 
     picks_path = os.path.join(args.output, "highlights.json")
-    key = f"accounts:{','.join(map(str, accts))}:{args.per_account}" if accts else args.count
+    # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
+    key = (f"v2:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v2:{args.count}")
     if args.ranges:
         highlights = parse_ranges(args.ranges)
         for h in highlights:
@@ -300,7 +303,7 @@ def cmd_shorts(args) -> None:
             print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
             highlights = pick_highlights(transcript.sentences, count=args.count,
                                          min_len=args.min_len, max_len=args.max_len,
-                                         context=args.context or "")
+                                         context=args.context or "", words=transcript.words)
         _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
@@ -472,8 +475,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Claude로 자막 오타 교정·줄 나누기 yes/no (기본 yes)")
     s.add_argument("--review", type=_yesno, default=False,
                    help="만들기 전에 메모장으로 목록을 보고 고르기 yes/no")
-    s.add_argument("--zoom", type=_yesno, default=True, help="핵심 단어에서 화면 확대 yes/no")
-    s.add_argument("--sfx", type=_yesno, default=True, help="확대할 때 효과음 yes/no")
+    s.add_argument("--zoom", type=_yesno, default=False, help="핵심 단어에서 화면 확대 yes/no")
+    s.add_argument("--sfx", type=_yesno, default=False, help="확대할 때 효과음 yes/no")
     s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
     s.add_argument("--bgm-volume", type=float, default=0.15, help="배경음악 볼륨 0~1")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")

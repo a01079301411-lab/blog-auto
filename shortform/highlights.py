@@ -96,6 +96,33 @@ class Highlight:
     account: int = 0   # 코시 계정 번호 (0이면 계정 없이 일반 스타일)
 
 
+def split_lines(words, *, max_chars: int = 45, gap: float = 0.5) -> list[Sentence]:
+    """단어 타임스탬프로 대본을 짧은 문장 단위 줄로 나눈다.
+
+    Whisper 구간은 여러 문장이 한데 묶여 길어서, 숏폼 시작·끝을 문장 단위로 정확히
+    고를 수 있게 문장 끝(. ? !)이나 쉬는 곳에서 다시 끊는다.
+    """
+    lines: list[Sentence] = []
+    cur: list = []
+
+    def flush():
+        if cur:
+            text = "".join(w.text for w in cur).strip()
+            if text:
+                lines.append(Sentence(cur[0].start, cur[-1].end, text))
+            cur.clear()
+
+    for w in words:
+        if cur and (w.start - cur[-1].end > gap
+                    or len("".join(x.text for x in cur)) + len(w.text) > max_chars):
+            flush()
+        cur.append(w)
+        if w.text.rstrip()[-1:] in (".", "?", "!"):  # 문장 끝
+            flush()
+    flush()
+    return lines
+
+
 def format_transcript(sentences: list[Sentence]) -> str:
     return "\n".join(f"[{s.start:.1f}-{s.end:.1f}] {s.text}" for s in sentences)
 
@@ -156,8 +183,9 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
     if exclude:
         used = ", ".join(f"{a:.0f}-{b:.0f}s" for a, b in exclude)
         ask += f"These ranges are already used by other accounts; do not overlap them: {used}\n\n"
-    ask += (f"Pick up to {count} clips, each between {min_len:.0f} and {max_len:.0f} "
-            f"seconds long.")
+    ask += (f"Propose up to {count} candidate clips, each between {min_len:.0f} and "
+            f"{max_len:.0f} seconds long. A stricter editor will review every candidate "
+            f"afterwards, so include every strong moment you find, best first.")
     content.append({"type": "text", "text": ask})
     # 대본이 길면 응답 대기 시간도 길어지므로 스트리밍으로 받는다
     with client.beta.messages.stream(
@@ -186,6 +214,121 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
             for h in json.loads(text)["highlights"]]
 
 
+VERIFY_PROMPT = """\
+You are a strict senior short-form editor (Reels, YouTube Shorts) reviewing candidate
+clips that a junior editor cut from a long Korean video. Judge each candidate as a
+viewer scrolling Reels who has never seen the long video.
+
+For each candidate you get the transcript lines around it; lines inside the proposed
+range are marked with ">". Score 1-10:
+- hook: would the first 3 seconds stop the scroll? The first line itself must be the
+  hook. Preambles like "그래서", "아 그리고", "자 이제", greetings or recaps are weak.
+- payoff: does it deliver a clear point, punchline, lesson or turn that feels worth it?
+- standalone: fully understandable alone? No missing context, no references to earlier
+  parts ("아까 말씀드린", "이거"), no unfinished thought at the end.
+- fit: fits the account concept and audience (if an account is given; otherwise how
+  well it fits the video's audience).
+
+Set keep=false if any score is below 6, or the clip is filler, small talk, logistics,
+an ad, repetitive, or only interesting with visuals the transcript does not show.
+
+Tighten the boundaries: start at the exact line where the hook begins (drop the
+preamble) and end right after the payoff line (drop trailing filler). Use only
+timestamps of the lines shown, and keep the length between {min_len:.0f} and
+{max_len:.0f} seconds. If the boundaries change what the clip says, rewrite title and
+sub_title by the same rules as before (keep the {{accent}} braces style); otherwise
+return them unchanged. verdict: one Korean sentence on why it works or why it fails."""
+
+VERIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reviews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "keep": {"type": "boolean"},
+                    "hook": {"type": "integer"},
+                    "payoff": {"type": "integer"},
+                    "standalone": {"type": "integer"},
+                    "fit": {"type": "integer"},
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "title": {"type": "string"},
+                    "sub_title": {"type": "string"},
+                    "verdict": {"type": "string"},
+                },
+                "required": ["id", "keep", "hook", "payoff", "standalone", "fit", "start", "end",
+                             "title", "sub_title", "verdict"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["reviews"],
+    "additionalProperties": False,
+}
+
+
+def _excerpt(lines: list[Sentence], h: Highlight, pad: float = 20.0) -> str:
+    out = []
+    for ln in lines:
+        if ln.end < h.start - pad or ln.start > h.end + pad:
+            continue
+        mark = ">" if h.start - 0.5 <= ln.start and ln.end <= h.end + 0.5 else " "
+        out.append(f"{mark} [{ln.start:.1f}-{ln.end:.1f}] {ln.text}")
+    return "\n".join(out)
+
+
+def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_len: float,
+           max_len: float, context: str = "", account=None) -> list[Highlight]:
+    """후보를 다시 엄격하게 평가해 경계를 다듬고, 통과한 것만 점수와 함께 돌려준다."""
+    if not candidates:
+        return []
+    parts = []
+    if context:
+        parts.append(f"<about_video>\n{context}\n</about_video>")
+    if account is not None:
+        parts.append(f"<account>\n{_account_brief(account)}\n</account>")
+    for i, h in enumerate(candidates):
+        sub = f" / sub_title: {h.sub_title}" if h.sub_title else ""
+        parts.append(f"<candidate id=\"{i}\">\nproposed: {h.start:.1f}-{h.end:.1f}s\n"
+                     f"title: {h.title.replace(chr(10), ' / ')}{sub}\n"
+                     f"{_excerpt(lines, h)}\n</candidate>")
+    with client.beta.messages.stream(
+        model=MODEL,
+        max_tokens=32000,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        output_config={"effort": "high",
+                       "format": {"type": "json_schema", "schema": VERIFY_SCHEMA}},
+        system=VERIFY_PROMPT.format(min_len=min_len, max_len=max_len),
+        messages=[{"role": "user", "content": "\n\n".join(parts)}],
+    ) as stream:
+        response = stream.get_final_message()
+    if response.stop_reason != "end_turn":
+        print(f"  (검증 단계 건너뜀: {response.stop_reason})")
+        return candidates
+    text = next(b.text for b in response.content if b.type == "text")
+    kept, rejected = [], []
+    for r in json.loads(text)["reviews"]:
+        if not 0 <= r["id"] < len(candidates):
+            continue
+        h = candidates[r["id"]]
+        scores = [r["hook"], r["payoff"], r["standalone"], r["fit"]]
+        h.score = round(sum(scores) / len(scores))
+        if r["end"] > r["start"]:
+            h.start, h.end = float(r["start"]), float(r["end"])
+        if r["title"].strip():
+            h.title = r["title"].replace("\\n", "\n")
+        if r["sub_title"].strip():
+            h.sub_title = r["sub_title"]
+        h.reason = f"{r['verdict']} (훅 {r['hook']}·결론 {r['payoff']}·이해 {r['standalone']}·컨셉 {r['fit']})"
+        (kept if r["keep"] and min(scores) >= 6 else rejected).append(h)
+    print(f"  후보 {len(candidates)}개 중 {len(kept)}개 통과")
+    return sorted(kept, key=lambda h: -h.score)
+
+
 def pick_highlights(
     sentences: list[Sentence],
     *,
@@ -195,22 +338,38 @@ def pick_highlights(
     context: str = "",
     account=None,
     exclude: list[tuple[float, float]] | None = None,
+    words=None,
 ) -> list[Highlight]:
+    """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다."""
     import anthropic
 
     client = anthropic.Anthropic()
-    windows = _windows(sentences, MAX_CHARS_PER_REQUEST)
-    picked: list[Highlight] = []
+    lines = split_lines(words) if words else sentences
+    windows = _windows(lines, MAX_CHARS_PER_REQUEST)
+    want_total = min(max(count * 3, 6), 15)  # 필요한 개수의 3배쯤 후보를 뽑는다
+    candidates: list[Highlight] = []
     for i, window in enumerate(windows, 1):
         if len(windows) > 1:
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
-        # 구간별로 넉넉히 뽑은 뒤 점수순으로 전체에서 고른다
-        want = count if len(windows) == 1 else min(count, max(3, count // len(windows) + 2))
-        picked += _ask_claude(client, window, want, min_len, max_len, context, account, exclude)
-    picked.sort(key=lambda h: -h.score)  # 같은 점수는 Claude가 매긴 순서 유지
+        want = want_total if len(windows) == 1 else max(4, want_total // len(windows) + 2)
+        candidates += _ask_claude(client, window, want, min_len, max_len, context, account,
+                                  exclude)
     if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
+        candidates = [h for h in candidates
+                      if not any(h.start < b and a < h.end for a, b in exclude)]
+    print(f"  후보 {len(candidates)}개를 다시 꼼꼼히 검증하는 중...")
+    try:
+        picked = verify(client, candidates, lines, min_len=min_len, max_len=max_len,
+                        context=context, account=account)
+    except Exception as e:  # 검증이 실패해도 1단계 결과로 계속
+        print(f"  (검증 단계 건너뜀: {type(e).__name__}: {str(e)[:100]})")
+        picked = sorted(candidates, key=lambda h: -h.score)
+    if exclude:
         picked = [h for h in picked if not any(h.start < b and a < h.end for a, b in exclude)]
-    return clean(picked, sentences, count=count, min_len=min_len, max_len=max_len)
+    result = clean(picked, lines, count=count, min_len=min_len, max_len=max_len)
+    if len(result) < count:
+        print(f"  확실한 하이라이트가 {len(result)}개뿐이라 {len(result)}개만 만들어요.")
+    return result
 
 
 def clean(
