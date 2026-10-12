@@ -59,6 +59,8 @@ SCHEMA = {
                     "end": {"type": "number", "description": "seconds"},
                     "title": {"type": "string", "description": "hook headline, {accent}"},
                     "label": {"type": "string"},
+                    "sub_title": {"type": "string",
+                                  "description": "short line shown above the title"},
                     "speaker": {"type": "string"},
                     "bottom": {"type": "string"},
                     "keywords": {"type": "array", "items": {"type": "string"}},
@@ -67,7 +69,7 @@ SCHEMA = {
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title", "label", "speaker", "bottom", "keywords",
+                "required": ["start", "end", "title", "label", "sub_title", "speaker", "bottom", "keywords",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
             },
@@ -90,6 +92,8 @@ class Highlight:
     label: str = ""
     speaker: str = ""
     bottom: str = ""
+    sub_title: str = ""
+    account: int = 0   # 코시 계정 번호 (0이면 계정 없이 일반 스타일)
 
 
 def format_transcript(sentences: list[Sentence]) -> str:
@@ -112,9 +116,49 @@ def _windows(sentences: list[Sentence], max_chars: int) -> list[list[Sentence]]:
     return windows
 
 
-def _ask_claude(client, sentences: list[Sentence], count: int,
-                min_len: float, max_len: float, context: str) -> list[Highlight]:
+def _account_brief(acct) -> str:
+    """계정 컨셉과 이 계정 가이드에 맞는 글자 작성 요령."""
+    max_chars = max(8, int(960 / (acct.video.title.size * 0.92)))
+    uses_sub = acct.video.sub_title is not None or acct.thumb.pill is not None
+    lines = [
+        f"These clips are for the Instagram account {acct.handle} \"{acct.name}\" ({acct.kind}).",
+        f"Concept (what this account posts): {acct.concept}",
+        f"Audience: {acct.audience}",
+        f"Profile tone: {acct.bio}",
+        "Only pick moments that fit this account's concept and audience; return fewer clips "
+        "rather than clips that do not fit.",
+        f"Title style for this account: {acct.title_hint}",
+        f"Each title line at most {max_chars} characters, at most 2 lines.",
+        "sub_title: " + ("a short line of at most 10 characters (shown above the title or as a "
+                         "badge on the thumbnail)." if uses_sub else "leave empty."),
+        "speaker: the yellow caption shown in brackets above the subtitles, either who is talking "
+        "(e.g. '권기준 / 연매출 300억 대표') or a short situation / emotion note "
+        "(e.g. '무단 결근 100회'), at most 16 characters, without the brackets.",
+        "bottom: " + ("a one-line viewer reaction shown below the video, at most 14 characters, "
+                      "without the angle brackets." if acct.bottom else "leave empty."),
+    ]
+    if acct.caution:
+        lines.append(f"Caution: {acct.caution}")
+    return "\n".join(lines)
+
+
+def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, max_len: float,
+                context: str, account=None, exclude: list[tuple[float, float]] | None = None,
+                ) -> list[Highlight]:
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
+    # 대본 부분은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
+    content = [{"type": "text",
+                "text": f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>",
+                "cache_control": {"type": "ephemeral"}}]
+    ask = ""
+    if account is not None:
+        ask += f"<account>\n{_account_brief(account)}\n</account>\n\n"
+    if exclude:
+        used = ", ".join(f"{a:.0f}-{b:.0f}s" for a, b in exclude)
+        ask += f"These ranges are already used by other accounts; do not overlap them: {used}\n\n"
+    ask += (f"Pick up to {count} clips, each between {min_len:.0f} and {max_len:.0f} "
+            f"seconds long.")
+    content.append({"type": "text", "text": ask})
     # 대본이 길면 응답 대기 시간도 길어지므로 스트리밍으로 받는다
     with client.beta.messages.stream(
         model=MODEL,
@@ -126,14 +170,7 @@ def _ask_claude(client, sentences: list[Sentence], count: int,
             "format": {"type": "json_schema", "schema": SCHEMA},
         },
         system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>\n\n"
-                f"Pick up to {count} clips, each between {min_len:.0f} and "
-                f"{max_len:.0f} seconds long."
-            ),
-        }],
+        messages=[{"role": "user", "content": content}],
     ) as stream:
         response = stream.get_final_message()
 
@@ -144,7 +181,8 @@ def _ask_claude(client, sentences: list[Sentence], count: int,
     text = next(b.text for b in response.content if b.type == "text")
     return [Highlight(float(h["start"]), float(h["end"]), h["title"].replace("\\n", "\n"),
                       h["reason"], int(h["score"]), h["keywords"], h["caption"],
-                      h["label"], h["speaker"], h["bottom"])
+                      h["label"], h["speaker"], h["bottom"], h.get("sub_title", ""),
+                      account.no if account is not None else 0)
             for h in json.loads(text)["highlights"]]
 
 
@@ -155,6 +193,8 @@ def pick_highlights(
     min_len: float = 20,
     max_len: float = 60,
     context: str = "",
+    account=None,
+    exclude: list[tuple[float, float]] | None = None,
 ) -> list[Highlight]:
     import anthropic
 
@@ -166,8 +206,10 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         # 구간별로 넉넉히 뽑은 뒤 점수순으로 전체에서 고른다
         want = count if len(windows) == 1 else min(count, max(3, count // len(windows) + 2))
-        picked += _ask_claude(client, window, want, min_len, max_len, context)
+        picked += _ask_claude(client, window, want, min_len, max_len, context, account, exclude)
     picked.sort(key=lambda h: -h.score)  # 같은 점수는 Claude가 매긴 순서 유지
+    if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
+        picked = [h for h in picked if not any(h.start < b and a < h.end for a, b in exclude)]
     return clean(picked, sentences, count=count, min_len=min_len, max_len=max_len)
 
 

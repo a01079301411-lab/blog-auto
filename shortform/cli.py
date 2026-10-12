@@ -14,7 +14,8 @@ from . import media
 from . import face, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
-from .styles import PRESETS, dump_style, load_style, video_filter, write_ass
+from .styles import (PRESETS, account_box_style, dump_style, load_style, video_filter,
+                     write_account_subs, write_ass)
 from .subfix import fix_cues
 from .subtitles import build_cues, remap, words_in_range, write_srt
 from .transcribe import transcribe
@@ -76,8 +77,11 @@ def _zoom_times(cues, keywords: list[str], *, gap: float = 3.0, limit: int = 4) 
 
 
 def _render_clip(args, src, start, end, out, transcript, style=None,
-                 highlight: Highlight | None = None) -> None:
-    """style이 None이면 원본 비율 그대로, 있으면 세로 숏폼으로 만든다."""
+                 highlight: Highlight | None = None, acct=None) -> None:
+    """style이 None이면 원본 비율 그대로, 있으면 세로 숏폼으로 만든다.
+
+    acct(코시 계정)가 있으면 그 계정 가이드의 글꼴·색·배치로 만든다.
+    """
     keeps = _cut_ranges(args, src, start, end)
     if not keeps:
         raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
@@ -97,15 +101,18 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
 
     h = highlight or Highlight(start, end, "")
     speaker = args.speaker or h.speaker
+    max_chars = args.max_chars
+    if acct is not None:  # 계정 말자막 글자 크기에 맞춰 한 줄 길이를 정한다
+        max_chars = min(max_chars, max(8, int(960 / acct.sub.size)))
 
     # 1) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식)
     cues = None
     if words and args.fix_subtitles:
         print("  자막 다듬는 중 (오타 교정·줄 나누기)...")
-        cues = fix_cues(words, max_chars=args.max_chars,
+        cues = fix_cues(words, max_chars=max_chars,
                         context=" ".join(filter(None, [args.context, speaker])))
     if cues is None:
-        cues = build_cues(words, max_chars=args.max_chars)
+        cues = build_cues(words, max_chars=max_chars)
 
     # 2) 얼굴 따라가기
     samples, path = [], None
@@ -136,15 +143,33 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         print(f"  배경음악: {os.path.basename(bgm)}")
 
     subs = os.path.splitext(out)[0] + ".ass"
-    write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
-              speaker=speaker, bottom=h.bottom, keywords=h.keywords)
     vf = video_filter(style, focus, path=path, zooms=zooms, fps=media.frame_rate(src))
-    media.render(src, keeps, out, video_filter=vf, srt=subs,
-                 bgm=bgm, bgm_volume=args.bgm_volume, sfx=sfx, sfx_times=zooms)
+    if acct is None:
+        write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
+                  speaker=speaker, bottom=h.bottom, keywords=h.keywords)
+        media.render(src, keeps, out, video_filter=vf, srt=subs,
+                     bgm=bgm, bgm_volume=args.bgm_volume, sfx=sfx, sfx_times=zooms)
+    else:
+        from . import draw, fonts
+
+        boxed = style.video_height < 1920  # N-4 (롱폼 잘라 쓴 숏폼)
+        ov_path = os.path.splitext(out)[0] + ".overlay.png"
+        draw.overlay(acct, title=h.title, sub_title=h.sub_title, speaker=speaker,
+                     bottom=h.bottom, boxed=boxed).save(ov_path)
+        sub_font, _ = fonts.find_or_fallback(acct.sub.fonts)
+        write_account_subs(subs, acct, cues, font_path=sub_font)
+        try:
+            media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
+                         font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
+                         sfx=sfx, sfx_times=zooms)
+        finally:
+            os.remove(ov_path)
     print(f"  저장: {out}")
 
     # 5) 썸네일: 얼굴이 가장 크게 잡힌 장면 + 제목
-    if args.thumbnail:
+    if args.thumbnail and acct is not None:
+        _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus)
+    elif args.thumbnail:
         t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
         x = next((x for st, x, _ in samples if st >= t and x is not None), None)
         thumb_ass = os.path.splitext(out)[0] + ".thumb.ass"
@@ -158,6 +183,30 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
             print(f"  (썸네일 만들기 실패: {e})")
         finally:
             os.remove(thumb_ass)
+
+
+def _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus) -> None:
+    """계정 가이드의 썸네일(N-1)을 PNG 1080x1920으로 만든다."""
+    from PIL import Image
+
+    from . import draw
+
+    t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
+    x = next((x for st, x, _ in samples if st >= t and x is not None), None)
+    st = account_box_style(vertical=acct.thumb.layout != "box")
+    tvf = video_filter(st, focus, path=[(0.0, x)] if x is not None else None)
+    frame = os.path.splitext(out)[0] + ".frame.png"
+    thumb = os.path.splitext(out)[0] + "_썸네일.png"
+    try:
+        media.snapshot(src, t, frame, video_filter=tvf)
+        with Image.open(frame) as im:
+            draw.thumbnail(acct, im, title=h.title, sub_title=h.sub_title).save(thumb)
+        print(f"  썸네일: {thumb}")
+    except (RuntimeError, OSError) as e:
+        print(f"  (썸네일 만들기 실패: {e})")
+    finally:
+        if os.path.exists(frame):
+            os.remove(frame)
 
 
 def cmd_silence(args) -> None:
@@ -183,7 +232,7 @@ def _safe_name(text: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", text).strip("_")[:40] or "clip"
 
 
-def _load_picks(path: str, count: int) -> list[Highlight] | None:
+def _load_picks(path: str, count) -> list[Highlight] | None:
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -194,58 +243,105 @@ def _load_picks(path: str, count: int) -> list[Highlight] | None:
     return [Highlight(**h) for h in data["highlights"]]
 
 
-def _save_picks(path: str, count: int, highlights: list[Highlight]) -> None:
+def _save_picks(path: str, count, highlights: list[Highlight]) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"count": count, "highlights": [asdict(h) for h in highlights]},
                   f, ensure_ascii=False, indent=1)
 
 
+def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
+    """계정마다 그 컨셉에 맞는 구간을 고른다. 계정끼리 같은 구간은 쓰지 않는다."""
+    from .accounts import ACCOUNTS
+
+    picked: list[Highlight] = []
+    for n in accts:
+        acct = ACCOUNTS[n]
+        print(f"[하이라이트 선정] {acct.no}번 {acct.name} ({acct.handle}) 컨셉에 맞는 구간 찾는 중...")
+        hs = pick_highlights(transcript.sentences, count=args.per_account,
+                             min_len=args.min_len, max_len=args.max_len,
+                             context=args.context or "", account=acct,
+                             exclude=[(h.start, h.end) for h in picked])
+        for h in hs:
+            h.account = acct.no
+        print(f"  {len(hs)}개")
+        picked += hs
+    return picked
+
+
 def cmd_shorts(args) -> None:
+    from .accounts import ACCOUNTS
+    from .accounts import parse as parse_accounts
+
+    accts = parse_accounts(args.accounts or "")
     style = load_style(args.style, font=args.font)
     os.makedirs(args.output, exist_ok=True)
     total = media.duration(args.input)
+    vertical = media.is_vertical(args.input)
     need_transcript = not args.no_subtitles or not args.ranges
     transcript = _get_transcript(args, args.input, args.output) if need_transcript else None
 
     picks_path = os.path.join(args.output, "highlights.json")
+    key = f"accounts:{','.join(map(str, accts))}:{args.per_account}" if accts else args.count
     if args.ranges:
         highlights = parse_ranges(args.ranges)
-    elif (highlights := _load_picks(picks_path, args.count)) is not None:
+        for h in highlights:
+            h.account = accts[0] if accts else 0
+            acct = ACCOUNTS.get(h.account)
+            lines = h.title.split("\n")
+            if acct and (acct.video.sub_title or acct.thumb.pill) and len(lines) > 1:
+                h.sub_title, h.title = lines[0], "\n".join(lines[1:])  # 첫 줄은 부제목
+    elif (highlights := _load_picks(picks_path, key)) is not None:
         print(f"[하이라이트] 지난번에 고른 {len(highlights)}개를 다시 써요. "
               f"(새로 고르려면 결과 폴더의 highlights.json을 지우세요)")
     else:
-        print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
-        highlights = pick_highlights(transcript.sentences, count=args.count,
-                                     min_len=args.min_len, max_len=args.max_len,
-                                     context=args.context or "")
-        _save_picks(picks_path, args.count, highlights)
+        if accts:
+            highlights = _pick_for_accounts(args, transcript, accts)
+        else:
+            print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
+            highlights = pick_highlights(transcript.sentences, count=args.count,
+                                         min_len=args.min_len, max_len=args.max_len,
+                                         context=args.context or "")
+        _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
 
     numbered = list(enumerate(highlights, 1))
     if args.review:
         chosen = review.review(os.path.join(args.output, "숏폼_고르기.txt"), highlights)
-        _save_picks(picks_path, args.count, highlights)  # 고친 제목·구간도 저장
+        _save_picks(picks_path, key, highlights)  # 고친 제목·구간도 저장
         numbered = [(i, h) for i, h in numbered if h in chosen]
         if not numbered:
             sys.exit("고른 숏폼이 없어요.")
 
     made = []
+    per_folder: dict[str, int] = {}
+    if accts:
+        kind = "세로 촬영본(N-3)" if vertical else "롱폼 잘라 쓴 숏폼(N-4)"
+        print(f"\n[제작 방식] {kind} 가이드로 만들어요.")
     for n, (i, h) in enumerate(numbered, 1):
         h.start, h.end = max(0.0, h.start), min(total, h.end)
+        acct = ACCOUNTS.get(h.account) if h.account else None
         name = h.title.replace("\n", " ").replace("{", "").replace("}", "") or f"clip{i}"
         score = f"  점수 {h.score}/10" if h.score else ""
-        print(f"\n[{n}/{len(numbered)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}")
+        where = f" → {acct.no}번 {acct.name}" if acct else ""
+        print(f"\n[{n}/{len(numbered)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}{where}")
         if h.reason:
             print(f"  이유: {h.reason}")
-        out = os.path.join(args.output, f"{i:02}_{_safe_name(name)}.mp4")
+        folder = os.path.join(args.output, acct.folder) if acct else args.output
+        os.makedirs(folder, exist_ok=True)
+        per_folder[folder] = per_folder.get(folder, 0) + 1
+        num = per_folder[folder] if acct else i
+        out = os.path.join(folder, f"{num:02}_{_safe_name(name)}.mp4")
         args.clip_index = i - 1
+        clip_style = account_box_style(vertical) if acct else style
         _render_clip(args, args.input, h.start, h.end, out,
-                     None if args.no_subtitles else transcript, style, h)
+                     None if args.no_subtitles else transcript, clip_style, h, acct=acct)
         if h.caption or h.title:
             with open(os.path.splitext(out)[0] + ".txt", "w", encoding="utf-8") as f:
-                f.write(f"[제목]\n{h.title}\n\n[알약 문구] {h.label}\n[인물] {h.speaker}\n"
-                        f"[하단 문구] {h.bottom}\n\n[업로드 설명]\n{h.caption}\n\n"
+                head = f"[계정] {acct.no}번 {acct.name} ({acct.handle})\n\n" if acct else ""
+                f.write(f"{head}[제목]\n{h.title}\n\n[부제목] {h.sub_title}\n"
+                        f"[알약 문구] {h.label}\n[설명자막] {h.speaker}\n"
+                        f"[하단자막] {h.bottom}\n\n[업로드 설명]\n{h.caption}\n\n"
                         f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
                         f"[선정 이유] {h.reason}\n")
         made.append((out, h))
@@ -363,6 +459,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="영상 설명 (누가, 무슨 내용인지). 하이라이트·제목 품질이 좋아져요")
     s.add_argument("--ranges",
                    help="AI 대신 직접 구간 지정. 예: '1:00-1:45=망하는 사장들의/공통점,5:00-5:40'")
+    s.add_argument("--accounts", default="",
+                   help="코시 계정 번호 (예: '1,4'). 계정마다 그 가이드대로 만들어 폴더별로 저장")
+    s.add_argument("--per-account", type=int, default=3, help="계정당 만들 숏폼 개수 (기본 3)")
     s.add_argument("--style", default="green",
                    help="디자인: " + ", ".join(PRESETS) + " 또는 JSON 파일 (기본 green)")
     s.add_argument("--speaker", help="인물 소개 문구 직접 지정. 예: '권기준 / 꼴통사장 대표'")

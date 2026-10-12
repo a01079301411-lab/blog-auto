@@ -8,3 +8,9 @@ shorts_out/
 .settings_base.ini
 client_secret.json
 youtube_token.json
+.font_index.json
+fonts/*.ttf
+fonts/*.otf
+fonts/*.ttc
+fonts/*.TTF
+fonts/*.OTF

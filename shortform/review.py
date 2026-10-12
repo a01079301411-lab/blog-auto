@@ -38,12 +38,17 @@ def _sec(text: str) -> float:
 
 
 def write(path: str, highlights: list[Highlight]) -> None:
+    from .accounts import ACCOUNTS
+
     blocks = [HEADER]
     for i, h in enumerate(highlights, 1):
+        acct = ACCOUNTS.get(h.account)
+        where = f"   → {acct.no}번 {acct.name}" if acct else ""
         blocks.append(
-            f"[O] {i:02}   점수 {h.score}/10\n"
+            f"[O] {i:02}   점수 {h.score}/10{where}\n"
             f"구간: {_hms(h.start)} ~ {_hms(h.end)}   ({h.end - h.start:.0f}초)\n"
             f"제목: {h.title.replace(chr(10), ' / ')}\n"
+            f"부제목: {h.sub_title}\n"
             f"알약: {h.label}\n"
             f"하단: {h.bottom}\n"
             f"이유: {h.reason}\n")
@@ -63,9 +68,11 @@ def read(path: str, highlights: list[Highlight]) -> list[Highlight]:
         if not 0 <= idx < len(highlights) or m.group(1) in "Xx×":
             continue
         h = highlights[idx]
-        fields = dict(re.findall(r"^(구간|제목|알약|하단):[ \t]*(.*)$", block, re.M))
+        fields = dict(re.findall(r"^(구간|제목|부제목|알약|하단):[ \t]*(.*)$", block, re.M))
         if "제목" in fields:
             h.title = "\n".join(p.strip() for p in fields["제목"].split("/") if p.strip())
+        if "부제목" in fields:
+            h.sub_title = fields["부제목"].strip()
         if "알약" in fields:
             h.label = fields["알약"].strip()
         if "하단" in fields:

@@ -73,6 +73,21 @@ def snapshot(src: str, t: float, out: str, *, video_filter: str, ass: str | None
              "-frames:v", "1", "-q:v", "2", os.path.abspath(out)], cwd=work)
 
 
+def is_vertical(path: str) -> bool:
+    """세로로 찍은 영상인지 (휴대폰 회전 정보까지 고려)."""
+    for st in probe(path)["streams"]:
+        if st.get("codec_type") == "video":
+            w, h = int(st.get("width", 0)), int(st.get("height", 0))
+            rot = 0
+            for sd in st.get("side_data_list", []) or []:
+                rot = int(sd.get("rotation", 0) or 0) or rot
+            rot = rot or int((st.get("tags") or {}).get("rotate", 0) or 0)
+            if abs(rot) in (90, 270):
+                w, h = h, w
+            return h > w
+    return False
+
+
 def duration(path: str) -> float:
     return float(probe(path)["format"]["duration"])
 
@@ -101,6 +116,8 @@ def render(
     sfx: str | None = None,
     sfx_times: list[float] | None = None,
     sfx_volume: float = 0.6,
+    overlay: str | None = None,
+    font_files: list[str] | None = None,
 ) -> None:
     """src에서 segments 구간만 이어붙여 out으로 렌더링한다.
 
@@ -153,17 +170,30 @@ def render(
     else:
         audio_label = "[a]"
     with tempfile.TemporaryDirectory() as work:
+        if overlay:  # 제목 등 영상 내내 고정인 글자 (투명 PNG)
+            idx, n_inputs = n_inputs, n_inputs + 1
+            inputs += ["-i", os.path.abspath(overlay)]
+            parts.append(f"[vl][{idx}:v]overlay=0:0:format=auto[vo]")
+            parts.append("[vo]null[vl2]")
+        else:
+            parts.append("[vl]null[vl2]")
+        fontsdir = ""
+        if font_files:  # 자막 글꼴을 작업 폴더에 모아 libass가 이름으로 찾게 한다
+            os.makedirs(os.path.join(work, "fonts"), exist_ok=True)
+            for k, ff in enumerate(dict.fromkeys(font_files)):
+                shutil.copyfile(ff, os.path.join(work, "fonts", f"f{k}{os.path.splitext(ff)[1]}"))
+            fontsdir = ":fontsdir=fonts"
         if srt:
             # 자막 경로를 필터 안에 쓰면 Windows 드라이브 문자(C:)·한글·따옴표 이스케이프가
             # 까다로우므로, 영문 이름으로 복사해 두고 그 폴더에서 FFmpeg을 실행한다
             ext = os.path.splitext(srt)[1]
             shutil.copyfile(srt, os.path.join(work, "subs" + ext))
-            sub = f"[vl]subtitles=filename=subs{ext}"
+            sub = f"[vl2]subtitles=filename=subs{ext}{fontsdir}"
             if ext != ".ass":  # ASS는 파일 안에 스타일이 있다
                 sub += f":force_style='{subtitle_style(font)}'"
             parts.append(sub + "[vout]")
         else:
-            parts.append("[vl]null[vout]")
+            parts.append("[vl2]null[vout]")
 
         script = os.path.join(work, "filter.txt")
         with open(script, "w", encoding="utf-8") as f:

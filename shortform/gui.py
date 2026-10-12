@@ -15,7 +15,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import review, settings
+from . import accounts, review, settings
 from .highlights import Highlight
 from .styles import PRESETS
 
@@ -64,7 +64,7 @@ class App:
             root.iconbitmap(os.path.join(ROOT, "shortform", "assets", "app.ico"))
         except tk.TclError:
             pass  # 아이콘을 못 읽어도 창은 그대로
-        root.geometry("980x760")
+        root.geometry("1000x860")
         root.minsize(860, 640)
         self._fonts()
         try:
@@ -110,8 +110,32 @@ class App:
         ttk.Button(vb, text="영상 추가...", command=self._pick_videos).pack(fill="x")
         ttk.Button(vb, text="목록에서 빼기", command=self._remove_video).pack(fill="x", pady=(4, 0))
 
+        # 코시 인스타 계정
+        af = ttk.LabelFrame(main, text=" 2. 인스타 계정 (코시 제작 가이드대로 만들어요) ", padding=8)
+        af.pack(fill="x", pady=(8, 0))
+        chosen = set(accounts.parse(self.cfg.get("accounts", "")))
+        self.acct_vars: dict[int, tk.BooleanVar] = {}
+        grid = ttk.Frame(af)
+        grid.pack(side="left", fill="x", expand=True)
+        for k, (no, a) in enumerate(accounts.ACCOUNTS.items()):
+            var = tk.BooleanVar(value=no in chosen)
+            ttk.Checkbutton(grid, text=f"{no}. {a.name}", variable=var).grid(
+                row=k // 5, column=k % 5, sticky="w", padx=(0, 14), pady=1)
+            self.acct_vars[no] = var
+        ab = ttk.Frame(af)
+        ab.pack(side="left", padx=(8, 0))
+        pf = ttk.Frame(ab)
+        pf.pack(anchor="w")
+        ttk.Label(pf, text="계정당").pack(side="left")
+        self.per_var = tk.StringVar(value=self.cfg.get("per_account", "3"))
+        ttk.Spinbox(pf, from_=1, to=10, textvariable=self.per_var, width=4).pack(side="left", padx=4)
+        ttk.Label(pf, text="개").pack(side="left")
+        ttk.Button(ab, text="글꼴 확인", command=self._check_fonts).pack(fill="x", pady=(4, 0))
+        ttk.Label(af, text="안 고르면 아래 '디자인'으로 만들어요", foreground="gray").pack(
+            side="bottom", anchor="w")
+
         # 설정 (왼쪽: 기본 / 오른쪽: 자동 편집)
-        sf = ttk.LabelFrame(main, text=" 2. 설정 ", padding=8)
+        sf = ttk.LabelFrame(main, text=" 3. 설정 ", padding=8)
         sf.pack(fill="x", pady=(8, 0))
         left = ttk.Frame(sf)
         left.pack(side="left", fill="both", expand=True)
@@ -120,7 +144,7 @@ class App:
 
         c = self.cfg
         r = 0
-        ttk.Label(left, text="디자인").grid(row=r, column=0, sticky="w", **pad)
+        ttk.Label(left, text="디자인").grid(row=r, column=0, sticky="w", **pad)  # 계정 안 고를 때
         names = [STYLE_NAMES.get(k, k) for k in PRESETS]
         self.style_var = tk.StringVar(value=STYLE_NAMES.get(c["style"], c["style"]))
         ttk.Combobox(left, textvariable=self.style_var, values=names, width=34).grid(
@@ -249,6 +273,8 @@ class App:
             self.cfg["focus"] if self.cfg["focus"] != "auto" else "0.5")
         yes = lambda k: "yes" if self.flags[k].get() else "no"
         return {
+            "accounts": ",".join(str(n) for n, v in self.acct_vars.items() if v.get()),
+            "per_account": self.per_var.get().strip(),
             "style": style, "count": self.count_var.get().strip(),
             "min_len": self.min_var.get().strip(), "max_len": self.max_var.get().strip(),
             "context": " ".join(self.context.get("1.0", "end").split()),
@@ -259,6 +285,29 @@ class App:
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
+
+    def _check_fonts(self) -> None:
+        """고른 계정에 필요한 글꼴이 이 컴퓨터에 있는지 보여준다."""
+        from . import fonts
+
+        picked = [n for n, v in self.acct_vars.items() if v.get()] or list(accounts.ACCOUNTS)
+        rows, missing = [], 0
+        for n in picked:
+            a = accounts.ACCOUNTS[n]
+            for role, cands in accounts.all_fonts(a).items():
+                path = fonts.find(cands)
+                name = cands[1] if len(cands) > 1 else cands[0]
+                if path:
+                    rows.append(f"✔ {n}. {a.name} - {role}: {name}")
+                else:
+                    missing += 1
+                    rows.append(f"✘ {n}. {a.name} - {role}: {name}  (없음)")
+        os.makedirs(fonts.LOCAL_DIR, exist_ok=True)
+        tip = ("\n\n없는 글꼴은 코시 가이드의 [3.폰트] 폴더에서 설치하거나, 글꼴 파일을 "
+               "프로그램의 fonts 폴더에 넣어 주세요. 없으면 맑은 고딕으로 대신 만들어요."
+               if missing else "\n\n모든 글꼴이 준비됐어요!")
+        if messagebox.askyesno("글꼴 확인", "\n".join(rows) + tip + "\n\nfonts 폴더를 열까요?"):
+            _open_folder(fonts.LOCAL_DIR)
 
     def _save_key(self) -> None:
         key = (self.key_var.get() if self.key_var else "").strip()
@@ -481,7 +530,7 @@ class ReviewDialog:
 
         self.win = win = tk.Toplevel(parent)
         win.title("만들 숏폼 고르기")
-        win.geometry("1000x620")
+        win.geometry("1240x640")
         win.transient(parent)
         win.grab_set()
         win.protocol("WM_DELETE_WINDOW", self._done)
@@ -504,7 +553,7 @@ class ReviewDialog:
         win.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
         win.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
 
-        for col, text in enumerate(["", "번호", "점수", "구간", "제목", "하단 문구", "선정 이유"]):
+        for col, text in enumerate(["", "번호", "점수", "계정", "구간", "부제목", "제목", "하단 문구", "선정 이유"]):
             ttk.Label(body, text=text, font=("", 9, "bold")).grid(row=0, column=col, sticky="w",
                                                                  padx=4, pady=(0, 4))
         self.rows = []
@@ -512,16 +561,21 @@ class ReviewDialog:
             on = tk.BooleanVar(value=True)
             rng = tk.StringVar(value=f"{review._hms(h.start)} ~ {review._hms(h.end)}")
             title = tk.StringVar(value=h.title.replace("\n", " / "))
+            subt = tk.StringVar(value=h.sub_title)
             bottom = tk.StringVar(value=h.bottom)
             ttk.Checkbutton(body, variable=on).grid(row=i, column=0, padx=4, pady=3)
             ttk.Label(body, text=f"{i:02}").grid(row=i, column=1, padx=4)
             ttk.Label(body, text=f"{h.score}/10").grid(row=i, column=2, padx=4)
-            ttk.Entry(body, textvariable=rng, width=14).grid(row=i, column=3, padx=4)
-            ttk.Entry(body, textvariable=title, width=34).grid(row=i, column=4, padx=4)
-            ttk.Entry(body, textvariable=bottom, width=18).grid(row=i, column=5, padx=4)
-            ttk.Label(body, text=h.reason, wraplength=260, foreground="#555").grid(
-                row=i, column=6, padx=4, sticky="w")
-            self.rows.append((on, rng, title, bottom))
+            acct = accounts.ACCOUNTS.get(h.account)
+            ttk.Label(body, text=f"{acct.no}. {acct.name}" if acct else "-").grid(
+                row=i, column=3, padx=4, sticky="w")
+            ttk.Entry(body, textvariable=rng, width=14).grid(row=i, column=4, padx=4)
+            ttk.Entry(body, textvariable=subt, width=12).grid(row=i, column=5, padx=4)
+            ttk.Entry(body, textvariable=title, width=28).grid(row=i, column=6, padx=4)
+            ttk.Entry(body, textvariable=bottom, width=14).grid(row=i, column=7, padx=4)
+            ttk.Label(body, text=h.reason, wraplength=200, foreground="#555").grid(
+                row=i, column=8, padx=4, sticky="w")
+            self.rows.append((on, rng, title, bottom, subt))
 
         bf = ttk.Frame(win, padding=10)
         bf.pack(fill="x")
@@ -535,9 +589,10 @@ class ReviewDialog:
             on.set(value)
 
     def _done(self) -> None:
-        for h, (on, rng, title, bottom) in zip(self.highlights, self.rows):
+        for h, (on, rng, title, bottom, subt) in zip(self.highlights, self.rows):
             h.title = "\n".join(p.strip() for p in title.get().split("/") if p.strip())
             h.bottom = bottom.get().strip()
+            h.sub_title = subt.get().strip()
             try:
                 a, b = (review._sec(x) for x in rng.get().split("~"))
                 if b > a:

@@ -316,3 +316,43 @@ def write_ass(
                      + _keywords(c.text, keywords or [], s.sub_highlight))
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+
+def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> None:
+    """계정 가이드의 말자막 (하얀 글자, 설명자막 바로 아래). 글자 모양은 계정 글꼴 그대로."""
+    from . import fonts
+    from .accounts import SUB_Y
+
+    t = acct.sub
+    fam = fonts.family(font_path)
+    if acct.sub_box:  # 3번: 어두운 상자 위 하얀 글자
+        border, outline, outline_c = 3, 12, acct.sub_box
+    else:
+        border, outline, outline_c = 1, t.stroke, t.stroke_color
+    top = int(SUB_Y - t.size * 0.62)  # 한 줄일 때 가운데가 SUB_Y. 길면 아래로 늘어난다
+    lines = [
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
+        "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Sub,{fam},{t.size},{_c(t.color)},&H000000FF&,{_c(outline_c)},&H80000000&,"
+        f"0,0,0,0,100,100,0,0,{border},{outline},0,8,50,50,{top},1",
+        "", "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+    for c in cues:
+        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Sub,,0,0,0,,{_esc(c.text)}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def account_box_style(vertical: bool) -> Style:
+    """계정 가이드 영상 배치: N-3(세로 촬영본)은 화면 가득, N-4(롱폼)는 가운데 상자."""
+    from .accounts import BOX_BOTTOM, BOX_TOP
+
+    if vertical:
+        return Style(video_top=0, video_height=H, video_fit="fill")
+    return Style(background="black", video_top=BOX_TOP, video_height=BOX_BOTTOM - BOX_TOP,
+                 video_fit="fill")
