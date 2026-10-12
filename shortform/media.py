@@ -73,8 +73,8 @@ def snapshot(src: str, t: float, out: str, *, video_filter: str, ass: str | None
              "-frames:v", "1", "-q:v", "2", os.path.abspath(out)], cwd=work)
 
 
-def is_vertical(path: str) -> bool:
-    """세로로 찍은 영상인지 (휴대폰 회전 정보까지 고려)."""
+def display_size(path: str) -> tuple[int, int]:
+    """화면에 보이는 가로·세로 크기 (휴대폰 회전 정보까지 고려). 영상이 없으면 (0, 0)."""
     for st in probe(path)["streams"]:
         if st.get("codec_type") == "video":
             w, h = int(st.get("width", 0)), int(st.get("height", 0))
@@ -84,8 +84,18 @@ def is_vertical(path: str) -> bool:
             rot = rot or int((st.get("tags") or {}).get("rotate", 0) or 0)
             if abs(rot) in (90, 270):
                 w, h = h, w
-            return h > w
-    return False
+            return w, h
+    return 0, 0
+
+
+def is_vertical(path: str) -> bool:
+    """세로로 찍은 영상인지 (휴대폰 회전 정보까지 고려)."""
+    w, h = display_size(path)
+    return h > w
+
+
+def has_audio(path: str) -> bool:
+    return any(st.get("codec_type") == "audio" for st in probe(path)["streams"])
 
 
 def duration(path: str) -> float:

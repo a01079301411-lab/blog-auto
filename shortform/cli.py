@@ -406,6 +406,26 @@ def cmd_auto(args) -> None:
         os.startfile(out)  # Windows: 결과 폴더 열기 (프로그램 창에서는 창이 대신 연다)
 
 
+def cmd_long(args) -> None:
+    from . import longform
+
+    out = longform.run(args)
+    print(f"\n완료! 결과 폴더: {out}")
+    if hasattr(os, "startfile") and not os.environ.get("SHORTFORM_GUI"):
+        os.startfile(out)
+
+
+def cmd_longauto(args) -> None:
+    """settings.ini의 [longform] 설정으로 long을 실행한다 (프로그램 창·run_long.bat용)."""
+    from . import settings
+
+    c = settings.load_long(args.settings)
+    argv = settings.long_argv(args.inputs, c, plan=args.plan, output=args.output,
+                              title=args.title, replan=args.replan)
+    long_args = build_parser().parse_args(argv)
+    long_args.func(long_args)
+
+
 def cmd_style(args) -> None:
     print(dump_style(load_style(args.name)))
 
@@ -498,6 +518,47 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("input")
     s.add_argument("--settings", default=SETTINGS)
     s.set_defaults(func=cmd_auto)
+
+    s = sub.add_parser("long", help="여러 촬영본 + 기획안 → 롱폼 편집 (자막·챕터·썸네일)")
+    s.add_argument("inputs", nargs="+", help="촬영본 영상 파일 또는 폴더 (여러 개)")
+    s.add_argument("-o", "--output", help="결과 폴더 (기본: 첫 촬영본 옆 '롱폼_결과')")
+    s.add_argument("--plan", help="기획안 파일(txt/md/docx/hwp) 또는 기획 내용 글")
+    s.add_argument("--context", help="채널 설명 (세계관, 출연자). 편집·제목 품질이 좋아져요")
+    s.add_argument("--minutes", type=float, default=0, help="목표 길이(분). 0이면 AI가 판단")
+    s.add_argument("--commerce", type=_yesno, default=False,
+                   help="유료광고 포함 영상 yes/no (시작·끝에 '유료광고 포함' 표시)")
+    s.add_argument("--review", type=_yesno, default=True, help="만들기 전에 순서표 검토 yes/no")
+    s.add_argument("--replan", action="store_true", help="지난 순서표를 버리고 새로 짜기")
+    s.add_argument("--frames", type=_yesno, default=True,
+                   help="촬영본 장면 사진도 AI에게 보여주기 yes/no (말 없는 장면 판단)")
+    s.add_argument("--jumpcut", type=_yesno, default=True,
+                   help="말 사이 긴 무음 잘라내기 yes/no (풍경 장면은 그대로)")
+    s.add_argument("--subtitles", type=_yesno, default=True, help="자막 넣기 yes/no")
+    s.add_argument("--fix-subtitles", type=_yesno, default=True,
+                   help="Claude로 자막 오타 교정 yes/no")
+    s.add_argument("--chapter-titles", type=_yesno, default=True,
+                   help="챕터가 바뀔 때 화면에 챕터 제목 띄우기 yes/no")
+    s.add_argument("--bgm", help="배경음악 폴더 (하나를 골라 깔고, 말할 때 자동으로 줄여요)")
+    s.add_argument("--bgm-volume", type=float, default=0.10, help="배경음악 볼륨 0~1")
+    s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 만들기 yes/no")
+    s.add_argument("--allow-fallback", action="store_true",
+                   help="Claude를 못 쓰면 촬영 순서대로 이어 붙이기")
+    s.add_argument("--model", default="small", help="Whisper 모델 (기본 small)")
+    s.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    s.add_argument("--language", default="ko")
+    s.add_argument("--font", help="자막 글꼴 이름")
+    s.add_argument("--min-silence", type=float, default=1.0,
+                   help="이 길이(초) 이상 말이 끊기면 잘라냄 (기본 1.0)")
+    s.set_defaults(func=cmd_long)
+
+    s = sub.add_parser("longauto", help="settings.ini [longform] 설정으로 롱폼 만들기")
+    s.add_argument("inputs", nargs="+")
+    s.add_argument("--plan")
+    s.add_argument("-o", "--output")
+    s.add_argument("--title", help="결과 폴더 이름")
+    s.add_argument("--replan", action="store_true")
+    s.add_argument("--settings", default=SETTINGS)
+    s.set_defaults(func=cmd_longauto)
 
     s = sub.add_parser("style", help="스타일 설정을 JSON으로 출력 (내 스타일 만들기용)")
     s.add_argument("name", nargs="?", default="green")
