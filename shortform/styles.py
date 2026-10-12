@@ -191,7 +191,9 @@ def video_filter(
         box = (f"scale={bw}:{bh}:force_original_aspect_ratio=decrease,"
                f"pad={bw}:{bh}:(ow-iw)/2:(oh-ih)/2")
     if zooms:
-        box += (f",zoompan=z='{_zoom_expr(zooms)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2'"
+        # zoompan은 프레임 간격이 일정하다고 보고 시간을 새로 매기므로,
+        # 휴대폰 영상처럼 간격이 들쭉날쭉한 영상은 먼저 일정하게 맞춘다
+        box += (f",fps={fps},zoompan=z='{_zoom_expr(zooms)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2'"
                 f":d=1:s={bw}x{bh}:fps={fps}")
     if bh >= H:
         return f"[v]{box},setsar=1[vl]"
