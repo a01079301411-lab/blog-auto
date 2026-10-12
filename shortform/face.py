@@ -31,7 +31,7 @@ def _frames(src: str, start: float, end: float):
          "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", src,
          "-vf", f"fps={SAMPLE_FPS},scale={DETECT_W}:{dh}",
          "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
-        stdout=subprocess.PIPE)
+        stdout=subprocess.PIPE, creationflags=media.NO_WINDOW)
     size = DETECT_W * dh * 3
     i = 0
     try:

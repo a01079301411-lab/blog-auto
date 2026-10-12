@@ -42,8 +42,10 @@ exit /b
 echo.
 echo [INSTALL] Python packages (takes a few minutes) ...
 python -m pip install --upgrade pip >nul
-python -m pip install -r requirements.txt
+python -m pip install --no-warn-script-location -r requirements.txt
 if errorlevel 1 goto pip_failed
+
+python -m shortform.shortcut --force
 
 if defined ANTHROPIC_API_KEY goto done
 echo.
@@ -60,8 +62,8 @@ echo [OK] API key saved
 :done
 echo.
 echo ============================================
-echo  Done! Drag a video file onto run.bat to start.
-echo  Edit settings.ini with Notepad to change options.
+echo  Done! Double-click the shortform icon on your desktop.
+echo  (Or drag a video file onto run.bat.)
 echo ============================================
 pause
 exit /b

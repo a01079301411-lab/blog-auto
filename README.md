@@ -56,6 +56,21 @@
 
 ---
 
+## 프로그램 창으로 쓰기 (추천)
+
+바탕화면의 **"숏폼 자동 편집기"** 아이콘을 더블클릭하면 프로그램 창이 열려요.
+
+- 아이콘은 `run.bat`을 한 번 실행하거나 `install.bat`을 실행하면 자동으로 생겨요.
+- 아이콘이 없으면 `app.bat`을 더블클릭해도 돼요.
+
+1. **[영상 추가...]**로 영상을 골라요. 바탕화면 아이콘 위로 영상을 끌어다 놓아도 돼요. 여러 개를 넣으면 차례로 만들어요.
+2. 디자인, 개수, 영상 설명, 자동 편집 기능을 화면에서 정해요. 정한 값은 `settings.ini`에 저장돼서 다음에도 그대로 나와요.
+3. **[숏폼 만들기]**를 누르면 진행 상황이 창 아래에 보여요. **[중지]**로 멈출 수 있고, 다시 누르면 이어서 해요.
+4. "만들기 전에 고르기"를 켜 두면 **체크박스 목록**이 떠요. 만들 것만 체크하고 제목·하단 문구·구간을 고친 뒤 **[선택한 숏폼 만들기]**를 누르면 돼요.
+5. 다 되면 결과 폴더가 열려요.
+
+프로그램을 켤 때마다 최신 버전을 확인하고, 바뀐 게 있으면 자동으로 업데이트한 뒤 다시 열려요.
+
 ## 사용법
 
 ### 가장 쉬운 방법: 끌어다 놓기
@@ -215,7 +230,8 @@ python -m shortform style green > 내스타일.json
 ## 구조
 
 ```
-install.bat / run.bat   Windows 설치·실행
+install.bat / run.bat   Windows 설치·실행 (run.bat: 영상 끌어다 놓기)
+app.bat                 프로그램 창 열기
 settings.ini            run.bat 설정
 shortform/launcher.py   run.bat 실행기 (업데이트 → 숏폼 만들기)
 shortform/update.py     GitHub 자동 업데이트
@@ -228,6 +244,9 @@ shortform/
   subfix.py       자막 다듬기 (Claude)
   review.py       메모장으로 숏폼 고르기
   youtube.py      유튜브 업로드
+  gui.py          프로그램 창 (tkinter)
+  shortcut.py     바탕화면 아이콘 만들기
+  settings.py     settings.ini 읽기·쓰기
   models/         얼굴 인식 모델 (YuNet, MIT 라이선스)
   assets/         기본 효과음
   silence.py      무음 탐지

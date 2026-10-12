@@ -55,12 +55,13 @@ def fix_cues(words: list[Word], *, max_chars: int = 14, context: str = "",
     """words(숏폼 타임라인 기준)로 다듬은 자막 줄을 만든다. 실패하면 None."""
     if not words:
         return []
-    import anthropic
-
-    client = client or anthropic.Anthropic()
     numbered = "\n".join(f"{i}: {w.text.strip()}" for i, w in enumerate(words))
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
     try:
+        if client is None:
+            import anthropic
+
+            client = anthropic.Anthropic()
         response = client.beta.messages.create(
             model=MODEL,
             max_tokens=16000,
@@ -73,8 +74,8 @@ def fix_cues(words: list[Word], *, max_chars: int = 14, context: str = "",
             system=SYSTEM_PROMPT.format(max_chars=max_chars),
             messages=[{"role": "user", "content": f"{about}<words>\n{numbered}\n</words>"}],
         )
-    except anthropic.APIError as e:
-        print(f"  (자막 다듬기 건너뜀: {e})")
+    except Exception as e:  # API 키 없음, 네트워크 오류 등: 기존 방식 자막으로
+        print(f"  (자막 다듬기 건너뜀: {type(e).__name__}: {str(e)[:120]})")
         return None
     if response.stop_reason != "end_turn":
         print(f"  (자막 다듬기 건너뜀: {response.stop_reason})")

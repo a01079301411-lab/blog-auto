@@ -13,10 +13,14 @@ Segment = tuple[float, float]
 
 
 
+# 프로그램 창(콘솔 없음)에서 실행할 때 FFmpeg 등의 검은 창이 뜨지 않게 한다
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def run(cmd: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
     # FFmpeg 출력은 UTF-8이다. Windows 기본 인코딩(cp949)으로 읽으면 한글에서 깨진다
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", cwd=cwd)
+                          errors="replace", cwd=cwd, creationflags=NO_WINDOW)
     if proc.returncode != 0:
         raise RuntimeError(f"명령 실패: {' '.join(cmd[:4])}...\n{proc.stderr[-2000:]}")
     return proc

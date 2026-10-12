@@ -123,6 +123,8 @@ def tidy_settings(root: str = ROOT) -> None:
 
 def update(root: str = ROOT, url: str = ZIP_URL) -> list[str]:
     """바뀐 파일을 덮어쓰고, 바뀐 파일 경로 목록을 돌려준다."""
+    if os.environ.get("SHORTFORM_NO_UPDATE") or os.path.isdir(os.path.join(root, ".git")):
+        return []  # 개발용 폴더(git)에서는 덮어쓰지 않는다
     with urllib.request.urlopen(url, timeout=15) as resp:
         data = resp.read()
 
@@ -172,8 +174,9 @@ def main() -> None:
         print(f"  - {rel}")
     if "requirements.txt" in changed:
         print("[업데이트] 필요한 패키지 설치 중...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r",
-                        os.path.join(ROOT, "requirements.txt")])
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-warn-script-location",
+                        "-r", os.path.join(ROOT, "requirements.txt")],
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 if __name__ == "__main__":

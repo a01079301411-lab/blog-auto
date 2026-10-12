@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 from .highlights import Highlight
 
@@ -84,12 +85,23 @@ def read(path: str, highlights: list[Highlight]) -> list[Highlight]:
 def review(path: str, highlights: list[Highlight]) -> list[Highlight]:
     """목록 파일을 열어 사용자가 고르게 하고, 고른 하이라이트를 돌려준다."""
     write(path, highlights)
-    print(f"\n[숏폼 고르기] 메모장에서 만들 숏폼을 고르고, 저장한 뒤 메모장을 닫아 주세요.")
-    print(f"  목록 파일: {path}")
-    if sys.platform == "win32":
+    if os.environ.get("SHORTFORM_GUI"):
+        # 프로그램 창이 이 줄을 보고 고르기 화면을 띄운다. 다 고르면 .done 파일을 만든다
+        done = path + ".done"
+        if os.path.exists(done):
+            os.remove(done)
+        print("\n[숏폼 고르기] 창에서 만들 숏폼을 골라 주세요.")
+        print(f"@@REVIEW@@ {path}", flush=True)
+        while not os.path.exists(done):
+            time.sleep(0.3)
+        os.remove(done)
+    elif sys.platform == "win32":
+        print(f"\n[숏폼 고르기] 메모장에서 만들 숏폼을 고르고, 저장한 뒤 메모장을 닫아 주세요.")
+        print(f"  목록 파일: {path}")
         subprocess.run(["notepad.exe", path])  # 메모장을 닫을 때까지 기다린다
     else:
-        input("  파일을 고친 뒤 Enter를 누르세요... ")
+        print(f"\n[숏폼 고르기] 목록 파일을 고친 뒤 Enter를 누르세요: {path}")
+        input()
     chosen = read(path, highlights)
     print(f"  {len(chosen)}개를 만들어요.")
     return chosen

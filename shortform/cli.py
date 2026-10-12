@@ -291,43 +291,20 @@ SETTINGS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 
 
 def cmd_auto(args) -> None:
-    """settings.ini를 읽어 shorts를 실행한다 (run.bat 끌어다 놓기용)."""
-    import configparser
-
+    """settings.ini를 읽어 shorts를 실행한다 (run.bat 끌어다 놓기·프로그램 창용)."""
+    from . import settings
     from .update import tidy_settings
 
     if os.path.abspath(args.settings) == os.path.abspath(SETTINGS):
         tidy_settings()  # 예전 업데이트가 흐트러뜨린 설정 파일 모양 정리
-    cfg = configparser.ConfigParser()
-    if not cfg.read(args.settings, encoding="utf-8-sig"):  # 메모장이 붙이는 BOM 처리
-        raise RuntimeError(f"설정 파일을 찾을 수 없어요: {args.settings}")
-    c = cfg["shorts"] if cfg.has_section("shorts") else {}
-    out = os.path.splitext(os.path.abspath(args.input))[0] + "_shorts"
-
-    argv = ["shorts", args.input, "-o", out,
-            "--style", c.get("style", "green"),
-            "-n", c.get("count", "10"),
-            "--min-len", c.get("min_len", "20"),
-            "--max-len", c.get("max_len", "60"),
-            "--focus", c.get("focus", "auto"),
-            "--model", c.get("model", "small"),
-            "--fix-subtitles", c.get("fix_subtitles", "yes"),
-            "--review", c.get("review", "yes"),
-            "--zoom", c.get("zoom", "yes"),
-            "--sfx", c.get("sfx", "yes"),
-            "--bgm", os.path.join(ROOT, "bgm"),
-            "--bgm-volume", c.get("bgm_volume", "0.15"),
-            "--thumbnail", c.get("thumbnail", "yes"),
-            "--upload", c.get("upload", "no")]
-    for key in ("context", "speaker", "font"):
-        if c.get(key, "").strip():
-            argv += [f"--{key}", c[key].strip()]
-    shorts_args = build_parser().parse_args(argv)
+    out = settings.output_dir(args.input)
+    shorts_args = build_parser().parse_args(
+        settings.to_argv(args.input, settings.load(args.settings), out))
     shorts_args.func(shorts_args)
 
     print(f"\n완료! 결과 폴더: {out}")
-    if hasattr(os, "startfile"):  # Windows: 결과 폴더 열기
-        os.startfile(out)
+    if hasattr(os, "startfile") and not os.environ.get("SHORTFORM_GUI"):
+        os.startfile(out)  # Windows: 결과 폴더 열기 (프로그램 창에서는 창이 대신 연다)
 
 
 def cmd_style(args) -> None:

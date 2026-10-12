@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import subprocess
 
-from .media import Segment
+from .media import NO_WINDOW, Segment
 
 _START = re.compile(r"silence_start: (-?[\d.]+)")
 _END = re.compile(r"silence_end: (-?[\d.]+)")
@@ -30,7 +30,7 @@ def detect_silences(
             "-af", f"silencedetect=noise={noise_db}dB:d={min_silence}",
             "-f", "null", "-"]
     stderr = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                            errors="replace").stderr
+                            errors="replace", creationflags=NO_WINDOW).stderr
 
     silences: list[Segment] = []
     cur: float | None = None

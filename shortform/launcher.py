@@ -13,6 +13,12 @@ from . import update
 
 def main() -> int:
     update.main()
+    try:
+        from . import shortcut
+        if shortcut.create():
+            print("바탕화면에 '숏폼 자동 편집기' 아이콘을 만들었어요. 다음부터는 그걸 쓰면 돼요.")
+    except Exception:
+        pass  # 아이콘을 못 만들어도 run.bat은 그대로 쓸 수 있다
     print()
     if len(sys.argv) < 2:
         print("영상 파일을 run.bat 위로 끌어다 놓으세요.")
