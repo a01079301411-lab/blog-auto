@@ -531,6 +531,17 @@ def select_category(page, editor, category):
         return False
 
 
+def still_writing(page):
+    """아직 글쓰기 화면인지. 글쓰기 화면 위쪽의 발행, 저장 버튼이 보이면 True."""
+    for frame in page.frames:
+        try:
+            if frame.locator(", ".join(PUBLISH_BUTTON[:1] + SAVE_BUTTON[:1])).count():
+                return True
+        except Exception:
+            return True  # 화면이 바뀌는 중이면 다음에 다시 본다
+    return False
+
+
 def post_url(page):
     """발행된 글 주소. 글 보기 화면이 iframe 안에 열릴 수 있어서 모든 frame에서 찾는다."""
     for url in [page.url] + [f.url for f in page.frames]:
@@ -609,9 +620,10 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     if not click_first(editor, CONFIRM_BUTTON, pick_last=True):
         raise PublishError(f"발행 확인 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_confirm')}")
 
-    # 발행되면 에디터가 사라지고 글 보기 화면으로 바뀐다
-    for _ in range(30):
+    # 발행되면 글쓰기 화면이 글 보기 화면으로 바뀐다.
+    # 글 보기 화면에도 제목 칸(.se-documentTitle)이 있어서, 글쓰기 화면에만 있는 발행/저장 버튼으로 구분한다.
+    for _ in range(60):
         page.wait_for_timeout(1000)
-        if find_editor(page, seconds=1) is None:
+        if not still_writing(page):
             return {"result": "published", "url": post_url(page), "failed_photos": failed, "warnings": warnings}
     raise PublishError(f"발행이 끝났는지 확인하지 못했어요. 화면: {screenshot(page, 'unknown')}")

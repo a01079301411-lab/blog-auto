@@ -279,6 +279,10 @@ def main():
                 where = f" 그때 화면: {shot}" if shot else ""
                 stop(f"네이버에 입력하다 멈췄어요. 크롬 창이 닫혔거나 화면이 바뀌었을 수 있어요.{where}"
                      "\n다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, 없을 때만 다시 올립니다.")
+            if result["result"] == "published" and not re.search(r"/\d+|logNo=\d+", result["url"]):
+                found = find_on_blog(post["title"])  # 글 주소를 못 읽었으면 블로그 글 목록에서 찾는다
+                if found:
+                    result["url"] = found["url"]
             # 크롬을 닫기 전에 바로 기록한다. (닫다가 오류가 나도 같은 글을 다시 올리지 않게)
             finish(topic, photo_set, post, blocks, result)
             recorded = True
