@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import random
+import re
 import sys
 import time
 from datetime import datetime
@@ -95,9 +96,11 @@ def check_login():
         return publisher.is_logged_in(page)
 
 
-def save_pending(topic, photo_set, related, post, blocks):
+def save_pending(topic, photo_set, related, post, blocks, attempted=False):
+    """attempted=True: 발행 버튼까지 누를 수 있는 단계에 들어갔다는 표시.
+    다음 실행 때 이 글이 이미 블로그에 올라가 있는지 먼저 확인해서, 같은 글이 두 번 올라가지 않게 한다."""
     data = {
-        "topic": topic, "related": related, "post": post, "blocks": blocks,
+        "topic": topic, "related": related, "post": post, "blocks": blocks, "attempted": attempted,
         "photo_set": None if not photo_set else {
             "folder": str(photo_set["folder"]), "region": photo_set["region"],
             "kind": photo_set["kind"], "files": [str(f) for f in photo_set["files"]],
@@ -108,7 +111,7 @@ def save_pending(topic, photo_set, related, post, blocks):
 
 
 def load_pending():
-    """올리지 못한 글이 있으면 (topic, photo_set, related, post, blocks)를 돌려준다."""
+    """올리지 못한 글이 있으면 (topic, photo_set, related, post, blocks, attempted)를 돌려준다."""
     if not PENDING_FILE.exists():
         return None
     data = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
@@ -125,7 +128,41 @@ def load_pending():
         log.info("저장해 둔 글이 지금 기준에 맞지 않아 새로 씁니다:\n- %s", "\n- ".join(fails))
         PENDING_FILE.unlink(missing_ok=True)
         return None
-    return topic, photo_set, related, post, formatter.format_body(post["body"], related)
+    return (topic, photo_set, related, post, formatter.format_body(post["body"], related),
+            bool(data.get("attempted")))
+
+
+def find_on_blog(title):
+    """이 제목의 글이 블로그에 올라가 있으면 그 글 정보, 없으면 False, 블로그를 못 읽으면 None."""
+    posts = links.blog_posts()
+    if posts is None:
+        return None
+    want = re.sub(r"\s", "", title)
+    return next((p for p in posts if re.sub(r"\s", "", p["title"]) == want), False)
+
+
+def finish(topic, photo_set, post, blocks, result, note=""):
+    """올린 글을 기록하고, 다시 올리지 않게 대기 글을 지우고, 사진 폴더를 정리하고, 알린다."""
+    PENDING_FILE.unlink(missing_ok=True)
+    history.add({
+        "topic": topic["topic"], "keyword": topic["keyword"], "title": post["title"],
+        "title_type": topic["title_type"], "hook_type": topic["hook_type"], "variant": topic["variant"],
+        "opening": formatter.opening(blocks),
+        "result": result["result"], "url": result["url"],
+        "photo_folder": photo_set["folder"].name if photo_set else "",
+    })
+    try:
+        photos.mark_used(photo_set)
+    except Exception as e:  # 사진 폴더 정리에 실패해도 글은 이미 올라갔다
+        log.warning("사진 폴더를 사용완료로 옮기지 못했어요: %s", e)
+
+    done = "발행 완료" if result["result"] == "published" else "임시저장 완료 (검수 대기)"
+    message = f"[블로그 자동화] {done}\n제목: {post['title']}\n{result['url']}"
+    if note:
+        message += "\n" + note
+    if result["warnings"]:
+        message += "\n주의: " + " / ".join(result["warnings"])
+    notifier.notify(message)
 
 
 def make_post(topic, photo_set, related):
@@ -193,7 +230,20 @@ def main():
 
     pending = None if args.preview else load_pending()
     if pending:
-        topic, photo_set, related, post, blocks = pending
+        topic, photo_set, related, post, blocks, attempted = pending
+        if attempted and AUTO_PUBLISH:
+            # 지난번에 발행 버튼까지 눌렀을 수 있다. 블로그에 이미 있으면 다시 올리지 않는다.
+            found = find_on_blog(post["title"])
+            if found is None:
+                stop("지난번 글이 발행됐는지 블로그에서 확인하지 못했어요. 같은 글이 두 번 올라가지 않게 "
+                     "이번에는 쉽니다. 블로그를 한 번 확인해 주세요. 다음 실행 때 다시 확인합니다.")
+            if found:
+                log.info("지난번 글이 이미 블로그에 올라가 있어요. 다시 올리지 않습니다: %s", post["title"])
+                finish(topic, photo_set, post, blocks,
+                       {"result": "published", "url": found["url"], "warnings": []},
+                       note="(지난번 실행 때 올라간 글을 이제 기록했어요. 다시 올리지 않았어요.)")
+                pending = None
+    if pending:
         log.info("지난번에 올리지 못한 글을 다시 올립니다: %s", post["title"])
     else:
         topic = topics.pick(args.topic)
@@ -209,8 +259,11 @@ def main():
             return
         save_pending(topic, photo_set, related, post, blocks)
 
+    if AUTO_PUBLISH:
+        save_pending(topic, photo_set, related, post, blocks, attempted=True)
     log.info("크롬을 열어 네이버에 입력합니다. 끝날 때까지 크롬 창 안을 클릭하지 마세요.")
     photo_paths = {p.name: photos.prepare_upload(p) for p in photo_set["files"]} if photo_set else {}
+    recorded = False
     try:
         with publisher.open_browser() as page:
             try:
@@ -219,34 +272,24 @@ def main():
                     photo_paths, post["photo_captions"], publish=AUTO_PUBLISH, category=topic["category"],
                 )
             except publisher.PublishError as e:
-                stop(f"{e}\n다시 실행하면 이 글을 그대로 다시 올립니다.")
+                stop(f"{e}\n다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, 없을 때만 다시 올립니다.")
             except Exception as e:
                 shot = publisher.screenshot(page, "error")
                 log.error("예상하지 못한 오류: %r", e)
                 where = f" 그때 화면: {shot}" if shot else ""
                 stop(f"네이버에 입력하다 멈췄어요. 크롬 창이 닫혔거나 화면이 바뀌었을 수 있어요.{where}"
-                     "\n다시 실행하면 이 글을 그대로 다시 올립니다.")
+                     "\n다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, 없을 때만 다시 올립니다.")
+            # 크롬을 닫기 전에 바로 기록한다. (닫다가 오류가 나도 같은 글을 다시 올리지 않게)
+            finish(topic, photo_set, post, blocks, result)
+            recorded = True
     except SystemExit:
         raise
     except Exception as e:
         log.error("예상하지 못한 오류: %r", e)
-        stop("크롬을 열거나 닫다가 문제가 생겼어요. 다시 실행하면 이 글을 그대로 다시 올립니다.")
-    PENDING_FILE.unlink(missing_ok=True)
-
-    history.add({
-        "topic": topic["topic"], "keyword": topic["keyword"], "title": post["title"],
-        "title_type": topic["title_type"], "hook_type": topic["hook_type"], "variant": topic["variant"],
-        "opening": formatter.opening(blocks),
-        "result": result["result"], "url": result["url"],
-        "photo_folder": photo_set["folder"].name if photo_set else "",
-    })
-    photos.mark_used(photo_set)
-
-    done = "발행 완료" if result["result"] == "published" else "임시저장 완료 (검수 대기)"
-    message = f"[블로그 자동화] {done}\n제목: {post['title']}\n{result['url']}"
-    if result["warnings"]:
-        message += "\n주의: " + " / ".join(result["warnings"])
-    notifier.notify(message)
+        if recorded:  # 글은 이미 올라가고 기록됐다. 크롬을 닫다가 난 오류라 무시한다
+            return
+        stop("크롬을 열거나 닫다가 문제가 생겼어요. 다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, "
+             "없을 때만 다시 올립니다.")
 
 
 if __name__ == "__main__":

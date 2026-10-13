@@ -24,9 +24,10 @@ POST_URL_RE = re.compile(r"blog\.naver\.com/[^/?]+/\d+|logNo=\d+")
 COMMON = {"대구", "이사", "업체", "방법", "이유", "가지", "정리"}
 
 
-def _from_rss():
+def blog_posts():
+    """블로그에 지금 올라가 있는 최근 글 목록을 RSS에서 읽는다. 못 읽으면 None."""
     if not BLOG_ID:
-        return []
+        return None
     url = f"https://rss.blog.naver.com/{BLOG_ID}.xml"
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
@@ -34,15 +35,22 @@ def _from_rss():
             root = ET.fromstring(response.read())
     except Exception as e:
         log.warning("블로그 글 목록(RSS)을 읽지 못했어요: %s", e)
-        if CACHE_FILE.exists():
-            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        return []
+        return None
     posts = []
     for item in root.iter("item"):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").split("?")[0].strip()
         if title and link:
             posts.append({"title": title, "url": link})
+    return posts
+
+
+def _from_rss():
+    posts = blog_posts()
+    if posts is None:
+        if CACHE_FILE.exists():
+            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        return []
     CACHE_FILE.write_text(json.dumps(posts, ensure_ascii=False, indent=2), encoding="utf-8")
     return posts
 
