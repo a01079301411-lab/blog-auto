@@ -187,8 +187,8 @@ class App:
             root.iconbitmap(os.path.join(ROOT, "shortform", "assets", "app.ico"))
         except tk.TclError:
             pass  # 아이콘을 못 읽어도 창은 그대로
-        root.geometry("1180x940")
-        root.minsize(980, 720)
+        root.geometry("1500x900")
+        root.minsize(1200, 720)
         if sys.platform == "win32":
             try:
                 root.state("zoomed")  # 화면 가득 (진행 기록이 크게 보이게)
@@ -307,8 +307,14 @@ class App:
         return var
 
     def _build(self) -> None:
-        main = ttk.Frame(self.root, padding=(16, 12, 16, 12))
-        main.pack(fill="both", expand=True)
+        outer = ttk.Frame(self.root, padding=(16, 12, 16, 14))
+        outer.pack(fill="both", expand=True)
+        # 왼쪽: 탭·설정·실행 버튼 / 오른쪽: 위에서 아래까지 진행 기록
+        outer.columnconfigure(0, weight=3)
+        outer.columnconfigure(1, weight=2, minsize=400)
+        outer.rowconfigure(0, weight=1)
+        main = ttk.Frame(outer)
+        main.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
 
         # 위: 이름 + 숏폼/롱폼 탭
         top = ttk.Frame(main)
@@ -353,13 +359,13 @@ class App:
         self.bar = ttk.Progressbar(main, mode="indeterminate", style="Accent.Horizontal.TProgressbar")
         self.bar.pack(fill="x", pady=(12, 8))
 
-        # 아래: 진행 기록 (크게)
-        lf = ttk.Frame(main, style="Card.TFrame", padding=(14, 10))
-        lf.pack(fill="both", expand=True)
+        # 오른쪽: 진행 기록 (위에서 아래까지 길게)
+        lf = ttk.Frame(outer, style="Card.TFrame", padding=(14, 12))
+        lf.grid(row=0, column=1, sticky="nsew")
         ttk.Label(lf, text="진행 기록", style="Title.Card.TLabel").pack(anchor="w", pady=(0, 6))
         inner = ttk.Frame(lf, style="Card.TFrame")
         inner.pack(fill="both", expand=True)
-        self.log = tk.Text(inner, height=14, font=self.mono, wrap="word", state="disabled",
+        self.log = tk.Text(inner, height=10, width=40, font=self.mono, wrap="word", state="disabled",
                            background=LOG_BG, foreground=LOG_FG, insertbackground=FG,
                            relief="flat", borderwidth=0, padx=12, pady=10,
                            highlightthickness=0, spacing1=2, spacing3=2)
