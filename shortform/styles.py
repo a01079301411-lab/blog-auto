@@ -150,18 +150,13 @@ def _simplify(points: list[tuple[float, float]], tol: float = 0.004) -> list[tup
     return out
 
 
-ZOOM_AMOUNT = 0.12   # 핵심 단어에서 12% 확대
-ZOOM_IN, ZOOM_HOLD, ZOOM_OUT = 0.12, 0.9, 0.35
-
-
-def _zoom_expr(times: list[float], var: str = "it") -> str:
-    terms = []
-    for a in times:
-        b, c, d = a + ZOOM_IN, a + ZOOM_IN + ZOOM_HOLD, a + ZOOM_IN + ZOOM_HOLD + ZOOM_OUT
-        terms.append(f"gte({var},{a:.3f})*lt({var},{b:.3f})*({var}-{a:.3f})/{ZOOM_IN}")
-        terms.append(f"gte({var},{b:.3f})*lt({var},{c:.3f})")
-        terms.append(f"gte({var},{c:.3f})*lt({var},{d:.3f})*(1-({var}-{c:.3f})/{ZOOM_OUT})")
-    return f"1+{ZOOM_AMOUNT}*(" + "+".join(terms) + ")"
+def view_ratio(style: Style, w: int, h: int) -> float:
+    """원본 가로 중 숏폼 화면(꽉 채우기)에 보이는 비율."""
+    if not w or not h or style.video_fit != "fill":
+        return 1.0
+    bw, bh = W, style.video_height
+    scale = max(bw / w, bh / h)
+    return min(1.0, bw / (w * scale))
 
 
 def video_filter(
@@ -169,32 +164,41 @@ def video_filter(
     focus: float = 0.5,
     *,
     path: list[tuple[float, float]] | None = None,
-    zooms: list[float] | None = None,
-    fps: str = "30",
+    span: float | None = None,
+    aspect: float = 16 / 9,
+    keep_bottom: float | None = None,
 ) -> str:
     """[v] 입력 → [vl] 출력.
 
     focus: 좌우로 잘라낼 때 남길 위치 (0=왼쪽, 1=오른쪽).
-    path: (숏폼 시간, 얼굴 가운데 x 비율) 목록. 있으면 화면이 얼굴을 따라간다.
-    zooms: 확대 효과를 줄 시간(초) 목록.
+    path: (숏폼 시간, 화면 가운데 x 비율) 목록. 있으면 화면이 얼굴을 따라간다.
+    span: 원본 가로 중 보여줄 비율. 원본 자막이 다 보이도록 화면을 넓게 잡을 때 쓴다.
+      (그만큼 영상이 작아지고 남는 위아래는 검은색)
+    aspect: 원본 가로/세로 비율. keep_bottom: 위아래를 자를 때 이 높이(비율)까지는 남긴다.
     """
     bw, bh = W, style.video_height
     if style.video_fit == "fill":
         if path:
             c = _piecewise(_simplify(path))
             x = f"'clip(({c})*iw-ow/2,0,iw-ow)'"
+        elif span:
+            x = f"'clip({focus:.4f}*iw-ow/2,0,iw-ow)'"
         else:
             x = f"(iw-{bw})*{focus:.3f}"
-        box = (f"scale={bw}:{bh}:force_original_aspect_ratio=increase,"
-               f"crop={bw}:{bh}:{x}:(ih-{bh})/2")
+        sw = round(bw / span / 2) * 2 if span else 0
+        sh = round(sw / aspect / 2) * 2 if span else 0
+        if span and sh < bh:  # 넓게 보여주기: 가로를 맞추고 위아래는 검은 띠
+            box = (f"scale={sw}:{sh},crop={bw}:{sh}:{x}:0,"
+                   f"pad={bw}:{bh}:0:(oh-ih)/2:black")
+        else:
+            y = "(ih-oh)/2"
+            if keep_bottom is not None:  # 원본 자막이 아래에서 잘리지 않게
+                y = f"'min((ih-oh)/2,max(0,ih*{keep_bottom:.4f}-oh))'"
+            box = (f"scale={bw}:{bh}:force_original_aspect_ratio=increase,"
+                   f"crop={bw}:{bh}:{x}:{y}")
     else:
         box = (f"scale={bw}:{bh}:force_original_aspect_ratio=decrease,"
                f"pad={bw}:{bh}:(ow-iw)/2:(oh-ih)/2")
-    if zooms:
-        # zoompan은 프레임 간격이 일정하다고 보고 시간을 새로 매기므로,
-        # 휴대폰 영상처럼 간격이 들쭉날쭉한 영상은 먼저 일정하게 맞춘다
-        box += (f",fps={fps},zoompan=z='{_zoom_expr(zooms)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2'"
-                f":d=1:s={bw}x{bh}:fps={fps}")
     if bh >= H:
         return f"[v]{box},setsar=1[vl]"
     if style.background == "blur":

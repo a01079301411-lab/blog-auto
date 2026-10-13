@@ -22,6 +22,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 사용자가 고쳐 쓰는 파일은 이미 있으면 덮어쓰지 않는다 (settings.ini는 아래에서 병합)
 KEEP = {"settings.ini"}
 
+# 없앤 설정: 사용자 파일에 남아 있어도 지운다 (확대·효과음은 이질감이 있어 기능을 뺐다)
+REMOVED = {"zoom", "sfx"}
+
 # 마지막으로 받은 기본 settings.ini. 사용자가 바꾼 값과 기본값을 구분하는 데 쓴다
 SETTINGS_BASE = ".settings_base.ini"
 
@@ -95,7 +98,7 @@ def merge_settings(root: str, shipped: str) -> list[str]:
             changed.append(f"{key}: {mine[key]} → {default}")
         else:
             values[key] = mine[key]
-    extra = {k: v for k, v in mine.items() if k not in new}
+    extra = {k: v for k, v in mine.items() if k not in new and k not in REMOVED}
     _write_if_changed(path, text, _render(shipped, values, extra))
     with open(base_path, "w", encoding="utf-8") as f:
         f.write(shipped)
@@ -117,7 +120,7 @@ def tidy_settings(root: str = ROOT) -> None:
         return
     mine, shipped = _values(text), _values(template)
     values = {k: mine.get(k, v) for k, v in shipped.items()}
-    extra = {k: v for k, v in mine.items() if k not in shipped}
+    extra = {k: v for k, v in mine.items() if k not in shipped and k not in REMOVED}
     _write_if_changed(path, text, _render(template, values, extra))
 
 

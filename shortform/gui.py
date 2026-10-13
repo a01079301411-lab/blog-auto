@@ -198,9 +198,12 @@ class App:
         left.columnconfigure(3, weight=1)
 
         self.flags = {}
-        for key, text in [("focus", "얼굴 따라가기"), ("fix_subtitles", "자막 오타 교정 (Claude)"),
+        for key, text in [("focus", "얼굴 따라가기"),
+                          ("burned_subs", "원본에 자막 있으면 그대로 쓰기"),
+                          ("fix_subtitles", "자막 오타 교정 (Claude)"),
                           ("review", "만들기 전에 고르기"), ("thumbnail", "썸네일 만들기")]:
-            on = c[key] == "auto" if key == "focus" else c[key].lower() == "yes"
+            on = c[key] in ("auto", "yes") if key in ("focus", "burned_subs") else \
+                c[key].lower() == "yes"
             var = tk.BooleanVar(value=on)
             ttk.Checkbutton(right, text=text, variable=var).pack(anchor="w", pady=1)
             self.flags[key] = var
@@ -483,7 +486,7 @@ class App:
             "speaker": self.speaker_var.get().strip(),
             "model": {v: k for k, v in MODELS}.get(self.model_var.get(), "small"),
             "focus": focus, "fix_subtitles": yes("fix_subtitles"), "review": yes("review"),
-            "zoom": self.cfg.get("zoom", "no"), "sfx": self.cfg.get("sfx", "no"),
+            "burned_subs": "auto" if self.flags["burned_subs"].get() else "no",
             "thumbnail": yes("thumbnail"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),

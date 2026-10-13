@@ -5,17 +5,16 @@ import argparse
 import glob
 import json
 import os
-import random
 import re
 import sys
 from dataclasses import asdict
 
 from . import media
-from . import face, review
+from . import burnin, face, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
 from .styles import (PRESETS, account_box_style, dump_style, load_style, video_filter,
-                     write_account_subs, write_ass)
+                     view_ratio, write_account_subs, write_ass)
 from .subfix import fix_cues
 from .subtitles import build_cues, remap, words_in_range, write_srt
 from .transcribe import transcribe
@@ -63,19 +62,6 @@ def _to_output_time(t: float, keeps: list[media.Segment]) -> float | None:
     return None
 
 
-def _zoom_times(cues, keywords: list[str], *, gap: float = 3.0, limit: int = 4) -> list[float]:
-    """핵심 단어가 나오는 자막 시작 시간. 너무 자주 확대하지 않게 간격을 둔다."""
-    kws = [k.replace(" ", "") for k in keywords if k.strip()]
-    times: list[float] = []
-    for c in cues:
-        if any(k in c.text.replace(" ", "") for k in kws):
-            if c.start >= 0.3 and (not times or c.start - times[-1] >= gap):
-                times.append(c.start)
-        if len(times) == limit:
-            break
-    return times
-
-
 def _render_clip(args, src, start, end, out, transcript, style=None,
                  highlight: Highlight | None = None, acct=None) -> None:
     """style이 None이면 원본 비율 그대로, 있으면 세로 숏폼으로 만든다.
@@ -105,35 +91,55 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     if acct is not None:  # 계정 말자막 글자 크기에 맞춰 한 줄 길이를 정한다
         max_chars = min(max_chars, max(8, int(960 / acct.sub.size)))
 
-    # 1) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식)
-    cues = None
-    if words and args.fix_subtitles:
-        print("  자막 다듬는 중 (오타 교정·줄 나누기)...")
-        cues = fix_cues(words, max_chars=max_chars,
-                        context=" ".join(filter(None, [args.context, speaker])))
-    if cues is None:
-        cues = build_cues(words, max_chars=max_chars)
+    # 1) 원본 영상에 이미 자막이 박혀 있으면 새 자막은 넣지 않고 원본 자막을 살린다
+    burned = None
+    if args.burned_subs != "no":
+        print("  원본 영상에 자막이 있는지 확인 중...")
+        try:
+            burned = burnin.detect(src, start, end)
+        except Exception as e:  # 확인이 안 되면 새 자막을 넣는다
+            print(f"  (원본 자막 확인 건너뜀: {type(e).__name__}: {e})")
+        if burned:
+            print("  원본 자막이 있어요 → 새 자막은 넣지 않고, 원본 자막이 잘리지 않게 화면을 잡아요")
+    own_subs = burned is None and args.burned_subs != "yes"
 
-    # 2) 얼굴 따라가기
+    # 2) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식)
+    cues = []
+    if own_subs and words:
+        cues = None
+        if args.fix_subtitles:
+            print("  자막 다듬는 중 (오타 교정·줄 나누기)...")
+            cues = fix_cues(words, max_chars=max_chars,
+                            context=" ".join(filter(None, [args.context, speaker])))
+        if cues is None:
+            cues = build_cues(words, max_chars=max_chars)
+
+    # 3) 화면 잡기: 원본 자막이 다 들어오게, 사람은 사람이 찍듯 자연스럽게 따라가기
+    sw, sh = media.display_size(src)
+    view = view_ratio(style, sw, sh)
+    span = lo = hi = keep_bottom = None
+    fill = style.video_fit == "fill"
+    if burned and fill:
+        need = min(burned.x1 - burned.x0 + 0.06, 1.0)
+        keep_bottom = min(1.0, burned.y1 + 0.02)
+        if need > view:  # 자막이 화면보다 넓으면 영상을 그만큼 넓게(작게) 보여준다
+            span = view = need
+        lo, hi = burned.x1 + 0.03 - view / 2, burned.x0 - 0.03 + view / 2
     samples, path = [], None
-    if args.focus == "auto" and style.video_fit == "fill":
+    if args.focus == "auto" and fill:
         print("  얼굴 위치 찾는 중...")
         try:
             samples = face.detect(src, start, end)
         except Exception as e:  # 얼굴 인식이 안 되면 가운데로
             print(f"  (얼굴 따라가기 건너뜀: {e})")
-        mapped = [(ot, x, size) for t, x, size in samples
-                  if (ot := _to_output_time(t, keeps)) is not None]
-        if any(x is not None for _, x, _ in mapped):
-            path = face.smooth_path(mapped)
+        mapped = [face.Sample(ot, s.faces, s.cut) for s in samples
+                  if (ot := _to_output_time(s.t, keeps)) is not None]
+        if any(s.faces for s in mapped):
+            path = face.smooth_path(mapped, view, lo=lo, hi=hi)
     focus = 0.5 if args.focus == "auto" else float(args.focus)
-
-    # 3) 핵심 단어에서 확대 + 효과음
-    zooms = _zoom_times(cues, h.keywords) if args.zoom else []
-    sfx = None
-    if zooms and args.sfx:
-        mine = _audio_files(os.path.join(ROOT, "sfx"))
-        sfx = random.choice(mine) if mine else os.path.join(ROOT, "shortform", "assets", "whoosh.wav")
+    if path is None and burned and fill:
+        mid = (burned.x0 + burned.x1) / 2
+        path = [(0.0, min(max(mid, lo), hi) if lo <= hi else (lo + hi) / 2)]
 
     # 4) 배경음악
     bgm = None
@@ -143,12 +149,13 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         print(f"  배경음악: {os.path.basename(bgm)}")
 
     subs = os.path.splitext(out)[0] + ".ass"
-    vf = video_filter(style, focus, path=path, zooms=zooms, fps=media.frame_rate(src))
+    vf = video_filter(style, focus, path=path, span=span, aspect=sw / sh if sh else 16 / 9,
+                      keep_bottom=keep_bottom)
     if acct is None:
         write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
                   speaker=speaker, bottom=h.bottom, keywords=h.keywords)
         media.render(src, keeps, out, video_filter=vf, srt=subs,
-                     bgm=bgm, bgm_volume=args.bgm_volume, sfx=sfx, sfx_times=zooms)
+                     bgm=bgm, bgm_volume=args.bgm_volume)
     else:
         from . import draw, fonts
 
@@ -160,18 +167,19 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         write_account_subs(subs, acct, cues, font_path=sub_font)
         try:
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
-                         font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
-                         sfx=sfx, sfx_times=zooms)
+                         font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume)
         finally:
             os.remove(ov_path)
     print(f"  저장: {out}")
 
-    # 5) 썸네일: 얼굴이 가장 크게 잡힌 장면 + 제목
+    # 4) 썸네일: 얼굴이 가장 크게 잡힌 장면 + 제목
     if args.thumbnail and acct is not None:
-        _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus)
+        _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus,
+                           frame_args=dict(span=span, aspect=sw / sh if sh else 16 / 9,
+                                           keep_bottom=keep_bottom), center=path)
     elif args.thumbnail:
         t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
-        x = next((x for st, x, _ in samples if st >= t and x is not None), None)
+        x = next((s.x for s in samples if s.t >= t and s.x is not None), None)
         thumb_ass = os.path.splitext(out)[0] + ".thumb.ass"
         write_ass(thumb_ass, style, [], duration=1, title=h.title, label=h.label)
         tvf = video_filter(style, focus, path=[(0.0, x)] if x is not None else None)
@@ -185,16 +193,22 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
             os.remove(thumb_ass)
 
 
-def _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus) -> None:
+def _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus, frame_args=None,
+                       center=None) -> None:
     """계정 가이드의 썸네일(N-1)을 PNG 1080x1920으로 만든다."""
     from PIL import Image
 
     from . import draw
 
     t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
-    x = next((x for st, x, _ in samples if st >= t and x is not None), None)
+    ot = _to_output_time(t, keeps)
+    if center and ot is not None:  # 영상과 같은 화면 위치
+        x = next((x for ct, x in reversed(center) if ct <= ot), center[0][1])
+    else:
+        x = next((s.x for s in samples if s.t >= t and s.x is not None), None)
     st = account_box_style(vertical=acct.thumb.layout != "box")
-    tvf = video_filter(st, focus, path=[(0.0, x)] if x is not None else None)
+    tvf = video_filter(st, focus, path=[(0.0, x)] if x is not None else None,
+                       **(frame_args or {}))
     frame = os.path.splitext(out)[0] + ".frame.png"
     thumb = os.path.splitext(out)[0] + "_썸네일.png"
     try:
@@ -495,8 +509,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Claude로 자막 오타 교정·줄 나누기 yes/no (기본 yes)")
     s.add_argument("--review", type=_yesno, default=False,
                    help="만들기 전에 메모장으로 목록을 보고 고르기 yes/no")
-    s.add_argument("--zoom", type=_yesno, default=False, help="핵심 단어에서 화면 확대 yes/no")
-    s.add_argument("--sfx", type=_yesno, default=False, help="확대할 때 효과음 yes/no")
+    s.add_argument("--burned-subs", choices=["auto", "yes", "no"], default="auto",
+                   help="원본에 박힌 자막: auto(찾으면 새 자막 대신 원본 자막 사용) / yes / no")
     s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
     s.add_argument("--bgm-volume", type=float, default=0.15, help="배경음악 볼륨 0~1")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
