@@ -31,6 +31,115 @@ STYLE_NAMES = {"green": "green (초록 강조 + 하단 문구)", "magenta": "mag
                "overlay": "overlay (영상 꽉 채우기)", "basic": "basic (16:9 그대로)"}
 
 
+# ---------- 색 (캡컷처럼 어두운 화면 + 청록색 강조) ----------
+BG = "#101014"        # 창 배경
+PANEL = "#16161b"     # 탭 안쪽
+CARD = "#1e1e24"      # 상자
+FIELD = "#2a2a32"     # 입력 칸
+LINE = "#34343d"
+FG = "#f2f2f5"
+SUB = "#9a9aa6"
+ACCENT = "#20d5ec"
+ACCENT_HOVER = "#62e6f6"
+ACCENT_TEXT = "#04161a"
+DANGER = "#ff6b78"
+OK = "#5ee39b"
+LOG_BG = "#0b0b0e"
+LOG_FG = "#dcdce4"
+
+
+def apply_theme(root: tk.Misc, family: str) -> None:
+    """ttk 기본 테마를 어두운 캡컷 느낌으로 바꾼다."""
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    f = lambda size, bold=False: (family, size, "bold") if bold else (family, size)
+    root.configure(background=BG)
+    style.configure(".", background=BG, foreground=FG, fieldbackground=FIELD, bordercolor=LINE,
+                    lightcolor=CARD, darkcolor=CARD, troughcolor=FIELD, focuscolor=CARD,
+                    selectbackground=ACCENT, selectforeground=ACCENT_TEXT, insertcolor=FG,
+                    arrowcolor=FG, font=f(10))
+    style.configure("TFrame", background=BG)
+    style.configure("Panel.TFrame", background=PANEL)
+    style.configure("Card.TFrame", background=CARD)
+    style.configure("TLabel", background=BG, foreground=FG)
+    style.configure("Sub.TLabel", background=BG, foreground=SUB)
+    style.configure("Logo.TLabel", background=BG, foreground=FG, font=f(17, True))
+    style.configure("Status.TLabel", background=BG, foreground=ACCENT, font=f(12, True))
+    style.configure("Warn.TLabel", background=BG, foreground=DANGER, font=f(10, True))
+    style.configure("Card.TLabel", background=CARD, foreground=FG)
+    style.configure("Sub.Card.TLabel", background=CARD, foreground=SUB, font=f(9))
+    style.configure("Title.Card.TLabel", background=CARD, foreground=FG, font=f(12, True))
+
+    style.configure("TButton", background=FIELD, foreground=FG, borderwidth=0, padding=(14, 6),
+                    focusthickness=0, relief="flat")
+    style.map("TButton", background=[("disabled", CARD), ("pressed", LINE), ("active", LINE)],
+              foreground=[("disabled", "#5c5c66")])
+    style.configure("Soft.TButton", background="#173d44", foreground=ACCENT, font=f(10, True))
+    style.map("Soft.TButton", background=[("pressed", "#1d4c55"), ("active", "#1d4c55")])
+    style.configure("Link.TButton", background=CARD, foreground=ACCENT, padding=(0, 4),
+                    font=f(10, True))
+    style.map("Link.TButton", background=[("active", CARD), ("pressed", CARD)],
+              foreground=[("active", ACCENT_HOVER)])
+    for name in ("Accent.TButton", "Big.TButton"):
+        style.configure(name, background=ACCENT, foreground=ACCENT_TEXT, font=f(13, True),
+                        padding=(30, 12), borderwidth=0)
+        style.map(name, background=[("disabled", "#1f4a51"), ("pressed", ACCENT_HOVER),
+                                    ("active", ACCENT_HOVER)],
+                  foreground=[("disabled", "#6f9aa0")])
+
+    for name, bg in (("TCheckbutton", BG), ("Card.TCheckbutton", CARD)):
+        style.configure(name, background=bg, foreground=FG, indicatorbackground=FIELD,
+                        indicatorforeground=ACCENT_TEXT, indicatormargin=(0, 0, 8, 0),
+                        padding=(0, 2))
+        style.map(name, background=[("active", bg)],
+                  indicatorbackground=[("selected", ACCENT), ("active", LINE)],
+                  indicatorforeground=[("selected", ACCENT_TEXT)])
+
+    for name in ("TEntry", "TSpinbox", "TCombobox"):
+        style.configure(name, fieldbackground=FIELD, foreground=FG, background=FIELD,
+                        bordercolor=LINE, lightcolor=FIELD, darkcolor=FIELD, padding=(6, 4),
+                        arrowcolor=FG)
+        style.map(name, bordercolor=[("focus", ACCENT)], lightcolor=[("focus", ACCENT)],
+                  fieldbackground=[("readonly", FIELD)], foreground=[("readonly", FG)])
+    root.option_add("*TCombobox*Listbox.background", FIELD)
+    root.option_add("*TCombobox*Listbox.foreground", FG)
+    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+    root.option_add("*TCombobox*Listbox.selectForeground", ACCENT_TEXT)
+
+    style.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0),
+                    bordercolor=BG, lightcolor=BG, darkcolor=BG)
+    style.configure("TNotebook.Tab", background=BG, foreground=SUB, padding=(28, 10),
+                    font=f(12, True), borderwidth=0, bordercolor=BG, lightcolor=BG, darkcolor=BG)
+    style.map("TNotebook.Tab", background=[("selected", PANEL), ("active", CARD)],
+              foreground=[("selected", ACCENT), ("active", FG)],
+              lightcolor=[("selected", PANEL)], bordercolor=[("selected", PANEL)],
+              padding=[("selected", (28, 10))], expand=[("selected", (0, 0, 0, 0))])
+
+    style.configure("Accent.Horizontal.TProgressbar", background=ACCENT, troughcolor=CARD,
+                    bordercolor=CARD, lightcolor=ACCENT, darkcolor=ACCENT, thickness=6)
+    style.configure("Vertical.TScrollbar", background=FIELD, troughcolor=LOG_BG,
+                    bordercolor=LOG_BG, arrowcolor=SUB, lightcolor=FIELD, darkcolor=FIELD)
+    style.configure("Horizontal.TScale", background=ACCENT, troughcolor=FIELD)
+    style.configure("Treeview", background=FIELD, fieldbackground=FIELD, foreground=FG,
+                    rowheight=28, borderwidth=0)
+    style.map("Treeview", background=[("selected", ACCENT)],
+              foreground=[("selected", ACCENT_TEXT)])
+    style.configure("Treeview.Heading", background=CARD, foreground=SUB, font=f(10, True),
+                    borderwidth=0, padding=(6, 6))
+    style.map("Treeview.Heading", background=[("active", LINE)])
+    style.configure("TLabelframe", background=CARD, bordercolor=LINE)
+    style.configure("TLabelframe.Label", background=CARD, foreground=FG, font=f(10, True))
+
+
+def style_field(widget: tk.Widget) -> None:
+    """tk 목록·글 칸을 어두운 테마에 맞춘다."""
+    widget.configure(background=FIELD, foreground=FG, relief="flat", borderwidth=0,
+                     highlightthickness=1, highlightbackground=LINE, highlightcolor=ACCENT,
+                     selectbackground=ACCENT, selectforeground=ACCENT_TEXT)
+    if isinstance(widget, tk.Text):
+        widget.configure(insertbackground=FG, padx=8, pady=6)
+
+
 def _python() -> str:
     """작업용 파이썬. 창은 pythonw로 떠도 작업은 python.exe로 돌려야 출력을 받을 수 있다."""
     if os.environ.get("SHORTFORM_PYTHON"):
@@ -66,8 +175,13 @@ class App:
             root.iconbitmap(os.path.join(ROOT, "shortform", "assets", "app.ico"))
         except tk.TclError:
             pass  # 아이콘을 못 읽어도 창은 그대로
-        root.geometry("1000x900")
-        root.minsize(860, 640)
+        root.geometry("1180x940")
+        root.minsize(980, 720)
+        if sys.platform == "win32":
+            try:
+                root.state("zoomed")  # 화면 가득 (진행 기록이 크게 보이게)
+            except tk.TclError:
+                pass
         self._fonts()
         try:
             self.cfg = settings.load()
@@ -88,267 +202,311 @@ class App:
         for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
             f = tkfont.nametofont(name)
             f.configure(size=10, **({"family": family} if family else {}))
-        self.big = tkfont.Font(font=tkfont.nametofont("TkDefaultFont"))
-        self.big.configure(size=12, weight="bold")
+        base = tkfont.nametofont("TkDefaultFont").actual()["family"]
+        self.big = tkfont.Font(family=base, size=12, weight="bold")
+        self.title_font = tkfont.Font(family=base, size=11, weight="bold")
         self.mono = tkfont.Font(family="Consolas" if sys.platform == "win32" else "TkFixedFont",
-                                size=9)
-        style = ttk.Style()
-        if "vista" in style.theme_names():
-            style.theme_use("vista")
-        style.configure("Big.TButton", font=self.big, padding=(18, 8))
+                                size=11)
+        apply_theme(self.root, base)
+
+    def _card(self, parent, title: str, hint: str = "") -> ttk.Frame:
+        """제목이 있는 둥근 느낌의 어두운 상자. 안쪽 프레임을 돌려준다."""
+        outer = ttk.Frame(parent, style="Card.TFrame", padding=(16, 12))
+        head = ttk.Frame(outer, style="Card.TFrame")
+        head.pack(fill="x", pady=(0, 8))
+        ttk.Label(head, text=title, style="Title.Card.TLabel").pack(side="left")
+        if hint:
+            ttk.Label(head, text=hint, style="Sub.Card.TLabel").pack(side="left", padx=(10, 0))
+        body = ttk.Frame(outer, style="Card.TFrame")
+        body.pack(fill="both", expand=True)
+        body.outer = outer
+        return body
+
+    def _advanced(self, card: ttk.Frame, title: str) -> ttk.Frame:
+        """'고급 설정' 버튼을 누르면 뜨는 작은 창 (메인 화면과 진행 기록 크기는 그대로)."""
+        win = tk.Toplevel(self.root, background=BG)
+        win.withdraw()
+        win.title(title)
+        win.transient(self.root)
+        win.resizable(False, False)
+        win.protocol("WM_DELETE_WINDOW", win.withdraw)
+        box = ttk.Frame(win, style="Card.TFrame", padding=(20, 16))
+        box.pack(fill="both", expand=True)
+        foot = ttk.Frame(win, padding=(20, 0, 20, 16))
+        foot.pack(fill="x")
+        ttk.Button(foot, text="확인", style="Soft.TButton", command=win.withdraw).pack(side="right")
+
+        def show():
+            win.deiconify()
+            win.lift()
+            x = self.root.winfo_rootx() + self.root.winfo_width() - win.winfo_reqwidth() - 60
+            win.geometry(f"+{max(x, 0)}+{self.root.winfo_rooty() + 120}")
+        ttk.Button(card, text="고급 설정  ›", style="Link.TButton", command=show).pack(
+            anchor="w", pady=(10, 0))
+        return box
+
+    def _row(self, parent, label: str) -> ttk.Frame:
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill="x", pady=3)
+        ttk.Label(row, text=label, style="Card.TLabel", width=12).pack(side="left")
+        return row
+
+    def _check(self, parent, text: str, value: bool) -> tk.BooleanVar:
+        var = tk.BooleanVar(value=value)
+        ttk.Checkbutton(parent, text=text, variable=var, style="Card.TCheckbutton").pack(
+            anchor="w", pady=2)
+        return var
 
     def _build(self) -> None:
-        pad = {"padx": 8, "pady": 4}
-        main = ttk.Frame(self.root, padding=10)
+        main = ttk.Frame(self.root, padding=(16, 12, 16, 12))
         main.pack(fill="both", expand=True)
 
-        # 숏폼 / 롱폼 탭
+        # 위: 이름 + 숏폼/롱폼 탭
+        top = ttk.Frame(main)
+        top.pack(fill="x")
+        ttk.Label(top, text="✂  자동 편집기", style="Logo.TLabel").pack(side="left")
+        ttk.Label(top, text=f"v{__version__}", style="Sub.TLabel").pack(side="left", padx=(8, 0),
+                                                                        pady=(6, 0))
         self.tabs = ttk.Notebook(main)
-        self.tabs.pack(fill="x")
-        short = ttk.Frame(self.tabs, padding=(0, 6, 0, 0))
-        self.long_tab = ttk.Frame(self.tabs, padding=(0, 6, 0, 0))
-        self.tabs.add(short, text="  숏폼 만들기  ")
-        self.tabs.add(self.long_tab, text="  롱폼 만들기  ")
+        self.tabs.pack(fill="x", pady=(10, 0))
+        short = ttk.Frame(self.tabs, style="Panel.TFrame", padding=12)
+        self.long_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=12)
+        self.tabs.add(short, text="숏폼 만들기")
+        self.tabs.add(self.long_tab, text="롱폼 만들기")
         self.tabs.bind("<<NotebookTabChanged>>", self._on_tab)
+        self._build_short(short)
         self._build_long(self.long_tab)
 
-        # 영상 목록
-        vf = ttk.LabelFrame(short, text=" 1. 영상 선택 ", padding=8)
-        vf.pack(fill="x")
-        self.videos = tk.Listbox(vf, height=3, activestyle="none")
-        self.videos.pack(side="left", fill="x", expand=True)
-        vb = ttk.Frame(vf)
-        vb.pack(side="left", padx=(8, 0))
-        ttk.Button(vb, text="영상 추가...", command=self._pick_videos).pack(fill="x")
-        ttk.Button(vb, text="목록에서 빼기", command=self._remove_video).pack(fill="x", pady=(4, 0))
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            kf = ttk.Frame(main)
+            kf.pack(fill="x", pady=(8, 0))
+            ttk.Label(kf, text="Claude API 키", style="Warn.TLabel").pack(side="left")
+            self.key_var = tk.StringVar()
+            ttk.Entry(kf, textvariable=self.key_var, show="•", width=50).pack(side="left", padx=8)
+            ttk.Button(kf, text="저장", command=self._save_key).pack(side="left")
+        else:
+            self.key_var = None
 
-        # 코시 인스타 계정
-        af = ttk.LabelFrame(short, text=" 2. 인스타 계정 (코시 제작 가이드대로 만들어요) ", padding=8)
-        af.pack(fill="x", pady=(8, 0))
-        chosen = set(accounts.parse(self.cfg.get("accounts", "")))
+        # 실행 줄
+        rf = ttk.Frame(main)
+        rf.pack(fill="x", pady=(12, 0))
+        self.start_btn = ttk.Button(rf, text="▶  숏폼 만들기", style="Accent.TButton",
+                                    command=self._start)
+        self.start_btn.pack(side="left")
+        self.stop_btn = ttk.Button(rf, text="■  중지", command=self._stop, state="disabled")
+        self.stop_btn.pack(side="left", padx=(10, 0), ipady=4)
+        self.open_btn = ttk.Button(rf, text="결과 폴더 열기", command=self._open_output,
+                                   state="disabled")
+        self.open_btn.pack(side="left", padx=(8, 0), ipady=4)
+        self.status = ttk.Label(rf, text="", style="Status.TLabel")
+        self.status.pack(side="left", padx=18)
+
+        self.bar = ttk.Progressbar(main, mode="indeterminate", style="Accent.Horizontal.TProgressbar")
+        self.bar.pack(fill="x", pady=(12, 8))
+
+        # 아래: 진행 기록 (크게)
+        lf = ttk.Frame(main, style="Card.TFrame", padding=(14, 10))
+        lf.pack(fill="both", expand=True)
+        ttk.Label(lf, text="진행 기록", style="Title.Card.TLabel").pack(anchor="w", pady=(0, 6))
+        inner = ttk.Frame(lf, style="Card.TFrame")
+        inner.pack(fill="both", expand=True)
+        self.log = tk.Text(inner, height=14, font=self.mono, wrap="word", state="disabled",
+                           background=LOG_BG, foreground=LOG_FG, insertbackground=FG,
+                           relief="flat", borderwidth=0, padx=12, pady=10,
+                           highlightthickness=0, spacing1=2, spacing3=2)
+        self.log.tag_configure("stage", foreground=ACCENT, font=self.title_font)
+        self.log.tag_configure("error", foreground=DANGER)
+        self.log.tag_configure("done", foreground=OK)
+        sb = ttk.Scrollbar(inner, command=self.log.yview)
+        self.log.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.log.pack(side="left", fill="both", expand=True)
+
+    def _build_short(self, tab: ttk.Frame) -> None:
+        c = self.cfg
+        tab.columnconfigure(0, weight=3, uniform="col")
+        tab.columnconfigure(1, weight=2, uniform="col")
+
+        # 왼쪽: 영상 + 계정
+        left = ttk.Frame(tab, style="Panel.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        vf = self._card(left, "① 영상", "여러 개 넣으면 차례로 만들어요")
+        vf.outer.pack(fill="x")
+        self.videos = tk.Listbox(vf, height=4, activestyle="none")
+        style_field(self.videos)
+        self.videos.pack(fill="x")
+        vb = ttk.Frame(vf, style="Card.TFrame")
+        vb.pack(fill="x", pady=(8, 0))
+        ttk.Button(vb, text="+  영상 추가", style="Soft.TButton",
+                   command=self._pick_videos).pack(side="left")
+        ttk.Button(vb, text="빼기", command=self._remove_video).pack(side="left", padx=6)
+
+        af = self._card(left, "② 인스타 계정", "고르면 코시 가이드대로 만들어요")
+        af.outer.pack(fill="x", pady=(10, 0))
+        chosen = set(accounts.parse(c.get("accounts", "")))
         self.acct_vars: dict[int, tk.BooleanVar] = {}
-        grid = ttk.Frame(af)
-        grid.pack(side="left", fill="x", expand=True)
+        grid = ttk.Frame(af, style="Card.TFrame")
+        grid.pack(fill="x")
         for k, (no, a) in enumerate(accounts.ACCOUNTS.items()):
             var = tk.BooleanVar(value=no in chosen)
-            ttk.Checkbutton(grid, text=f"{no}. {a.name}", variable=var).grid(
-                row=k // 5, column=k % 5, sticky="w", padx=(0, 14), pady=1)
+            ttk.Checkbutton(grid, text=f"{no}. {a.name}", variable=var,
+                            style="Card.TCheckbutton").grid(row=k // 2, column=k % 2, sticky="w",
+                                                            padx=(0, 16), pady=1)
             self.acct_vars[no] = var
-        ab = ttk.Frame(af)
-        ab.pack(side="left", padx=(8, 0))
-        pf = ttk.Frame(ab)
-        pf.pack(anchor="w")
-        ttk.Label(pf, text="계정당").pack(side="left")
-        self.per_var = tk.StringVar(value=self.cfg.get("per_account", "3"))
-        ttk.Spinbox(pf, from_=1, to=10, textvariable=self.per_var, width=4).pack(side="left", padx=4)
-        ttk.Label(pf, text="개").pack(side="left")
-        ttk.Button(ab, text="글꼴 확인", command=self._check_fonts).pack(fill="x", pady=(4, 0))
-        ttk.Label(af, text="안 고르면 아래 '디자인'으로 만들어요", foreground="gray").pack(
-            side="bottom", anchor="w")
+        pf = ttk.Frame(af, style="Card.TFrame")
+        pf.pack(fill="x", pady=(8, 0))
+        ttk.Label(pf, text="계정당", style="Card.TLabel").pack(side="left")
+        self.per_var = tk.StringVar(value=c.get("per_account", "3"))
+        ttk.Spinbox(pf, from_=1, to=10, textvariable=self.per_var, width=4).pack(side="left", padx=6)
+        ttk.Label(pf, text="개", style="Card.TLabel").pack(side="left")
+        ttk.Button(pf, text="글꼴 확인", command=self._check_fonts).pack(side="right")
 
-        # 설정 (왼쪽: 기본 / 오른쪽: 자동 편집)
-        sf = ttk.LabelFrame(short, text=" 3. 설정 ", padding=8)
-        sf.pack(fill="x", pady=(8, 0))
-        left = ttk.Frame(sf)
-        left.pack(side="left", fill="both", expand=True)
-        right = ttk.Frame(sf)
-        right.pack(side="left", fill="y", padx=(16, 0))
-
-        c = self.cfg
-        r = 0
-        ttk.Label(left, text="디자인").grid(row=r, column=0, sticky="w", **pad)  # 계정 안 고를 때
-        names = [STYLE_NAMES.get(k, k) for k in PRESETS]
-        self.style_var = tk.StringVar(value=STYLE_NAMES.get(c["style"], c["style"]))
-        ttk.Combobox(left, textvariable=self.style_var, values=names, width=34).grid(
-            row=r, column=1, columnspan=3, sticky="w", **pad)
-
-        r += 1
-        ttk.Label(left, text="숏폼 개수").grid(row=r, column=0, sticky="w", **pad)
+        # 오른쪽: 설정
+        sf = self._card(tab, "③ 설정")
+        sf.outer.grid(row=0, column=1, sticky="nsew")
+        row = self._row(sf, "숏폼 개수")
         self.count_var = tk.StringVar(value=c["count"])
-        ttk.Spinbox(left, from_=1, to=30, textvariable=self.count_var, width=6).grid(
-            row=r, column=1, sticky="w", **pad)
-        ttk.Label(left, text="길이(초)").grid(row=r, column=2, sticky="e", **pad)
-        lf = ttk.Frame(left)
-        lf.grid(row=r, column=3, sticky="w", **pad)
+        ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5).pack(side="left")
+        ttk.Label(row, text="계정 안 고를 때", style="Sub.Card.TLabel").pack(side="left", padx=8)
+        row = self._row(sf, "길이(초)")
         self.min_var = tk.StringVar(value=c["min_len"])
         self.max_var = tk.StringVar(value=c["max_len"])
-        ttk.Spinbox(lf, from_=5, to=180, textvariable=self.min_var, width=5).pack(side="left")
-        ttk.Label(lf, text=" ~ ").pack(side="left")
-        ttk.Spinbox(lf, from_=10, to=180, textvariable=self.max_var, width=5).pack(side="left")
-
-        r += 1
-        ttk.Label(left, text="영상 설명").grid(row=r, column=0, sticky="nw", **pad)
-        self.context = tk.Text(left, height=3, width=50, wrap="word")
-        self.context.insert("1.0", c["context"])
-        self.context.grid(row=r, column=1, columnspan=3, sticky="we", **pad)
-
-        r += 1
-        ttk.Label(left, text="인물 소개").grid(row=r, column=0, sticky="w", **pad)
-        self.speaker_var = tk.StringVar(value=c["speaker"])
-        ttk.Entry(left, textvariable=self.speaker_var, width=30).grid(
-            row=r, column=1, columnspan=2, sticky="w", **pad)
-        ttk.Label(left, text="(비우면 AI가 정해요)", foreground="gray").grid(
-            row=r, column=3, sticky="w")
-
-        r += 1
-        ttk.Label(left, text="음성 인식").grid(row=r, column=0, sticky="w", **pad)
-        self.model_var = tk.StringVar(value=dict(MODELS).get(c["model"], c["model"]))
-        ttk.Combobox(left, textvariable=self.model_var, values=[v for _, v in MODELS],
-                     state="readonly", width=18).grid(row=r, column=1, columnspan=2, sticky="w", **pad)
-        left.columnconfigure(3, weight=1)
+        ttk.Spinbox(row, from_=5, to=180, textvariable=self.min_var, width=5).pack(side="left")
+        ttk.Label(row, text="~", style="Card.TLabel").pack(side="left", padx=6)
+        ttk.Spinbox(row, from_=10, to=180, textvariable=self.max_var, width=5).pack(side="left")
+        row = self._row(sf, "디자인")
+        names = [STYLE_NAMES.get(k, k) for k in PRESETS]
+        self.style_var = tk.StringVar(value=STYLE_NAMES.get(c["style"], c["style"]))
+        ttk.Combobox(row, textvariable=self.style_var, values=names, width=26).pack(
+            side="left", fill="x", expand=True)
 
         self.flags = {}
-        for key, text in [("focus", "얼굴 따라가기"),
-                          ("burned_subs", "원본에 자막 있으면 그대로 쓰기"),
-                          ("fix_subtitles", "자막 오타 교정 (Claude)"),
-                          ("review", "만들기 전에 고르기"), ("thumbnail", "썸네일 만들기")]:
-            on = c[key] in ("auto", "yes") if key in ("focus", "burned_subs") else \
-                c[key].lower() == "yes"
-            var = tk.BooleanVar(value=on)
-            ttk.Checkbutton(right, text=text, variable=var).pack(anchor="w", pady=1)
-            self.flags[key] = var
+        ttk.Frame(sf, style="Card.TFrame", height=6).pack()
+        self.flags["focus"] = self._check(sf, "얼굴 따라가기", c["focus"] == "auto")
+        self.flags["burned_subs"] = self._check(sf, "원본에 자막 있으면 그대로 쓰기",
+                                                c["burned_subs"] in ("auto", "yes"))
+        self.flags["thumbnail"] = self._check(sf, "썸네일 만들기", c["thumbnail"].lower() == "yes")
 
-        bg = ttk.Frame(right)
-        bg.pack(anchor="w", pady=(6, 0))
-        ttk.Label(bg, text="배경음악 볼륨").pack(side="left")
+        adv = self._advanced(sf, "숏폼 고급 설정")
+        ttk.Label(adv, text="영상 설명 (누가, 무슨 내용인지)", style="Card.TLabel").pack(anchor="w")
+        self.context = tk.Text(adv, height=3, width=40, wrap="word")
+        style_field(self.context)
+        self.context.insert("1.0", c["context"])
+        self.context.pack(fill="x", pady=(2, 6))
+        row = self._row(adv, "인물 소개")
+        self.speaker_var = tk.StringVar(value=c["speaker"])
+        ttk.Entry(row, textvariable=self.speaker_var).pack(side="left", fill="x", expand=True)
+        row = self._row(adv, "음성 인식")
+        self.model_var = tk.StringVar(value=dict(MODELS).get(c["model"], c["model"]))
+        ttk.Combobox(row, textvariable=self.model_var, values=[v for _, v in MODELS],
+                     state="readonly", width=18).pack(side="left")
+        row = self._row(adv, "유튜브 업로드")
+        self.upload_var = tk.StringVar(value=dict(UPLOADS).get(c["upload"], "안 함"))
+        ttk.Combobox(row, textvariable=self.upload_var, values=[v for _, v in UPLOADS],
+                     state="readonly", width=10).pack(side="left")
+        row = self._row(adv, "배경음악")
         try:
             vol = float(c["bgm_volume"])
         except ValueError:
             vol = 0.15
         self.bgm_var = tk.DoubleVar(value=vol)
-        ttk.Scale(bg, from_=0, to=0.5, variable=self.bgm_var, length=110).pack(side="left", padx=4)
-        ttk.Button(right, text="배경음악 폴더 열기",
-                   command=lambda: _open_folder(os.path.join(ROOT, "bgm"))).pack(anchor="w", pady=2)
-
-        up = ttk.Frame(right)
-        up.pack(anchor="w", pady=(4, 0))
-        ttk.Label(up, text="유튜브 업로드").pack(side="left")
-        self.upload_var = tk.StringVar(value=dict(UPLOADS).get(c["upload"], "안 함"))
-        ttk.Combobox(up, textvariable=self.upload_var, values=[v for _, v in UPLOADS],
-                     state="readonly", width=9).pack(side="left", padx=4)
-
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            kf = ttk.Frame(main)
-            kf.pack(fill="x", pady=(6, 0))
-            ttk.Label(kf, text="Claude API 키", foreground="#b00").pack(side="left")
-            self.key_var = tk.StringVar()
-            ttk.Entry(kf, textvariable=self.key_var, show="•", width=50).pack(side="left", padx=6)
-            ttk.Button(kf, text="저장", command=self._save_key).pack(side="left")
-        else:
-            self.key_var = None
-
-        # 실행
-        rf = ttk.Frame(main)
-        rf.pack(fill="x", pady=(10, 0))
-        self.start_btn = ttk.Button(rf, text="숏폼 만들기", style="Big.TButton",
-                                    command=self._start)
-        self.start_btn.pack(side="left")
-        self.stop_btn = ttk.Button(rf, text="중지", command=self._stop, state="disabled")
-        self.stop_btn.pack(side="left", padx=8)
-        self.open_btn = ttk.Button(rf, text="결과 폴더 열기", command=self._open_output,
-                                   state="disabled")
-        self.open_btn.pack(side="left")
-        self.status = ttk.Label(rf, text="", font=self.big)
-        self.status.pack(side="left", padx=16)
-
-        self.bar = ttk.Progressbar(main, mode="indeterminate")
-        self.bar.pack(fill="x", pady=(8, 4))
-
-        lf = ttk.Frame(main)
-        lf.pack(fill="both", expand=True)
-        self.log = tk.Text(lf, height=12, font=self.mono, wrap="word", state="disabled",
-                           background="#1e1e1e", foreground="#dddddd", insertbackground="white")
-        sb = ttk.Scrollbar(lf, command=self.log.yview)
-        self.log.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        self.log.pack(side="left", fill="both", expand=True)
+        ttk.Scale(row, from_=0, to=0.5, variable=self.bgm_var, length=120).pack(side="left")
+        ttk.Button(row, text="폴더", command=lambda: _open_folder(os.path.join(ROOT, "bgm"))).pack(
+            side="left", padx=8)
+        self.flags["fix_subtitles"] = self._check(adv, "자막 오타 교정 (Claude)",
+                                                  c["fix_subtitles"].lower() == "yes")
+        self.flags["review"] = self._check(adv, "만들기 전에 목록 보고 고르기",
+                                           c["review"].lower() == "yes")
 
     # ---------- 롱폼 탭 ----------
 
     def _build_long(self, tab: ttk.Frame) -> None:
-        pad = {"padx": 8, "pady": 3}
         c = settings.LONG_DEFAULTS
         try:
             c = settings.load_long()
         except Exception:
             pass
+        tab.columnconfigure(0, weight=3, uniform="col")
+        tab.columnconfigure(1, weight=2, uniform="col")
 
-        cf = ttk.LabelFrame(tab, text=" 1. 촬영본 (찍은 순서대로 놓으면 AI가 더 정확해요) ", padding=8)
-        cf.pack(fill="x")
-        self.clips = tk.Listbox(cf, height=6, activestyle="none", selectmode="extended")
-        self.clips.pack(side="left", fill="x", expand=True)
-        cb = ttk.Frame(cf)
-        cb.pack(side="left", padx=(8, 0))
-        for text, cmd in [("영상 추가...", self._pick_clips), ("폴더 추가...", self._pick_clip_folder),
-                          ("위로", lambda: self._move_clip(-1)), ("아래로", lambda: self._move_clip(1)),
-                          ("목록에서 빼기", self._remove_clip)]:
-            ttk.Button(cb, text=text, command=cmd).pack(fill="x", pady=1)
+        left = ttk.Frame(tab, style="Panel.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        cf = self._card(left, "① 촬영본", "찍은 순서대로 놓으면 AI가 더 정확해요")
+        cf.outer.pack(fill="x")
+        self.clips = tk.Listbox(cf, height=5, activestyle="none", selectmode="extended")
+        style_field(self.clips)
+        self.clips.pack(fill="x")
+        cb = ttk.Frame(cf, style="Card.TFrame")
+        cb.pack(fill="x", pady=(8, 0))
+        ttk.Button(cb, text="+  영상 추가", style="Soft.TButton",
+                   command=self._pick_clips).pack(side="left")
+        ttk.Button(cb, text="+  폴더 추가", style="Soft.TButton",
+                   command=self._pick_clip_folder).pack(side="left", padx=6)
+        for text, cmd in [("빼기", self._remove_clip), ("▼", lambda: self._move_clip(1)),
+                          ("▲", lambda: self._move_clip(-1))]:
+            ttk.Button(cb, text=text, command=cmd, width=4 if len(text) == 1 else None).pack(
+                side="right", padx=(6, 0))
 
-        pf = ttk.LabelFrame(tab, text=" 2. 기획안 (파일을 고르거나 아래에 붙여 넣기) ", padding=8)
-        pf.pack(fill="x", pady=(8, 0))
-        row = ttk.Frame(pf)
+        pf = self._card(left, "② 기획안", "hwp · docx · txt 파일, 또는 아래에 붙여 넣기")
+        pf.outer.pack(fill="x", pady=(10, 0))
+        row = ttk.Frame(pf, style="Card.TFrame")
         row.pack(fill="x")
         self.plan_var = tk.StringVar()
         ttk.Entry(row, textvariable=self.plan_var).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="기획안 파일...", command=self._pick_plan).pack(side="left", padx=(6, 0))
-        ttk.Button(row, text="지우기", command=lambda: self.plan_var.set("")).pack(side="left", padx=4)
-        self.plan_text = tk.Text(pf, height=4, wrap="word")
-        self.plan_text.pack(fill="x", pady=(6, 0))
+        ttk.Button(row, text="파일 고르기", style="Soft.TButton",
+                   command=self._pick_plan).pack(side="left", padx=(8, 0))
+        ttk.Button(row, text="지우기", command=lambda: self.plan_var.set("")).pack(side="left", padx=6)
+        self.plan_text = tk.Text(pf, height=3, wrap="word")
+        style_field(self.plan_text)
+        self.plan_text.pack(fill="x", pady=(8, 0))
 
-        sf = ttk.LabelFrame(tab, text=" 3. 설정 ", padding=8)
-        sf.pack(fill="x", pady=(8, 0))
-        left = ttk.Frame(sf)
-        left.pack(side="left", fill="both", expand=True)
-        right = ttk.Frame(sf)
-        right.pack(side="left", fill="y", padx=(16, 0))
-
-        ttk.Label(left, text="영상 이름").grid(row=0, column=0, sticky="w", **pad)
+        sf = self._card(tab, "③ 설정")
+        sf.outer.grid(row=0, column=1, sticky="nsew")
+        row = self._row(sf, "영상 이름")
         self.long_title = tk.StringVar()
-        ttk.Entry(left, textvariable=self.long_title, width=28).grid(row=0, column=1, sticky="w", **pad)
-        ttk.Label(left, text="목표 길이(분)").grid(row=0, column=2, sticky="e", **pad)
+        ttk.Entry(row, textvariable=self.long_title).pack(side="left", fill="x", expand=True)
+        row = self._row(sf, "목표 길이(분)")
         self.long_minutes = tk.StringVar(value=c["long_minutes"])
-        ttk.Spinbox(left, from_=0, to=120, textvariable=self.long_minutes, width=5).grid(
-            row=0, column=3, sticky="w", **pad)
-        ttk.Label(left, text="(결과 폴더 이름, 비워도 돼요)   0분이면 AI가 정해요",
-                  foreground="gray").grid(row=1, column=1, columnspan=3, sticky="w", padx=8)
-        ttk.Label(left, text="채널 설명").grid(row=2, column=0, sticky="nw", **pad)
-        self.long_context = tk.Text(left, height=3, width=50, wrap="word")
-        self.long_context.insert("1.0", c["long_context"])
-        self.long_context.grid(row=2, column=1, columnspan=3, sticky="we", **pad)
-        ttk.Label(left, text="음성 인식").grid(row=3, column=0, sticky="w", **pad)
-        self.long_model = tk.StringVar(value=dict(MODELS).get(c["long_model"], c["long_model"]))
-        ttk.Combobox(left, textvariable=self.long_model, values=[v for _, v in MODELS],
-                     state="readonly", width=18).grid(row=3, column=1, sticky="w", **pad)
-        left.columnconfigure(3, weight=1)
-
+        ttk.Spinbox(row, from_=0, to=120, textvariable=self.long_minutes, width=5).pack(side="left")
+        ttk.Label(row, text="0이면 AI가 정해요", style="Sub.Card.TLabel").pack(side="left", padx=8)
+        ttk.Frame(sf, style="Card.TFrame", height=6).pack()
         self.long_flags = {}
-        for key, text in [("long_commerce", "유료광고 포함 (코시 커머스 편)"),
-                          ("long_review", "만들기 전에 순서표 고치기"),
-                          ("long_frames", "장면 사진도 AI에게 보여주기"),
-                          ("long_jumpcut", "말 사이 긴 무음 자르기"),
-                          ("long_subtitles", "자막 넣기"), ("long_fix_subtitles", "자막 오타 교정"),
-                          ("long_chapter_titles", "챕터 제목 띄우기"),
-                          ("long_thumbnail", "썸네일 만들기")]:
-            var = tk.BooleanVar(value=c[key].lower() == "yes")
-            ttk.Checkbutton(right, text=text, variable=var).pack(anchor="w")
-            self.long_flags[key] = var
-        self.replan = tk.BooleanVar(value=False)
-        ttk.Checkbutton(right, text="편집 순서 새로 짜기", variable=self.replan).pack(anchor="w")
-        bg = ttk.Frame(right)
-        bg.pack(anchor="w", pady=(4, 0))
-        ttk.Label(bg, text="배경음악 볼륨").pack(side="left")
+        yes = lambda k: c[k].lower() == "yes"
+        self.long_flags["long_commerce"] = self._check(sf, "유료광고 포함 (코시 커머스 편)",
+                                                       yes("long_commerce"))
+        self.long_flags["long_subtitles"] = self._check(sf, "자막 넣기", yes("long_subtitles"))
+        self.long_flags["long_thumbnail"] = self._check(sf, "썸네일 만들기", yes("long_thumbnail"))
+
+        adv = self._advanced(sf, "롱폼 고급 설정")
+        ttk.Label(adv, text="채널 설명 (세계관, 출연자)", style="Card.TLabel").pack(anchor="w")
+        self.long_context = tk.Text(adv, height=3, width=40, wrap="word")
+        style_field(self.long_context)
+        self.long_context.insert("1.0", c["long_context"])
+        self.long_context.pack(fill="x", pady=(2, 6))
+        row = self._row(adv, "음성 인식")
+        self.long_model = tk.StringVar(value=dict(MODELS).get(c["long_model"], c["long_model"]))
+        ttk.Combobox(row, textvariable=self.long_model, values=[v for _, v in MODELS],
+                     state="readonly", width=18).pack(side="left")
+        row = self._row(adv, "배경음악")
         try:
             vol = float(c["long_bgm_volume"])
         except ValueError:
             vol = 0.10
         self.long_bgm = tk.DoubleVar(value=vol)
-        ttk.Scale(bg, from_=0, to=0.4, variable=self.long_bgm, length=110).pack(side="left", padx=4)
+        ttk.Scale(row, from_=0, to=0.4, variable=self.long_bgm, length=120).pack(side="left")
+        for key, text in [("long_jumpcut", "말 사이 긴 무음 자르기"),
+                          ("long_fix_subtitles", "자막 오타 교정"),
+                          ("long_chapter_titles", "챕터 제목 띄우기"),
+                          ("long_frames", "장면 사진도 AI에게 보여주기"),
+                          ("long_review", "만들기 전에 순서표 고치기")]:
+            self.long_flags[key] = self._check(adv, text, yes(key))
+        self.replan = self._check(adv, "편집 순서 새로 짜기 (이번 한 번)", False)
 
     def _on_tab(self, _event=None) -> None:
         if not hasattr(self, "start_btn"):
             return
         long = self.tabs.index(self.tabs.select()) == 1
-        self.start_btn.configure(text="롱폼 만들기" if long else "숏폼 만들기")
+        self.start_btn.configure(text="▶  롱폼 만들기" if long else "▶  숏폼 만들기")
 
     def _pick_clips(self) -> None:
         for p in filedialog.askopenfilenames(title="촬영본 고르기", filetypes=VIDEO_TYPES):
@@ -648,7 +806,15 @@ class App:
         self.log.configure(state="normal")
         if self._replacing:
             self.log.delete("end-1c linestart", "end-1c")
-        self.log.insert("end", text)
+        line = text.strip()
+        tag = ()
+        if line.startswith("[") and not text.startswith(" "):
+            tag = ("stage",)
+        if "오류" in line or "실패" in line or "Error" in line:
+            tag = ("error",)
+        if line.startswith("완료") or line.startswith("완성"):
+            tag = ("done",)
+        self.log.insert("end", text, tag)
         self._replacing = replace_last
         self.log.see("end")
         self.log.configure(state="disabled")
@@ -748,7 +914,7 @@ class AutoStart:
         self.win, self.done, self.what = win, done, what
         self.left = int(review.wait_minutes() * 60)
         self.job = None
-        self.label = ttk.Label(parent, foreground="#b05000")
+        self.label = ttk.Label(parent, foreground=ACCENT)
         self.label.pack(side="right", padx=12)
         if not self.left:
             return
@@ -786,7 +952,7 @@ class ReviewDialog:
         with open(os.path.join(os.path.dirname(path), "highlights.json"), encoding="utf-8") as f:
             self.highlights = [Highlight(**h) for h in json.load(f)["highlights"]]
 
-        self.win = win = tk.Toplevel(parent)
+        self.win = win = tk.Toplevel(parent, background=BG)
         win.title("만들 숏폼 고르기")
         win.geometry("1240x640")
         win.transient(parent)
@@ -799,7 +965,7 @@ class ReviewDialog:
 
         outer = ttk.Frame(win)
         outer.pack(fill="both", expand=True, padx=10)
-        canvas = tk.Canvas(outer, highlightthickness=0)
+        canvas = tk.Canvas(outer, highlightthickness=0, background=BG)
         sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         body = ttk.Frame(canvas)
         body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -831,7 +997,7 @@ class ReviewDialog:
             ttk.Entry(body, textvariable=subt, width=12).grid(row=i, column=5, padx=4)
             ttk.Entry(body, textvariable=title, width=28).grid(row=i, column=6, padx=4)
             ttk.Entry(body, textvariable=bottom, width=14).grid(row=i, column=7, padx=4)
-            ttk.Label(body, text=h.reason, wraplength=200, foreground="#555").grid(
+            ttk.Label(body, text=h.reason, wraplength=200, foreground=SUB).grid(
                 row=i, column=8, padx=4, sticky="w")
             self.rows.append((on, rng, title, bottom, subt))
 
@@ -881,7 +1047,7 @@ class LongReviewDialog:
 
         self.path = path
         self.edl = Edl.load(path)
-        self.win = win = tk.Toplevel(parent)
+        self.win = win = tk.Toplevel(parent, background=BG)
         win.title("롱폼 편집 순서표")
         win.geometry("1180x720")
         win.transient(parent)
@@ -912,7 +1078,7 @@ class LongReviewDialog:
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
-        self.tree.tag_configure("off", foreground="#999")
+        self.tree.tag_configure("off", foreground="#6a6a74")
         self.tree.bind("<<TreeviewSelect>>", self._load_row)
         self.tree.bind("<Double-1>", lambda e: self._toggle())
 
@@ -934,7 +1100,8 @@ class LongReviewDialog:
         if self.edl.dropped:
             df = ttk.LabelFrame(win, text=" AI가 뺀 구간 (참고) ", padding=6)
             df.pack(fill="x", padx=10)
-            box = tk.Text(df, height=4, wrap="word", foreground="#555")
+            box = tk.Text(df, height=4, wrap="word")
+            style_field(box)
             for d in self.edl.dropped:
                 c = d.get("clip", 0)
                 name = os.path.basename(self.edl.clips[c]) if 0 <= c < len(self.edl.clips) else "?"

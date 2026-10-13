@@ -11,14 +11,14 @@ DEFAULTS = {
     "accounts": "", "per_account": "3",
     "style": "green", "count": "10", "min_len": "20", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
-    "review": "yes", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
+    "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
     "bgm_volume": "0.15", "thumbnail": "yes", "upload": "no",
 }
 
 
 # [longform] 칸. update.py가 이름만 보고 병합하므로 숏폼 설정과 겹치지 않게 long_ 을 붙인다
 LONG_DEFAULTS = {
-    "long_context": "", "long_minutes": "0", "long_commerce": "no", "long_review": "yes",
+    "long_context": "", "long_minutes": "0", "long_commerce": "no", "long_review": "no",
     "long_frames": "yes", "long_jumpcut": "yes", "long_subtitles": "yes",
     "long_fix_subtitles": "yes", "long_chapter_titles": "yes", "long_bgm_volume": "0.10",
     "long_thumbnail": "yes", "long_model": "small", "long_font": "",

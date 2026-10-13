@@ -541,7 +541,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--minutes", type=float, default=0, help="목표 길이(분). 0이면 AI가 판단")
     s.add_argument("--commerce", type=_yesno, default=False,
                    help="유료광고 포함 영상 yes/no (시작·끝에 '유료광고 포함' 표시)")
-    s.add_argument("--review", type=_yesno, default=True, help="만들기 전에 순서표 검토 yes/no")
+    s.add_argument("--review", type=_yesno, default=False, help="만들기 전에 순서표 검토 yes/no")
     s.add_argument("--replan", action="store_true", help="지난 순서표를 버리고 새로 짜기")
     s.add_argument("--frames", type=_yesno, default=True,
                    help="촬영본 장면 사진도 AI에게 보여주기 yes/no (말 없는 장면 판단)")
