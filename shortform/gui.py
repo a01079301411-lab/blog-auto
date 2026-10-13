@@ -22,6 +22,8 @@ from .styles import PRESETS
 ROOT = settings.ROOT
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 APP_TITLE = f"숏폼·롱폼 자동 편집기  v{__version__}"
+REF_TYPES = [("사진·영상", "*.png *.jpg *.jpeg *.webp *.mp4 *.mov *.m4v *.webm"),
+             ("모든 파일", "*.*")]
 PLAN_TYPES = [("기획안", "*.hwp *.docx *.txt *.md"), ("모든 파일", "*.*")]
 VIDEO_TYPES = [("영상 파일", "*.mp4 *.mov *.mkv *.avi *.m4v *.webm"), ("모든 파일", "*.*")]
 
@@ -140,6 +142,16 @@ def style_field(widget: tk.Widget) -> None:
         widget.configure(insertbackground=FG, padx=8, pady=6)
 
 
+LENGTHS = ["AI가 정해요", "3분", "5분", "8분", "10분", "15분", "20분", "30분"]
+
+
+def _num(text: str) -> float:
+    """'10분', '8.5' → 숫자. 숫자가 없으면 0 (AI가 정함)."""
+    import re
+    m = re.search(r"\d+(?:\.\d+)?", str(text))
+    return float(m.group()) if m else 0.0
+
+
 def _python() -> str:
     """작업용 파이썬. 창은 pythonw로 떠도 작업은 python.exe로 돌려야 출력을 받을 수 있다."""
     if os.environ.get("SHORTFORM_PYTHON"):
@@ -243,6 +255,43 @@ class App:
             win.geometry(f"+{max(x, 0)}+{self.root.winfo_rooty() + 120}")
         ttk.Button(card, text="고급 설정  ›", style="Link.TButton", command=show).pack(
             anchor="w", pady=(10, 0))
+        return box
+
+    def _ref_card(self, parent) -> tk.Listbox:
+        """레퍼런스 칸: 링크 붙여넣기, 스크린샷·짧은 영상 추가."""
+        rf = self._card(parent, "레퍼런스", "이런 느낌으로! (선택)")
+        row = ttk.Frame(rf, style="Card.TFrame")
+        row.pack(fill="x")
+        link = tk.StringVar()
+        entry = ttk.Entry(row, textvariable=link)
+        entry.pack(side="left", fill="x", expand=True)
+        box = tk.Listbox(rf, height=3, activestyle="none", selectmode="extended")
+        style_field(box)
+
+        def add_link(_e=None):
+            text = link.get().strip()
+            if text and text not in box.get(0, "end"):
+                box.insert("end", text)
+            link.set("")
+        entry.bind("<Return>", add_link)
+        ttk.Button(row, text="링크 추가", style="Soft.TButton", command=add_link).pack(
+            side="left", padx=(6, 0))
+        box.pack(fill="x", pady=(6, 0))
+        foot = ttk.Frame(rf, style="Card.TFrame")
+        foot.pack(fill="x", pady=(6, 0))
+
+        def add_files():
+            for p in filedialog.askopenfilenames(title="레퍼런스 사진·영상 고르기",
+                                                 filetypes=REF_TYPES):
+                p = os.path.abspath(p)
+                if p not in box.get(0, "end"):
+                    box.insert("end", p)
+        ttk.Button(foot, text="+  스크린샷·영상", command=add_files).pack(side="left")
+        ttk.Button(foot, text="빼기", command=lambda: [box.delete(i) for i in
+                                                     reversed(box.curselection())]).pack(
+            side="left", padx=6)
+        ttk.Label(foot, text="링크·캡처·짧은 영상", style="Sub.Card.TLabel").pack(
+            side="right")
         return box
 
     def _row(self, parent, label: str) -> ttk.Frame:
@@ -362,8 +411,12 @@ class App:
         ttk.Button(pf, text="글꼴 확인", command=self._check_fonts).pack(side="right")
 
         # 오른쪽: 설정
-        sf = self._card(tab, "③ 설정")
-        sf.outer.grid(row=0, column=1, sticky="nsew")
+        right = ttk.Frame(tab, style="Panel.TFrame")
+        right.grid(row=0, column=1, sticky="nsew")
+        sf = self._card(right, "③ 설정")
+        sf.outer.pack(fill="x")
+        self.short_refs = self._ref_card(right)
+        self.short_refs.master.outer.pack(fill="x", pady=(10, 0))
         row = self._row(sf, "숏폼 개수")
         self.count_var = tk.StringVar(value=c["count"])
         ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5).pack(side="left")
@@ -385,6 +438,7 @@ class App:
         self.flags["focus"] = self._check(sf, "얼굴 따라가기", c["focus"] == "auto")
         self.flags["burned_subs"] = self._check(sf, "원본에 자막 있으면 그대로 쓰기",
                                                 c["burned_subs"] in ("auto", "yes"))
+        self.flags["subtitles"] = self._check(sf, "자막 넣기", c["subtitles"].lower() != "no")
         self.flags["thumbnail"] = self._check(sf, "썸네일 만들기", c["thumbnail"].lower() == "yes")
 
         adv = self._advanced(sf, "숏폼 고급 설정")
@@ -460,15 +514,23 @@ class App:
         style_field(self.plan_text)
         self.plan_text.pack(fill="x", pady=(8, 0))
 
-        sf = self._card(tab, "③ 설정")
-        sf.outer.grid(row=0, column=1, sticky="nsew")
+        right = ttk.Frame(tab, style="Panel.TFrame")
+        right.grid(row=0, column=1, sticky="nsew")
+        sf = self._card(right, "③ 설정")
+        sf.outer.pack(fill="x")
+        self.long_refs = self._ref_card(right)
+        self.long_refs.master.outer.pack(fill="x", pady=(10, 0))
         row = self._row(sf, "영상 이름")
         self.long_title = tk.StringVar()
         ttk.Entry(row, textvariable=self.long_title).pack(side="left", fill="x", expand=True)
-        row = self._row(sf, "목표 길이(분)")
-        self.long_minutes = tk.StringVar(value=c["long_minutes"])
-        ttk.Spinbox(row, from_=0, to=120, textvariable=self.long_minutes, width=5).pack(side="left")
-        ttk.Label(row, text="0이면 AI가 정해요", style="Sub.Card.TLabel").pack(side="left", padx=8)
+        row = self._row(sf, "영상 길이")
+        mins = c["long_minutes"].strip()
+        self.long_minutes = tk.StringVar(
+            value=f"{float(mins):g}분" if mins and _num(mins) else LENGTHS[0])
+        ttk.Combobox(row, textvariable=self.long_minutes, values=LENGTHS, width=12).pack(
+            side="left")
+        ttk.Label(row, text="직접 적어도 돼요 (예: 12분)", style="Sub.Card.TLabel").pack(
+            side="left", padx=8)
         ttk.Frame(sf, style="Card.TFrame", height=6).pack()
         self.long_flags = {}
         yes = lambda k: c[k].lower() == "yes"
@@ -552,7 +614,7 @@ class App:
         vals = {k: "yes" if v.get() else "no" for k, v in self.long_flags.items()}
         vals.update({
             "long_context": " ".join(self.long_context.get("1.0", "end").split()),
-            "long_minutes": self.long_minutes.get().strip() or "0",
+            "long_minutes": f"{_num(self.long_minutes.get()):g}",
             "long_model": {v: k for k, v in MODELS}.get(self.long_model.get(), "small"),
             "long_bgm_volume": f"{self.long_bgm.get():.2f}",
         })
@@ -589,6 +651,8 @@ class App:
             with open(plan, "w", encoding="utf-8") as f:
                 f.write(pasted)
         argv = ["longauto", *clips, "-o", out]
+        for r in self.long_refs.get(0, "end"):
+            argv += ["--ref", r]
         if plan:
             argv += ["--plan", plan]
         if self.replan.get():
@@ -645,7 +709,7 @@ class App:
             "model": {v: k for k, v in MODELS}.get(self.model_var.get(), "small"),
             "focus": focus, "fix_subtitles": yes("fix_subtitles"), "review": yes("review"),
             "burned_subs": "auto" if self.flags["burned_subs"].get() else "no",
-            "thumbnail": yes("thumbnail"),
+            "thumbnail": yes("thumbnail"), "subtitles": yes("subtitles"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
@@ -727,7 +791,9 @@ class App:
             kwargs = {"creationflags": NO_WINDOW} if sys.platform == "win32" else \
                 {"start_new_session": True}
             self.proc = subprocess.Popen(
-                [_python(), "-m", "shortform", "auto", video], cwd=ROOT, env=env,
+                [_python(), "-m", "shortform", "auto", video,
+                 *[a for r in self.short_refs.get(0, "end") for a in ("--ref", r)]],
+                cwd=ROOT, env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                 **kwargs)
             self._pump(self.proc)

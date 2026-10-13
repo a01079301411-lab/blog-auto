@@ -171,10 +171,10 @@ def _account_brief(acct) -> str:
 
 def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, max_len: float,
                 context: str, account=None, exclude: list[tuple[float, float]] | None = None,
-                ) -> list[Highlight]:
+                ref_blocks: list[dict] | None = None) -> list[Highlight]:
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
-    # 대본 부분은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
-    content = [{"type": "text",
+    # 레퍼런스와 대본은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
+    content = list(ref_blocks or []) + [{"type": "text",
                 "text": f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>",
                 "cache_control": {"type": "ephemeral"}}]
     ask = ""
@@ -339,6 +339,7 @@ def pick_highlights(
     account=None,
     exclude: list[tuple[float, float]] | None = None,
     words=None,
+    ref_blocks: list[dict] | None = None,
 ) -> list[Highlight]:
     """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다."""
     import anthropic
@@ -353,7 +354,7 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         want = want_total if len(windows) == 1 else max(4, want_total // len(windows) + 2)
         candidates += _ask_claude(client, window, want, min_len, max_len, context, account,
-                                  exclude)
+                                  exclude, ref_blocks)
     if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
         candidates = [h for h in candidates
                       if not any(h.start < b and a < h.end for a, b in exclude)]

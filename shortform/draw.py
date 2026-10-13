@@ -161,7 +161,7 @@ def _center_line(canvas: Image.Image, text: str, txt: Txt, y: int) -> None:
 
 
 def overlay(acct: Account, *, title: str, sub_title: str = "", speaker: str = "",
-            bottom: str = "", boxed: bool = True) -> Image.Image:
+            bottom: str = "", boxed: bool = True, speaker_y: int = SPEAKER_Y) -> Image.Image:
     """영상 위에 고정으로 얹을 글자들 (투명 PNG). boxed=True면 N-4(가운데 상자) 배치."""
     canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     block = title_block(acct.video, title, sub_title)
@@ -169,7 +169,7 @@ def overlay(acct: Account, *, title: str, sub_title: str = "", speaker: str = ""
         _place(canvas, block, acct.video)
     if speaker.strip():
         s = speaker.strip().strip("[]")
-        _center_line(canvas, f"[{s}]", acct.speaker, SPEAKER_Y)
+        _center_line(canvas, f"[{s}]", acct.speaker, speaker_y)
     if bottom.strip() and acct.bottom and boxed:
         b = bottom.strip().strip("<>")
         _center_line(canvas, f"<{b}>", acct.bottom, BOTTOM_Y)

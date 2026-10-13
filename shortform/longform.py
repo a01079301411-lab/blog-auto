@@ -53,6 +53,7 @@ class Edl:
     commerce: bool = False
     chapters: list[Chapter] = field(default_factory=list)
     dropped: list[dict] = field(default_factory=list)  # 뺀 구간과 이유 (참고용)
+    key: str = ""  # 기획안·목표 길이·레퍼런스가 바뀌면 순서표를 새로 짠다
 
     def save(self, path: str) -> None:
         tmp = path + ".tmp"
@@ -236,13 +237,15 @@ def _lines(t: Transcript) -> list[Sentence]:
 
 
 def _request(clips, durations, verticals, transcripts, *, plan: str, context: str,
-             target_minutes: float, frames: bool, workdir: str) -> list[dict]:
+             target_minutes: float, frames: bool, workdir: str,
+             ref_blocks: list[dict] | None = None) -> list[dict]:
     content: list[dict] = []
     head = []
     if context:
         head.append(f"<channel>\n{context}\n</channel>")
     head.append(f"<plan>\n{plan.strip() or '(기획안 없음: 촬영본 흐름을 살려 자연스럽게 구성)'}\n</plan>")
     content.append({"type": "text", "text": "\n\n".join(head)})
+    content += ref_blocks or []
 
     per_clip = 0
     if frames and clips:
@@ -268,7 +271,13 @@ def _request(clips, durations, verticals, transcripts, *, plan: str, context: st
 
     total = sum(durations)
     if target_minutes > 0:
-        length = f"Aim for about {target_minutes:.0f} minutes in total."
+        # 말 사이 무음을 자르면 10% 정도 짧아지므로 그만큼 넉넉히
+        lo, hi = target_minutes * 0.95, target_minutes * 1.2
+        length = (f"The creator wants the finished video to be about {target_minutes:.0f} minutes. "
+                  f"The kept segments must add up to between {lo:.1f} and {hi:.1f} minutes "
+                  f"(pauses are trimmed afterwards). Add up your segment lengths before "
+                  f"answering. If the good footage is shorter, keep everything good and say so "
+                  f"in dropped; if it is longer, cut the weakest parts first.")
     else:
         length = ("Choose the length the material deserves: keep what is engaging, cut the "
                   "rest. Typical vlogs end up 8-20 minutes.")
@@ -280,13 +289,14 @@ def _request(clips, durations, verticals, transcripts, *, plan: str, context: st
 
 def ask_claude(clips, durations, verticals, transcripts, *, plan: str, context: str,
                target_minutes: float = 0, frames: bool = True, workdir: str,
-               client=None) -> Edl:
+               client=None, ref_blocks: list[dict] | None = None) -> Edl:
     if client is None:
         import anthropic
 
         client = anthropic.Anthropic()
     content = _request(clips, durations, verticals, transcripts, plan=plan, context=context,
-                       target_minutes=target_minutes, frames=frames, workdir=workdir)
+                       target_minutes=target_minutes, frames=frames, workdir=workdir,
+                       ref_blocks=ref_blocks)
     with client.beta.messages.stream(
         model=MODEL,
         max_tokens=64000,
@@ -504,17 +514,28 @@ def run(args) -> str:
 
     edl_path = os.path.join(work, "edl.json")
     edl = None
+    import hashlib
+
+    refs = getattr(args, "ref", None) or []
+    key = hashlib.md5(f"{plan_text}|{args.minutes}|{'|'.join(refs)}|{args.context}".encode()
+                      ).hexdigest()[:12]
     if os.path.exists(edl_path) and not args.replan:
         old = Edl.load(edl_path)
-        if old.clips == clips:
+        if old.clips == clips and old.key == key:
             edl = old
             print("\n[편집 순서] 지난번 순서표를 다시 써요. (새로 짜려면 '다시 기획' 옵션)")
     if edl is None:
         print("\n[편집 순서] Claude가 기획안과 촬영본을 보고 편집 순서를 짜는 중... (몇 분 걸려요)")
         try:
+            ref_blocks = None
+            if refs:
+                from . import references
+                print("  레퍼런스 읽는 중...")
+                ref_blocks = references.blocks(refs)
             edl = ask_claude(clips, durations, verticals, transcripts, plan=plan_text,
                              context=args.context or "", target_minutes=args.minutes,
-                             frames=args.frames, workdir=work)
+                             frames=args.frames, workdir=work, ref_blocks=ref_blocks)
+            edl.key = key
         except Exception as e:
             if not args.allow_fallback:
                 raise
@@ -527,6 +548,12 @@ def run(args) -> str:
     print(f"  챕터 {len(edl.chapters)}개, 장면 {len(kept)}개, 약 {_hms(total)}")
     for ch in edl.chapters:
         print(f"   · {ch.title} ({len(ch.segments)}장면)")
+    if args.minutes > 0:
+        if total > args.minutes * 60 * 1.35:
+            print(f"  ※ 목표({args.minutes:g}분)보다 길어요. 그대로 만들고, 줄이려면 '편집 순서 새로 짜기'를 "
+                  f"켜고 다시 만들어 주세요.")
+        elif total < args.minutes * 60 * 0.7:
+            print(f"  ※ 쓸 만한 장면이 목표({args.minutes:g}분)보다 적어서 짧게 나와요.")
 
     if args.review:
         edl = review(work, edl, edl_path)

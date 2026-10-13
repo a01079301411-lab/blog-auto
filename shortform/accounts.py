@@ -18,6 +18,16 @@ BOX_TOP, BOX_BOTTOM = 432, 1534
 # 설명자막(노란 [ ])과 말자막(하얀) 가운데 y, 하단자막(< >) 가운데 y
 SPEAKER_Y, SUB_Y, BOTTOM_Y = 1066, 1152, 1604
 
+# 숏폼·릴스 아래쪽 데드존: 설명·계정 이름·좋아요 버튼 등이 덮는 곳 (화면 아래 약 440px).
+# 말자막은 이 바로 위에 아래쪽을 맞춰 놓고, 오른쪽 버튼 줄도 피한다.
+SAFE_BOTTOM = 1480
+SUB_MARGIN_L, SUB_MARGIN_R = 70, 150
+
+
+def low_speaker_y(acct: "Account") -> int:
+    """말자막을 데드존 바로 위로 내렸을 때 설명자막([ ]) 가운데 y (말자막 바로 위)."""
+    return int(SAFE_BOTTOM - acct.sub.size * 1.25 - 18 - acct.speaker.size * 0.6)
+
 F_ROKA = ["ROKABold", "강한육군 Bold", "강한육군", "ROKA"]
 F_DOVE = ["Dovemayo_gothic", "둘기마요_고딕", "둘기마요 고딕", "Dovemayo"]
 F_PAPER7 = ["Paperlogy-7Bold", "Paperlogy 7 Bold", "페이퍼로지 7 Bold", "Paperlogy"]

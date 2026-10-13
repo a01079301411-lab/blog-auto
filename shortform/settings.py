@@ -11,7 +11,7 @@ DEFAULTS = {
     "accounts": "", "per_account": "3",
     "style": "green", "count": "10", "min_len": "20", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
-    "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
+    "subtitles": "yes", "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
     "bgm_volume": "0.15", "thumbnail": "yes", "upload": "no",
 }
 
@@ -62,6 +62,7 @@ def to_argv(video: str, c: dict[str, str], out: str) -> list[str]:
             "--burned-subs", c["burned_subs"] if c["burned_subs"] in ("auto", "yes", "no") else "auto",
             "--bgm", os.path.join(ROOT, "bgm"), "--bgm-volume", c["bgm_volume"],
             "--thumbnail", c["thumbnail"], "--upload", c["upload"],
+            *(["--no-subtitles"] if c["subtitles"].lower() == "no" else []),
             "--accounts", c["accounts"], "--per-account", c["per_account"]]
     for key in ("context", "speaker", "font"):
         if c.get(key, "").strip():

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import glob
 import json
 import os
@@ -153,7 +154,8 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
                       keep_bottom=keep_bottom)
     if acct is None:
         write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
-                  speaker=speaker, bottom=h.bottom, keywords=h.keywords)
+                  speaker=speaker if (cues or burned is None) else "", bottom=h.bottom,
+                  keywords=h.keywords)
         media.render(src, keeps, out, video_filter=vf, srt=subs,
                      bgm=bgm, bgm_volume=args.bgm_volume)
     else:
@@ -161,8 +163,11 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
 
         boxed = style.video_height < 1920  # N-4 (롱폼 잘라 쓴 숏폼)
         ov_path = os.path.splitext(out)[0] + ".overlay.png"
+        # 말자막을 데드존 바로 위로 내렸으니 설명자막도 그 바로 위. 원본 자막을 쓸 땐 원래 자리
+        from .accounts import SPEAKER_Y, low_speaker_y
         draw.overlay(acct, title=h.title, sub_title=h.sub_title, speaker=speaker,
-                     bottom=h.bottom, boxed=boxed).save(ov_path)
+                     bottom=h.bottom, boxed=boxed,
+                     speaker_y=low_speaker_y(acct) if cues else SPEAKER_Y).save(ov_path)
         sub_font, _ = fonts.find_or_fallback(acct.sub.fonts)
         write_account_subs(subs, acct, cues, font_path=sub_font)
         try:
@@ -275,7 +280,7 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
                              min_len=args.min_len, max_len=args.max_len,
                              context=args.context or "", account=acct,
                              exclude=[(h.start, h.end) for h in picked],
-                             words=transcript.words)
+                             words=transcript.words, ref_blocks=args.ref_blocks)
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -299,6 +304,9 @@ def cmd_shorts(args) -> None:
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
     key = (f"v2:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
            else f"v2:{args.count}")
+    if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
+        key += ":ref:" + hashlib.md5("|".join(args.ref).encode()).hexdigest()[:8]
+    args.ref_blocks = None
     if args.ranges:
         highlights = parse_ranges(args.ranges)
         for h in highlights:
@@ -311,13 +319,18 @@ def cmd_shorts(args) -> None:
         print(f"[하이라이트] 지난번에 고른 {len(highlights)}개를 다시 써요. "
               f"(새로 고르려면 결과 폴더의 highlights.json을 지우세요)")
     else:
+        if args.ref:
+            from . import references
+            print("[레퍼런스] 참고 자료 읽는 중...")
+            args.ref_blocks = references.blocks(args.ref)
         if accts:
             highlights = _pick_for_accounts(args, transcript, accts)
         else:
             print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
             highlights = pick_highlights(transcript.sentences, count=args.count,
                                          min_len=args.min_len, max_len=args.max_len,
-                                         context=args.context or "", words=transcript.words)
+                                         context=args.context or "", words=transcript.words,
+                                         ref_blocks=args.ref_blocks)
         _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
@@ -411,8 +424,10 @@ def cmd_auto(args) -> None:
     if os.path.abspath(args.settings) == os.path.abspath(SETTINGS):
         tidy_settings()  # 예전 업데이트가 흐트러뜨린 설정 파일 모양 정리
     out = settings.output_dir(args.input)
-    shorts_args = build_parser().parse_args(
-        settings.to_argv(args.input, settings.load(args.settings), out))
+    argv = settings.to_argv(args.input, settings.load(args.settings), out)
+    for r in args.ref:
+        argv += ["--ref", r]
+    shorts_args = build_parser().parse_args(argv)
     shorts_args.func(shorts_args)
 
     print(f"\n완료! 결과 폴더: {out}")
@@ -436,6 +451,8 @@ def cmd_longauto(args) -> None:
     c = settings.load_long(args.settings)
     argv = settings.long_argv(args.inputs, c, plan=args.plan, output=args.output,
                               title=args.title, replan=args.replan)
+    for r in args.ref:
+        argv += ["--ref", r]
     long_args = build_parser().parse_args(argv)
     long_args.func(long_args)
 
@@ -509,6 +526,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Claude로 자막 오타 교정·줄 나누기 yes/no (기본 yes)")
     s.add_argument("--review", type=_yesno, default=False,
                    help="만들기 전에 메모장으로 목록을 보고 고르기 yes/no")
+    s.add_argument("--ref", action="append", default=[],
+                   help="레퍼런스: 링크, 사진·영상 파일, 또는 설명 글 (여러 번 쓸 수 있어요)")
     s.add_argument("--burned-subs", choices=["auto", "yes", "no"], default="auto",
                    help="원본에 박힌 자막: auto(찾으면 새 자막 대신 원본 자막 사용) / yes / no")
     s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
@@ -530,6 +549,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_subtitle)
     s = sub.add_parser("auto", help="settings.ini 설정으로 숏폼 만들기 (run.bat이 사용)")
     s.add_argument("input")
+    s.add_argument("--ref", action="append", default=[], help="레퍼런스 (링크·파일·설명)")
     s.add_argument("--settings", default=SETTINGS)
     s.set_defaults(func=cmd_auto)
 
@@ -537,6 +557,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("inputs", nargs="+", help="촬영본 영상 파일 또는 폴더 (여러 개)")
     s.add_argument("-o", "--output", help="결과 폴더 (기본: 첫 촬영본 옆 '롱폼_결과')")
     s.add_argument("--plan", help="기획안 파일(txt/md/docx/hwp) 또는 기획 내용 글")
+    s.add_argument("--ref", action="append", default=[],
+                   help="레퍼런스: 링크, 사진·영상 파일, 또는 설명 글 (여러 번 쓸 수 있어요)")
     s.add_argument("--context", help="채널 설명 (세계관, 출연자). 편집·제목 품질이 좋아져요")
     s.add_argument("--minutes", type=float, default=0, help="목표 길이(분). 0이면 AI가 판단")
     s.add_argument("--commerce", type=_yesno, default=False,
@@ -570,6 +592,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--plan")
     s.add_argument("-o", "--output")
     s.add_argument("--title", help="결과 폴더 이름")
+    s.add_argument("--ref", action="append", default=[], help="레퍼런스 (링크·파일·설명)")
     s.add_argument("--replan", action="store_true")
     s.add_argument("--settings", default=SETTINGS)
     s.set_defaults(func=cmd_longauto)

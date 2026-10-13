@@ -57,7 +57,8 @@ class Style:
     sub_color: str = "#FFFFFF"
     sub_highlight: str = "#FFE600"
     sub_outline: int = 6
-    sub_top: int = 1410            # 인물 소개 줄의 위쪽 y (말자막은 그 아래)
+    sub_bottom: int = 1480         # 말자막 아래쪽 y: 숏폼 데드존(설명·좋아요 버튼) 바로 위
+    sub_top: int = 0               # 예전 설정 (지금은 안 씀)
 
     # 하단 문구 (예: <나 같아도 열 받겠다>)
     bottom_enabled: bool = False
@@ -87,13 +88,12 @@ PRESETS: dict[str, Style] = {
         title_top=300, title_size=120, title_highlight="#FFFFFF",
         title_outline=7, title_shadow=3,
         label_enabled=True, label_size=60,
-        sub_top=1330,
     ),
     # 예전 기본값: 16:9 영상 전체가 보이고 위 제목 + 아래 자막
     "basic": Style(
         video_top=657, video_height=606, video_fit="fit",
         title_size=96, title_highlight="#FFE500", title_bottom=600,
-        speaker_enabled=False, sub_top=1320,
+        speaker_enabled=False,
     ),
 }
 
@@ -283,10 +283,11 @@ def write_ass(
            "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
            "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
 
-    def st(name, font, size, color, outline, shadow, align, margin_v, border=1, back="#000000"):
+    def st(name, font, size, color, outline, shadow, align, margin_v, border=1, back="#000000",
+           margin_l=60, margin_r=60):
         return (f"Style: {name},{font},{size},{_c(color)},&H000000FF&,{_c(back) if border == 3 else '&H00000000&'},"
                 f"&H80000000&,-1,0,0,0,100,100,0,0,{border},{outline},{shadow},"
-                f"{align},60,60,{margin_v},1")
+                f"{align},{margin_l},{margin_r},{margin_v},1")
 
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
@@ -297,8 +298,11 @@ def write_ass(
         # 알약: BorderStyle 3 = 글자 뒤에 색 상자
         st("Label", tfont, s.label_size, s.label_color, 14, 0, 2,
            H - s.title_top + 24, border=3, back=s.label_bg),
-        st("Speaker", s.font, s.speaker_size, s.speaker_color, 4, 0, 8, s.sub_top),
-        st("Sub", s.font, s.sub_size, s.sub_color, s.sub_outline, 0, 8, s.sub_top + speaker_line),
+        # 말자막은 아래쪽을 데드존 바로 위에 맞추고(길면 위로), 인물 소개는 그 바로 위
+        st("Speaker", s.font, s.speaker_size, s.speaker_color, 4, 0, 2,
+           H - s.sub_bottom + round(s.sub_size * 1.25) + 12, margin_r=150),
+        st("Sub", s.font, s.sub_size, s.sub_color, s.sub_outline, 0, 2, H - s.sub_bottom,
+           margin_r=150),
         st("Bottom", tfont, s.bottom_size, s.bottom_color, 0, 0, 5, 0),
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -325,7 +329,7 @@ def write_ass(
 def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> None:
     """계정 가이드의 말자막 (하얀 글자, 설명자막 바로 아래). 글자 모양은 계정 글꼴 그대로."""
     from . import fonts
-    from .accounts import SUB_Y
+    from .accounts import SAFE_BOTTOM, SUB_MARGIN_L, SUB_MARGIN_R
 
     t = acct.sub
     fam = fonts.family(font_path)
@@ -333,7 +337,7 @@ def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> N
         border, outline, outline_c = 3, 12, acct.sub_box
     else:
         border, outline, outline_c = 1, t.stroke, t.stroke_color
-    top = int(SUB_Y - t.size * 0.62)  # 한 줄일 때 가운데가 SUB_Y. 길면 아래로 늘어난다
+    margin = H - SAFE_BOTTOM  # 아래쪽을 데드존 바로 위에 맞춘다 (길면 위로 늘어난다)
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
@@ -342,7 +346,7 @@ def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> N
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sub,{fam},{t.size},{_c(t.color)},&H000000FF&,{_c(outline_c)},&H80000000&,"
-        f"0,0,0,0,100,100,0,0,{border},{outline},0,8,50,50,{top},1",
+        f"0,0,0,0,100,100,0,0,{border},{outline},0,2,{SUB_MARGIN_L},{SUB_MARGIN_R},{margin},1",
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
