@@ -455,8 +455,12 @@ def review(workdir: str, edl: Edl, edl_path: str) -> Edl:
     path = os.path.abspath(path)
     write_review(path, edl)
     if sys.platform == "win32":
+        from .review import open_notepad, wait_minutes
+
         print("\n[순서표 검토] 메모장에서 순서를 확인·수정하고, 저장한 뒤 메모장을 닫아 주세요.")
-        subprocess.run(["notepad.exe", path])
+        if wait_minutes():
+            print(f"  ({wait_minutes():g}분 동안 아무것도 안 하면 이 순서대로 만들어요)")
+        open_notepad(path)
     else:
         print(f"\n[순서표 검토] 파일을 고친 뒤 Enter를 누르세요: {path}")
         input()

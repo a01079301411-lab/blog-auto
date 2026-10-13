@@ -738,6 +738,46 @@ class App:
         self.root.destroy()
 
 
+class AutoStart:
+    """고르기 창에서 정해진 시간 동안 아무것도 안 누르면 그대로 진행한다 (밤새 돌려도 안 멈추게).
+
+    창 안에서 마우스나 키보드를 쓰면 기다리기를 멈추고 사람이 직접 누를 때까지 둔다.
+    """
+
+    def __init__(self, win: tk.Toplevel, parent: ttk.Frame, done, what: str):
+        self.win, self.done, self.what = win, done, what
+        self.left = int(review.wait_minutes() * 60)
+        self.job = None
+        self.label = ttk.Label(parent, foreground="#b05000")
+        self.label.pack(side="right", padx=12)
+        if not self.left:
+            return
+        win.bind("<ButtonPress>", self.stop, add="+")
+        win.bind("<KeyPress>", self.stop, add="+")
+        self.tick()
+
+    def tick(self) -> None:
+        try:
+            if self.left <= 0:
+                self.done()
+                return
+            m, s = divmod(self.left, 60)
+            self.label.configure(text=f"{m}:{s:02} 뒤 자동으로 {self.what}  (아무거나 누르면 멈춰요)")
+            self.left -= 1
+            self.job = self.win.after(1000, self.tick)
+        except tk.TclError:
+            pass  # 창이 이미 닫혔다
+
+    def stop(self, _event=None) -> None:
+        if self.job is not None:
+            try:
+                self.win.after_cancel(self.job)
+                self.label.configure(text="직접 고르는 중 (다 고르면 오른쪽 버튼을 눌러 주세요)")
+            except tk.TclError:
+                pass
+            self.job = None
+
+
 class ReviewDialog:
     """하이라이트 목록에서 만들 숏폼을 고르고 제목·문구·구간을 고치는 창."""
 
@@ -801,6 +841,7 @@ class ReviewDialog:
         ttk.Button(bf, text="모두 해제", command=lambda: self._all(False)).pack(side="left", padx=6)
         ttk.Button(bf, text="선택한 숏폼 만들기", style="Big.TButton",
                    command=self._done).pack(side="right")
+        self.auto = AutoStart(win, bf, self._done, "선택한 숏폼을 만들어요")
 
     def _all(self, value: bool) -> None:
         for on, *_ in self.rows:
@@ -879,7 +920,7 @@ class LongReviewDialog:
         side.pack(side="left", fill="y", padx=(8, 0))
         for text, cmd in [("위로", lambda: self._move(-1)), ("아래로", lambda: self._move(1)),
                           ("넣기 / 빼기", self._toggle), ("촬영본 열어 보기", self._open_clip)]:
-            ttk.Button(side, text=text, command=cmd, width=16).pack(fill="x", pady=2)
+            ttk.Button(side, text=text, command=cmd, width=20).pack(fill="x", pady=2)
 
         ed = ttk.Frame(win, padding=(10, 4))
         ed.pack(fill="x")
@@ -908,6 +949,7 @@ class LongReviewDialog:
         self.total.pack(side="left")
         ttk.Button(bf, text="이대로 롱폼 만들기", style="Big.TButton",
                    command=self._done).pack(side="right")
+        self.auto = AutoStart(win, bf, self._done, "이 순서대로 만들어요")
 
         self.rows: dict[str, list] = {}
         for ch in self.edl.chapters:

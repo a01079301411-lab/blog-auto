@@ -11,7 +11,7 @@ DEFAULTS = {
     "accounts": "", "per_account": "3",
     "style": "green", "count": "10", "min_len": "20", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
-    "review": "yes", "fix_subtitles": "yes", "burned_subs": "auto",
+    "review": "yes", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
     "bgm_volume": "0.15", "thumbnail": "yes", "upload": "no",
 }
 

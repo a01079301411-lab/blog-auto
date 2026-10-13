@@ -89,6 +89,26 @@ def read(path: str, highlights: list[Highlight]) -> list[Highlight]:
     return chosen
 
 
+def wait_minutes() -> float:
+    """고르기 창을 띄워 두고 기다릴 시간(분). 0이면 끝없이 기다린다."""
+    try:
+        from . import settings
+        return max(0.0, float(settings.load().get("review_wait", "3") or 0))
+    except (RuntimeError, ValueError):
+        return 3.0
+
+
+def open_notepad(path: str) -> None:
+    """메모장으로 열고 닫을 때까지 기다린다. 정해진 시간이 지나면 그대로 진행한다."""
+    minutes = wait_minutes()
+    proc = subprocess.Popen(["notepad.exe", path])
+    try:
+        proc.wait(timeout=minutes * 60 if minutes else None)
+    except subprocess.TimeoutExpired:
+        print(f"  {minutes:g}분 동안 응답이 없어서 목록 그대로 진행해요.")
+        proc.kill()
+
+
 def review(path: str, highlights: list[Highlight]) -> list[Highlight]:
     """목록 파일을 열어 사용자가 고르게 하고, 고른 하이라이트를 돌려준다."""
     write(path, highlights)
@@ -105,7 +125,9 @@ def review(path: str, highlights: list[Highlight]) -> list[Highlight]:
     elif sys.platform == "win32":
         print(f"\n[숏폼 고르기] 메모장에서 만들 숏폼을 고르고, 저장한 뒤 메모장을 닫아 주세요.")
         print(f"  목록 파일: {path}")
-        subprocess.run(["notepad.exe", path])  # 메모장을 닫을 때까지 기다린다
+        if wait_minutes():
+            print(f"  ({wait_minutes():g}분 동안 아무것도 안 하면 그대로 만들어요)")
+        open_notepad(path)
     else:
         print(f"\n[숏폼 고르기] 목록 파일을 고친 뒤 Enter를 누르세요: {path}")
         input()
