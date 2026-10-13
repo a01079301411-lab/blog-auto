@@ -15,13 +15,13 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import accounts, review, settings
+from . import __version__, accounts, review, settings
 from .highlights import Highlight
 from .styles import PRESETS
 
 ROOT = settings.ROOT
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-APP_TITLE = "숏폼·롱폼 자동 편집기"
+APP_TITLE = f"숏폼·롱폼 자동 편집기  v{__version__}"
 PLAN_TYPES = [("기획안", "*.hwp *.docx *.txt *.md"), ("모든 파일", "*.*")]
 VIDEO_TYPES = [("영상 파일", "*.mp4 *.mov *.mkv *.avi *.m4v *.webm"), ("모든 파일", "*.*")]
 
@@ -715,7 +715,8 @@ class App:
                 self.queue.put(("updated",))
                 return
             msg = f"새 버전으로 업데이트했어요 ({len(changed)}개)" if changed else ""
-            self.queue.put(("log", f"[업데이트 확인] {msg or '최신 버전이에요.'}\n", False))
+            self.queue.put(("log", f"[업데이트 확인] {msg or '최신 버전이에요.'} (v{__version__})\n",
+                            False))
             self.queue.put(("ready", msg))
 
         threading.Thread(target=work, daemon=True).start()

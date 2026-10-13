@@ -170,7 +170,8 @@ def main() -> None:
         print(f"건너뜀 ({type(e).__name__}: {e})")
         return
     if not changed:
-        print("최신 버전이에요.")
+        from . import __version__
+        print(f"최신 버전이에요. (v{__version__})")
         return
     print(f"{len(changed)}개 파일을 새 버전으로 바꿨어요.")
     for rel in changed:
