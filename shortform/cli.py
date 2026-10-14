@@ -421,6 +421,8 @@ def cmd_auto(args) -> None:
     from . import settings
     from .update import tidy_settings
 
+    from . import __version__
+    print(f"[시작] 숏폼 준비 중... (v{__version__})", flush=True)
     if os.path.abspath(args.settings) == os.path.abspath(SETTINGS):
         tidy_settings()  # 예전 업데이트가 흐트러뜨린 설정 파일 모양 정리
     out = settings.output_dir(args.input)
@@ -448,6 +450,8 @@ def cmd_longauto(args) -> None:
     """settings.ini의 [longform] 설정으로 long을 실행한다 (프로그램 창·run_long.bat용)."""
     from . import settings
 
+    from . import __version__
+    print(f"[시작] 롱폼 준비 중... (v{__version__})", flush=True)
     c = settings.load_long(args.settings)
     argv = settings.long_argv(args.inputs, c, plan=args.plan, output=args.output,
                               title=args.title, replan=args.replan)
@@ -604,6 +608,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    import faulthandler
+    import traceback
+
+    try:
+        faulthandler.enable()  # 프로그램이 갑자기 꺼져도 어디서 멈췄는지 남긴다
+    except Exception:
+        pass
     args = build_parser().parse_args(argv)
     try:
         args.func(args)
@@ -611,3 +622,6 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(f"오류: {e}")
     except KeyboardInterrupt:
         sys.exit("\n중단했습니다. 같은 명령을 다시 실행하면 끝난 부분부터 이어서 진행해요.")
+    except Exception as e:  # 예상 못 한 오류도 내용이 보이게
+        traceback.print_exc()
+        sys.exit(f"\n오류: {type(e).__name__}: {e}\n(위 내용을 캡처해서 보내 주세요)")

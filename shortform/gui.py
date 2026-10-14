@@ -142,6 +142,8 @@ def style_field(widget: tk.Widget) -> None:
         widget.configure(insertbackground=FG, padx=8, pady=6)
 
 
+LOG_DIR = os.path.join(ROOT, "logs")
+LAST_LOG = os.path.join(LOG_DIR, "마지막_실행기록.txt")
 LENGTHS = ["AI가 정해요", "3분", "5분", "8분", "10분", "15분", "20분", "30분"]
 
 
@@ -631,6 +633,12 @@ class App:
         if not clips:
             messagebox.showinfo(APP_TITLE, "먼저 [영상 추가...]나 [폴더 추가...]로 촬영본을 넣어 주세요.")
             return
+        # '영상 이름'에 "13분"처럼 길이를 적었으면 영상 길이로 쓴다
+        import re
+        if _num(self.long_minutes.get()) == 0 and \
+                re.fullmatch(r"\s*\d+(\.\d+)?\s*분\s*", self.long_title.get()):
+            self.long_minutes.set(self.long_title.get().strip())
+            self._append(f"영상 길이를 {self.long_title.get().strip()}으로 맞춰요.\n")
         values = self._long_values()
         try:
             float(values["long_minutes"])
@@ -814,16 +822,31 @@ class App:
 
         dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
         buf = ""
+        # 받은 출력은 파일로도 남긴다 (창에서 놓친 오류도 확인할 수 있게)
+        os.makedirs(LOG_DIR, exist_ok=True)
+        try:
+            record = open(LAST_LOG, "w", encoding="utf-8")
+        except OSError:
+            record = None
         while True:
             chunk = proc.stdout.read1(4096) if hasattr(proc.stdout, "read1") else proc.stdout.read(1)
             if not chunk:
                 break
-            buf += dec.decode(chunk)
+            text = dec.decode(chunk)
+            if record:
+                record.write(text.replace("\r\n", "\n"))
+                record.flush()
+            buf += text
             while True:
                 i = min((k for k in (buf.find("\n"), buf.find("\r")) if k >= 0), default=-1)
                 if i < 0:
                     break
-                line, sep, buf = buf[:i], buf[i], buf[i + 1:]
+                if buf[i] == "\r" and i + 1 == len(buf):
+                    break  # 다음 글자가 \n인지 보고 판단 (Windows 줄바꿈은 \r\n)
+                if buf[i] == "\r" and buf[i + 1] == "\n":
+                    line, sep, buf = buf[:i], "\n", buf[i + 2:]  # Windows 줄바꿈: 덮어쓰기 아님
+                else:
+                    line, sep, buf = buf[:i], buf[i], buf[i + 1:]
                 if line.startswith("@@REVIEW@@ "):
                     self.queue.put(("review", line[len("@@REVIEW@@ "):].strip()))
                     continue
@@ -833,8 +856,10 @@ class App:
                 if line.startswith("[") and "]" in line[:20]:
                     self.queue.put(("stage", line.strip()))
                 self.queue.put(("log", line + ("\n" if sep == "\n" else ""), sep == "\r"))
-        if buf:
-            self.queue.put(("log", buf + "\n", False))
+        if buf.strip("\r"):
+            self.queue.put(("log", buf.strip("\r") + "\n", False))
+        if record:
+            record.close()
 
     def _stop(self) -> None:
         if not self.proc or self.proc.poll() is not None:
@@ -928,7 +953,9 @@ class App:
             self.status.configure(text="완료!")
             self._open_output()
         else:
-            self.status.configure(text="오류가 났어요 (아래 메시지를 캡처해 주세요)")
+            self.status.configure(text="오류가 났어요 (오른쪽 기록을 캡처해 주세요)")
+            self._append(f"\n작업이 멈췄어요 (종료 코드 {code}).\n"
+                         f"전체 기록 파일: {LAST_LOG}\n")
 
     # ---------- 업데이트 ----------
 
