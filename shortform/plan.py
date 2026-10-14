@@ -41,8 +41,12 @@ def _hwp_para(data: bytes) -> str:
     out, i = [], 0
     while i < len(chars):
         c = chars[i]
-        if c >= 32:
-            out.append(chr(c))
+        if 0xD800 <= c < 0xDC00 and i + 1 < len(chars) and 0xDC00 <= chars[i + 1] < 0xE000:
+            # 이모지 등은 두 조각(서로게이트 쌍)으로 저장돼 있어 합쳐서 한 글자로
+            out.append(chr(0x10000 + ((c - 0xD800) << 10) + (chars[i + 1] - 0xDC00)))
+            i += 2
+        elif c >= 32:
+            out.append(chr(c) if not 0xD800 <= c < 0xE000 else "\ufffd")  # 짝 없는 조각은 버림
             i += 1
         elif c in _CHAR_CTRL:
             if c in (10, 13):
@@ -94,7 +98,18 @@ def _hwp(path: str) -> str:
     return "\n".join(p for p in paras if p)
 
 
+def clean(text: str) -> str:
+    """깨진 글자(짝이 안 맞는 서로게이트 등)를 안전한 글자로 바꾼다."""
+    return text.encode("utf-16", "surrogatepass").decode("utf-16", "replace") \
+        .replace("\x00", "")
+
+
 def read(path: str) -> str:
+    """기획안 파일의 글자. 깨진 글자는 정리해서 돌려준다."""
+    return clean(_read(path))
+
+
+def _read(path: str) -> str:
     """기획안 파일의 글자. 모르는 형식이면 그냥 텍스트로 읽어 본다."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".docx":

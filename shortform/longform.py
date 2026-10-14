@@ -501,7 +501,7 @@ def run(args) -> str:
             plan_text = plan_mod.read(args.plan)
             print(f"[기획안] {os.path.basename(args.plan)} ({len(plan_text)}자)")
         else:
-            plan_text = args.plan
+            plan_text = plan_mod.clean(args.plan)
     print(f"[촬영본] {len(clips)}개")
     durations = [media.duration(c) for c in clips]
     verticals = [media.is_vertical(c) for c in clips]
@@ -517,8 +517,8 @@ def run(args) -> str:
     import hashlib
 
     refs = getattr(args, "ref", None) or []
-    key = hashlib.md5(f"{plan_text}|{args.minutes}|{'|'.join(refs)}|{args.context}".encode()
-                      ).hexdigest()[:12]
+    key = hashlib.md5(f"{plan_text}|{args.minutes}|{'|'.join(refs)}|{args.context}".encode(
+        "utf-8", "replace")).hexdigest()[:12]
     if os.path.exists(edl_path) and not args.replan:
         old = Edl.load(edl_path)
         if old.clips == clips and old.key == key:
