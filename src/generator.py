@@ -114,6 +114,8 @@ def generate(topic, photo_set, related=None, feedback=None):
     text = next(b.text for b in response.content if b.type == "text")
     post = json.loads(text)
     post["title"] = formatter.sanitize(post["title"])
+    # 제목의 쉼표, 마침표는 띄어쓰기로 바꾼다 (검색 결과 제목은 깔끔하게)
+    post["title"] = " ".join(post["title"].replace(",", " ").replace(".", " ").split())
     post["photo_captions"] = {c["file"]: formatter.sanitize(c["caption"]) for c in post["photo_captions"]}
     post["tags"] = [t.replace(" ", "").lstrip("#") for t in post["tags"] if t.strip()]
     return post

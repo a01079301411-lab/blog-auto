@@ -160,14 +160,43 @@ def check(post, topic, photo_set=None, related=None):
             break
 
     fails += _repeat_problems(title, body, topic)
+    fails += _snippet_problems(title, body, topic)
+    return fails
+
+
+# 질문형 소제목 바로 아래 첫 문장이 이렇게 시작하면 떼어 가도 답이 안 된다 (스니펫, AI 브리핑)
+WEAK_ANSWER_START = re.compile(r"^((네|아니요|아니오)[,.!\s]|이것|이건|그건|그것|아래|다음과|위에서|앞에서)")
+TITLE_KEYWORD_WITHIN = 10  # 메인 키워드는 제목 앞 10글자 안에서 시작해야 한다
+
+
+def _snippet_problems(title, body, topic):
+    """검색 결과 제목과 답 상자에 맞는 모양인지: 키워드가 제목 앞쪽에, 질문 소제목 아래 첫 문장이 완결된 답."""
+    fails = []
+    match = _keyword_re(topic["keyword"]).search(title)
+    if match and match.start() > TITLE_KEYWORD_WITHIN:
+        fails.append(f"메인 키워드 '{topic['keyword']}'를 제목 맨 앞 {TITLE_KEYWORD_WITHIN}글자 안으로 옮기세요.")
+    lines = [l.strip() for l in body.splitlines()]
+    weak = []
+    for i, line in enumerate(lines):
+        if not line.startswith("#"):
+            continue
+        heading = line.lstrip("#").strip()
+        if not QUESTION_END.search(heading):
+            continue
+        answer = next((l for l in lines[i + 1:] if l and not PHOTO_RE.fullmatch(l) and not LINK_RE.fullmatch(l)), "")
+        if answer.startswith("#") or WEAK_ANSWER_START.match(answer.replace("**", "")):
+            weak.append(heading)
+    if weak:
+        fails.append("질문형 소제목 바로 아래 첫 문장을 그 문장만 읽어도 답이 되게 쓰세요 "
+                     "(네, 아래에서, 이건 등으로 시작하지 말고 주어를 명사로): " + weak[0])
     return fails
 
 
 def _repeat_problems(title, body, topic):
     """매 글이 같은 틀이 되지 않게: 제목의 경력 숫자, 'N가지', 상투 문장, 같은 문장 반복."""
     fails = []
-    if re.search(r"11\s*년", title):
-        fails.append("제목에 11년을 넣지 마세요. 경력은 본문에서 보여주세요.")
+    if re.search(r"11\s*년", title) and topic.get("title_type") != "권위 부여형":
+        fails.append("제목에 11년은 권위 부여형 제목일 때만 써요. 경력은 본문에서 보여주세요.")
     if re.search(r"\d+\s*가지", title) and topic.get("title_type") != "숫자 목록형":
         fails.append(f"이번 제목 유형은 {topic.get('title_type')}이에요. 'N가지'는 숫자 목록형일 때만 써요.")
     used = [p for p in STOCK_PHRASES if p in body]
