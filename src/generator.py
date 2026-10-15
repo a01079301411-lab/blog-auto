@@ -14,6 +14,7 @@ import formatter
 import history
 import links
 import photos
+import season
 from config import COMPANY_PHONE, DATA_DIR, MODEL, PROMPTS_DIR, SAMPLES_DIR
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,17 @@ def recent_posts_text(limit=10):
     return "\n".join(f"- 제목: {r['title']} / 첫 문장: {r.get('opening', '')}" for r in reversed(records))
 
 
+# 발행 전 검토에서 자주 걸린 것들. 프롬프트 파일을 사장님이 고쳐 써도 항상 지키게 여기에 둔다.
+EXTRA_RULES = """추가 규칙 (꼭 지킨다)
+- 제목에 'N가지'를 쓰면 소제목도 '## 1. ~'부터 '## N. ~'까지 번호를 붙여 정확히 N개로 쓴다. 각 소제목이 그 기준 하나다. 자주 묻는 질문, 마무리 소제목은 번호 없이.
+- 한 소제목에는 그 소제목이 묻는 이야기만 쓴다. 다른 소제목이 맡은 이야기(예: 보관 환경 소제목 안의 포장 이야기)는 그 소제목으로 옮긴다.
+- 사진은 사진 설명이 그 소제목 내용과 맞는 곳에만 넣는다. 가격 이야기 소제목에 정리 모습 사진처럼 상관없는 사진은 넣지 않는다.
+- 다른 업체나 컨테이너와 가격을 비교할 때는 회사 팩트의 숫자로 근거를 든다. 숫자가 없으면 '어느 쪽이 싸다'고 단정하지 말고 판단 기준만 알려 준다.
+- 다른 업체나 보관 방식을 단정적으로 깎아내리지 않는다. ('~할 수 있습니다'처럼 쓴다)
+- 같은 숫자 사실(예: 제습기 24시간, 바닥 20cm)은 글 전체에서 2번까지만 쓴다. FAQ 답이 본문 문장을 되풀이하지 않는다.
+"""
+
+
 def request_text(topic, photo_set, related=None, feedback=None):
     """이번 글마다 달라지는 부분."""
     text = (
@@ -74,7 +86,9 @@ def request_text(topic, photo_set, related=None, feedback=None):
         f"- title_type: {topic['title_type']}\n"
         f"- hook_type: {topic['hook_type']}\n"
         f"- variant: {topic['variant']}\n"
-        f"- 회사 전화번호: {COMPANY_PHONE}\n\n"
+        f"- 회사 전화번호: {COMPANY_PHONE}\n"
+        f"- 오늘: {season.describe()}\n\n"
+        f"{EXTRA_RULES}\n"
         f"photos\n{photos.describe(photo_set)}\n\n"
         f"related_posts\n{links.describe(related)}\n\n"
         f"recent_posts (이 제목, 첫 문장과 다르게 쓴다)\n{recent_posts_text()}\n"

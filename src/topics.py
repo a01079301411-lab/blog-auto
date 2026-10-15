@@ -8,6 +8,7 @@ import random
 import re
 
 import history
+import season
 from config import DATA_DIR, NAVER_CATEGORY
 
 # 초사고 제목 공식 (prompts/moving_post.md 3번과 이름이 같아야 한다)
@@ -63,6 +64,8 @@ def pick(forced=None):
         chosen = matches[0]
     else:
         recent = {r.get("topic") for r in history.within_days(records, RECENT_DAYS)}
+        # 지금 계절과 안 맞는 주제(10월의 '장마철 보관이사' 같은)는 고르지 않는다
+        topics = [t for t in topics if season.topic_in_season(t)] or topics
         fresh = [t for t in topics if t["topic"] not in recent]
         if not fresh:
             # 전부 최근에 썼으면 가장 오래전에 쓴 주제부터

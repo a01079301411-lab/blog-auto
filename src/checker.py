@@ -7,6 +7,7 @@ import re
 
 import formatter
 import history
+import season
 from config import COMPANY_PHONE, DATA_DIR, SAMPLES_DIR
 
 MIN_CHARS = 2000
@@ -161,7 +162,97 @@ def check(post, topic, photo_set=None, related=None):
 
     fails += _repeat_problems(title, body, topic)
     fails += _snippet_problems(title, body, topic)
+    fails += _structure_problems(title, body)
+    fails += _season_problems(title, body, post.get("tags", []))
+    fails += _claim_problems(lines)
+    fails += _fact_repeat_problems(lines, topic)
+    fails += _near_duplicate_problems(lines)
     return fails
+
+
+# 'N가지' 제목이면 번호 붙은 소제목이 N개여야 한다 (FAQ, 마무리 소제목은 번호 없이)
+NUMBERED_HEADING = re.compile(r"^(기준|방법|이유|체크|포인트|단계)?\s*(\d+)\s*[.)]|^[①-⑩]|^(첫|둘|셋|넷|다섯|여섯|일곱)째")
+
+
+def _structure_problems(title, body):
+    match = re.search(r"(\d+)\s*가지", title)
+    if not match:
+        return []
+    want = int(match.group(1))
+    headings = [l.lstrip("#").strip() for l in body.splitlines() if l.strip().startswith("#")]
+    numbered = [h for h in headings if NUMBERED_HEADING.match(h)]
+    if len(numbered) == want:
+        return []
+    return [f"제목은 '{match.group(0)}'인데 번호 붙은 소제목이 {len(numbered)}개예요. 제목만 보고 들어온 사람이 "
+            f"{want}가지를 바로 찾게, 소제목을 '## 1. ~'부터 '## {want}. ~'까지 정확히 {want}개로 쓰세요 "
+            "(질문형이어도 돼요. 자주 묻는 질문, 마무리 소제목은 번호 없이)."]
+
+
+def _season_problems(title, body, tags):
+    words = season.out_of_season(" ".join([title, body, " ".join(tags)]))
+    if not words:
+        return []
+    return [f"지금 계절과 안 맞는 말이 있어요: {', '.join(words)}. "
+            "제목, 본문, 태그, 댓글 보기에서 빼고 지금 계절 이야기로 바꾸세요."]
+
+
+# 다른 업체·보관 방식과 가격을 비교하면서 숫자 근거가 없는 문장
+RIVALS = ("컨테이너", "다른 업체", "타 업체", "다른 곳", "다른 회사", "일반 창고", "셀프 스토리지")
+COST_CLAIMS = re.compile(r"저렴|싸[다고요지게]|비싸|차이가\s*(크게\s*)?(나지|없)|비용이\s*비슷|가격이\s*비슷|손해")
+
+
+def _claim_problems(lines):
+    bad = []
+    for sentence in re.split(r"(?<=[.!])\s+|\n", "\n".join(lines)):
+        s = sentence.strip()
+        if not s or s.endswith("?") or re.match(r"^Q\s*[.:]", s) or not any(r in s for r in RIVALS):
+            continue
+        # 쉼표, '~지만'으로 나눈 마디마다 본다. '~수 있다'처럼 인정하는 마디는 괜찮다
+        for clause in re.split(r",\s*|지만\s+", s):
+            if (COST_CLAIMS.search(clause) and not re.search(r"\d", clause)
+                    and not re.search(r"수\s*있|보일|보이", clause)):
+                bad.append(s)
+                break
+    if not bad:
+        return []
+    return ["다른 업체나 컨테이너와 가격을 비교하는데 숫자 근거가 없어요: " + bad[0]
+            + " → 회사 팩트의 숫자(예: 하루 보관료)로 근거를 들거나, 단정하지 말고 판단 기준으로 바꾸세요."]
+
+
+FACT_TOKEN = re.compile(r"\d[\d,.]*\s*(cm|mm|m|원|만\s*원|시간|분|도|톤|평|년|일|개월|벌|%)")
+FACT_MAX = 2  # 같은 숫자 사실은 글 전체에서 2번까지
+
+
+def _fact_repeat_problems(lines, topic=None):
+    # 이 글이 답하는 질문에 들어 있는 숫자(예: 30일 뒤 짐 상태)는 여러 번 나와도 된다
+    asked = re.sub(r"\s", "", " ".join((topic or {}).get(k, "") for k in ("question", "keyword", "topic")))
+    counts = {}
+    for line in lines:
+        if _has_phone(line):
+            continue
+        for m in FACT_TOKEN.finditer(line):
+            key = re.sub(r"\s", "", m.group(0))
+            if key not in asked:
+                counts[key] = counts.get(key, 0) + 1
+    over = [f"{k}({n}번)" for k, n in counts.items() if n > FACT_MAX]
+    if not over:
+        return []
+    return ["같은 사실을 너무 자주 반복해요: " + ", ".join(over)
+            + f". 한 사실은 {FACT_MAX}번까지만 쓰고, 다시 말할 땐 '앞에서 말씀드린 제습기처럼'처럼 짧게 받으세요."]
+
+
+NEAR_SAME = 0.8
+NEAR_MIN_CHARS = 15
+
+
+def _near_duplicate_problems(lines):
+    sentences = [s.strip() for s in re.split(r"(?<=[.?!])\s+|\n", "\n".join(lines))
+                 if len(re.sub(r"\s", "", s)) >= NEAR_MIN_CHARS and not _has_phone(s)]
+    for i, a in enumerate(sentences):
+        for b in sentences[i + 1:]:
+            if a != b and difflib.SequenceMatcher(None, a, b).ratio() >= NEAR_SAME:
+                return [f"거의 같은 문장이 두 번 나와요: '{a}' / '{b}'. 한 번만 쓰거나 다른 내용으로 바꾸세요."]
+    return []
 
 
 # 질문형 소제목 바로 아래 첫 문장이 이렇게 시작하면 떼어 가도 답이 안 된다 (스니펫, AI 브리핑)

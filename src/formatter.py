@@ -1,6 +1,7 @@
 """AI가 쓴 본문을 사장님 블로그 규칙에 맞게 바꾼다.
 
-- 한 줄은 공백 포함 22~28자, 어절(띄어쓰기) 단위로 끊는다. 단어 중간에서 자르지 않는다.
+- 한 줄은 공백 포함 28자까지, 어절 단위로 끊되 뜻이 끊기지 않는 자리(쉼표, ~고, ~며 뒤)에서 끊는다.
+  '한두 / 박스', '어느 / 쪽이'처럼 붙어 다니는 말은 떼지 않는다.
 - 문장이 끝나면 새 줄에서 시작한다.
 - 같은 내용(한 문단)은 3~4줄로 묶고, 내용이 바뀔 때(문단이 바뀔 때)만 한 줄 띄운다.
 - 소제목 앞에는 빈 줄 2개.
@@ -48,26 +49,81 @@ def sanitize(text):
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+# 줄을 끊기 좋은 곳: 쉼표 뒤, 이어 주는 말(~고, ~며, ~면서, ~지만, ~는데 …) 뒤
+GOOD_ENDINGS = ("고", "며", "면", "서", "니라", "지만", "는데", "은데", "니다", "니까", "도록", "거나", "든지",
+                "어서", "아서", "해서", "라서", "면서", "려면", "다면", "는지", "인지", "을지", "까지", "부터")
+SHORT_VERBS = {"하고", "있고", "없고", "되고", "하며", "하면", "되면", "있면", "해서", "돼서", "와서", "가서", "봐서"}
+# 끊으면 안 되는 곳: 뒤 낱말을 꾸미는 말 다음 (한두 / 박스, 어느 / 쪽이)
+MODIFIERS = {"한", "두", "세", "네", "한두", "두세", "서너", "몇", "이", "그", "저", "어느", "어떤", "무슨",
+             "이런", "그런", "저런", "모든", "다른", "각", "약", "총", "매", "첫", "새", "온", "전", "더", "덜",
+             "가장", "제일", "꼭", "잘", "안", "못", "다", "좀", "또", "딱"}
+# 이런 말로 시작하는 낱말은 앞 낱말과 붙어 있어야 한다 (박스, 개, 번, 수, 때 …)
+BOUND_NOUNS = ("박스", "개", "번", "분", "곳", "것", "수", "때", "중", "명", "장", "대", "톤", "원",
+               "일", "시간", "정도", "만큼", "뿐", "데", "쪽", "채", "벌", "동안", "이상", "이하", "이내")
+PARTICLES = ("이", "가", "을", "를", "은", "는", "에", "에서", "으로", "로", "와", "과", "도", "만", "엔", "께")
+LINE_MIN = 16      # 마지막 줄이 아니면 이보다 짧게 끊지 않는다
+ORPHAN_MIN = 10    # 마지막 줄이 이보다 짧으면 앞줄과 나눠 갖는다
+
+
+def _break_cost(prev, nxt):
+    """prev 낱말 뒤에서 줄을 끊을 때의 부담 (작을수록 좋은 자리)."""
+    word = prev.rstrip(".,?!")
+    if prev.endswith(","):
+        return -6
+    cost = 0
+    if word in MODIFIERS or re.fullmatch(r"[\d,.]+", word):
+        cost += 14  # 숫자나 꾸미는 말 뒤 (20 / cm, 한두 / 박스)
+    if len(nxt) <= 5 and nxt.startswith(BOUND_NOUNS):
+        cost += 10
+    ending = next((e for e in GOOD_ENDINGS if word.endswith(e)), "")
+    # '창고', '사진' 같은 이름씨가 '고', '서'로 끝나는 것과 헷갈리지 않게 한 글자 끝은 3글자 이상 낱말만
+    if ending and (len(ending) > 1 or len(word) >= 3 or word in SHORT_VERBS):
+        cost -= 4
+    elif word.endswith(PARTICLES) and len(word) > 1:
+        cost -= 3  # 조사로 끝나는 낱말 뒤 (창고 환경이 / 짐 상태를)
+    elif word.endswith("의"):
+        cost += 4
+    if len(word) == 1 and re.fullmatch(r"[가-힣]", word):
+        cost += 8  # 한 글자 낱말은 뒤 낱말과 붙어 있는 경우가 많다 (짐 / 상태)
+    if re.fullmatch(r"[가-힣]", nxt.rstrip(".,?!")):
+        cost += 6  # 다음 줄이 한 글자 낱말로 시작하면 앞 낱말과 떨어져 보인다 (창고 / 안)
+    return cost
+
+
 def wrap(sentence):
-    """한 문장을 28자 이하 줄로 나눈다. 마지막 줄이 너무 짧으면 앞줄과 균형을 맞춘다."""
-    lines, cur = [], ""
-    for word in sentence.split():
-        candidate = f"{cur} {word}" if cur else word
-        if len(candidate) <= LINE_MAX or not cur:
-            cur = candidate
-        else:
-            lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
-    while len(lines) >= 2 and len(lines[-1]) < 10:
-        prev_words = lines[-2].split()
-        moved = prev_words[-1]
-        if len(prev_words) < 2 or len(lines[-2]) - len(moved) - 1 < 15:
-            break
-        lines[-2] = " ".join(prev_words[:-1])
-        lines[-1] = f"{moved} {lines[-1]}"
-    return lines
+    """한 문장을 28자 이하 줄로 나눈다. 글자 수만 보지 않고 뜻이 끊기지 않는 자리에서 나눈다.
+
+    줄 길이를 고르게, 쉼표나 이어 주는 말 뒤에서 끊고, '한두 / 박스'처럼 붙어 다니는 말은
+    떼지 않는 조합 중 가장 자연스러운 것을 고른다.
+    """
+    words = sentence.split()
+    if not words:
+        return []
+    n = len(words)
+    best = [0.0] + [float("inf")] * n  # best[j]: 앞의 j낱말을 줄로 나눈 가장 작은 부담
+    back = [0] * (n + 1)
+    for j in range(1, n + 1):
+        for i in range(j - 1, -1, -1):
+            line = " ".join(words[i:j])
+            if len(line) > LINE_MAX and j - i > 1:
+                break
+            if best[i] == float("inf"):
+                continue
+            last = j == n
+            if last:
+                cost = 30 if len(line) < ORPHAN_MIN and i > 0 else 0
+            else:
+                slack = LINE_MAX - len(line)
+                cost = slack * slack / 14 + (40 if len(line) < LINE_MIN else 0)
+                cost += _break_cost(words[j - 1], words[j])
+            if best[i] + cost < best[j]:
+                best[j], back[j] = best[i] + cost, i
+    lines, j = [], n
+    while j > 0:
+        i = back[j]
+        lines.append(" ".join(words[i:j]))
+        j = i
+    return lines[::-1]
 
 
 def _split_sentences(line):
