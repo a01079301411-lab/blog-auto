@@ -26,6 +26,9 @@ PARTICLES = "에의은는이가을를도로시군구과와까"
 QUESTION_END = re.compile(r"(\?|나요|까요|가요|ㄴ가|인가|는가|을까|할까|는지|인지|을지|나|까)\s*$")
 PHOTO_RE = re.compile(r"\[사진:\s*([^\]]+?)\s*\]")
 LINK_RE = re.compile(r"\[링크:\s*(\d+)\s*\]")
+# 매 글에 반복되던 상투 문장 (독자가 넘겨 버린다)
+STOCK_PHRASES = ("끝까지 보시면", "끝까지 읽으시면", "아시게 됩니다", "들어보셨죠", "들어보셨을")
+REPEAT_MIN_CHARS = 20  # 이 길이 이상 같은 문장이 두 번 나오면 반복으로 본다
 
 
 def load_forbidden(path=DATA_DIR / "forbidden.md"):
@@ -156,7 +159,36 @@ def check(post, topic, photo_set=None, related=None):
             fails.append(f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
             break
 
+    fails += _repeat_problems(title, body, topic)
     return fails
+
+
+def _repeat_problems(title, body, topic):
+    """매 글이 같은 틀이 되지 않게: 제목의 경력 숫자, 'N가지', 상투 문장, 같은 문장 반복."""
+    fails = []
+    if re.search(r"11\s*년", title):
+        fails.append("제목에 11년을 넣지 마세요. 경력은 본문에서 보여주세요.")
+    if re.search(r"\d+\s*가지", title) and topic.get("title_type") != "숫자 목록형":
+        fails.append(f"이번 제목 유형은 {topic.get('title_type')}이에요. 'N가지'는 숫자 목록형일 때만 써요.")
+    used = [p for p in STOCK_PHRASES if p in body]
+    if used:
+        fails.append("매 글에 반복되는 상투 문장을 빼세요: " + ", ".join(used))
+    seen, repeated = set(), []
+    for sentence in re.split(r"(?<=[.?!])\s+|\n", body):
+        key = re.sub(r"\s", "", sentence)
+        if len(key) < REPEAT_MIN_CHARS or _has_phone(sentence):  # 전화번호 연락 유도는 두 번 나와도 된다
+            continue
+        if key in seen and sentence.strip() not in repeated:
+            repeated.append(sentence.strip())
+        seen.add(key)
+    if repeated:
+        fails.append("같은 문장이 두 번 나와요 (FAQ 답이 본문을 되풀이하는지 확인): " + repeated[0])
+    return fails
+
+
+def _has_phone(line):
+    digits = re.sub(r"\D", "", COMPANY_PHONE)
+    return bool(digits) and digits in re.sub(r"\D", "", line)
 
 
 def _has_middle_cta(body, photo_set):
