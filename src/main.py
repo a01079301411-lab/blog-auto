@@ -25,6 +25,7 @@ import links
 import notifier
 import photos
 import publisher
+import reviewer
 import topics
 from config import (
     ANTHROPIC_API_KEY, AUTO_PUBLISH, BLOG_ID, COMPANY_PHONE, DAILY_LIMIT, LOGS_DIR,
@@ -80,17 +81,31 @@ def wait_for_window():
 
 
 def write_with_check(topic, photo_set, related):
-    """글을 만들고 검사한다. 떨어지면 이유를 알려주고 1번 다시 쓴다."""
+    """글을 만들고 규칙 검사 + AI 편집장 검토를 한다. 고칠 게 있으면 이유를 알려주고 1번 다시 쓴다.
+
+    돌려주는 것: (글, 규칙 검사 실패 목록, AI 검토 메모 목록)
+    규칙 검사 실패 중 [권장]이 아닌 것만 발행을 멈추고, 다시 쓴 뒤의 AI 검토 메모는 미리보기와 알림에만 남긴다.
+    """
     post = generator.generate(topic, photo_set, related)
     fails = checker.check(post, topic, photo_set, related)
-    if fails:
-        log.info("품질 검사 실패, 다시 씁니다:\n- %s", "\n- ".join(fails))
-        post = generator.generate(topic, photo_set, related, feedback=fails)
+    # 발행을 막는 규칙 실패가 없는 글만 AI가 본다
+    issues = [] if checker.hard_fails(fails) else reviewer.review(post, topic)
+    must = [i for i in issues if i["must_fix"]]
+    if issues:
+        log.info("AI 검토:\n- %s", "\n- ".join(reviewer.as_feedback(issues)))
+    if fails or must:
+        feedback = fails + reviewer.as_feedback(issues)
+        log.info("고칠 점이 있어 다시 씁니다:\n- %s", "\n- ".join(feedback))
+        post = generator.generate(topic, photo_set, related, feedback=feedback)
         fails = checker.check(post, topic, photo_set, related)
+        issues = reviewer.review(post, topic)
+        if issues:
+            log.info("다시 쓴 글의 AI 검토 메모:\n- %s", "\n- ".join(reviewer.as_feedback(issues)))
         soft = [f for f in fails if f not in checker.hard_fails(fails)]
         if soft and not checker.hard_fails(fails):
             log.info("권장 기준 일부는 못 맞췄지만 발행에는 문제없어서 진행합니다:\n- %s", "\n- ".join(soft))
-    return post, fails
+    notes = reviewer.as_feedback(issues)
+    return post, fails, notes
 
 
 def check_login():
@@ -165,17 +180,20 @@ def finish(topic, photo_set, post, blocks, result, note=""):
         message += "\n" + note
     if result["warnings"]:
         message += "\n주의: " + " / ".join(result["warnings"])
+    if post.get("review_notes"):
+        message += "\nAI 편집장 메모: " + " / ".join(post["review_notes"][:3])
     notifier.notify(message)
 
 
 def make_post(topic, photo_set, related):
     """글을 만들고 검사한 뒤 미리보기를 저장한다. 검사를 통과하지 못하면 멈춘다."""
     try:
-        post, fails = write_with_check(topic, photo_set, related)
+        post, fails, notes = write_with_check(topic, photo_set, related)
     except Exception as e:
         stop(f"AI 글쓰기 실패: {e}")
     blocks = formatter.format_body(post["body"], related)
-    preview_path = save_preview(post, topic, blocks, fails)
+    post["review_notes"] = notes  # 발행 알림에도 남긴다
+    preview_path = save_preview(post, topic, blocks, fails, notes)
     log.info("미리보기 저장: %s", preview_path)
     hard = checker.hard_fails(fails)
     if hard:
@@ -184,13 +202,17 @@ def make_post(topic, photo_set, related):
     return post, blocks
 
 
-def save_preview(post, topic, blocks, fails):
+def save_preview(post, topic, blocks, fails, notes=None):
     path = OUTPUT_DIR / f"{datetime.now():%Y-%m-%d_%H%M}_{topic['topic'].replace(' ', '')}.md"
     if not fails:
         check_text = "통과"
     else:
         check_text = ("실패" if checker.hard_fails(fails) else "통과 (권장 기준 일부 미달)") + "\n" + \
             "\n".join(f"- {f}" for f in fails)
+    if notes:
+        check_text += "\nAI 편집장 메모 (발행 전에 한 번 봐 주세요)\n" + "\n".join(f"- {n}" for n in notes)
+    else:
+        check_text += " / AI 편집장 검토: 고칠 점 없음"
     path.write_text(
         f"# {post['title']}\n\n"
         f"주제: {topic['topic']} / 키워드: {topic['keyword']} / 카테고리: {topic['category'] or '기본'} / "
