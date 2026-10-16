@@ -171,7 +171,8 @@ def check(post, topic, photo_set=None, related=None):
     # 글맛, 스니펫, 구조, 반복 기준은 '권장'이다. 다시 쓸 때 고치게 하지만, 이것만 남으면 발행은 막지 않는다.
     soft = (_repeat_problems(title, body, topic) + _snippet_problems(title, body, topic)
             + _structure_problems(title, body) + _claim_problems(lines)
-            + _fact_repeat_problems(lines, topic) + _near_duplicate_problems(lines))
+            + _fact_repeat_problems(lines, topic) + _near_duplicate_problems(lines)
+            + _number_problems(body))
     fails += [SOFT + f for f in soft]
     return fails
 
@@ -287,6 +288,26 @@ def _snippet_problems(title, body, topic):
         fails.append("질문형 소제목 바로 아래 첫 문장을 그 문장만 읽어도 답이 되게 쓰세요 "
                      "(네, 아래에서, 이건 등으로 시작하지 말고 주어를 명사로): " + weak[0])
     return fails
+
+
+NO_NUMBER_SKIP = ("자주 묻는", "FAQ", "마무리", "정리", "마치며")
+
+
+def _number_problems(body):
+    """숫자 원칙: 소제목마다 숫자 1개 이상 (FAQ, 마무리 소제목은 뺀다)."""
+    sections, current = [], None
+    for line in body.splitlines():
+        if line.strip().startswith("#"):
+            current = [line.lstrip("#").strip(), ""]
+            sections.append(current)
+        elif current is not None and not PHOTO_RE.search(line) and not LINK_RE.search(line):
+            current[1] += line
+    bare = [h for h, text in sections
+            if not any(w in h for w in NO_NUMBER_SKIP) and not re.search(r"\d", h + text)]
+    if not bare:
+        return []
+    return ["숫자가 하나도 없는 소제목이 있어요: " + bare[0]
+            + ". 회사 팩트 숫자(기간, 금액, 시간, 횟수)로 추상적인 말을 바꿔 넣으세요."]
 
 
 def _repeat_problems(title, body, topic):
