@@ -87,6 +87,9 @@ def write_with_check(topic, photo_set, related):
         log.info("품질 검사 실패, 다시 씁니다:\n- %s", "\n- ".join(fails))
         post = generator.generate(topic, photo_set, related, feedback=fails)
         fails = checker.check(post, topic, photo_set, related)
+        soft = [f for f in fails if f not in checker.hard_fails(fails)]
+        if soft and not checker.hard_fails(fails):
+            log.info("권장 기준 일부는 못 맞췄지만 발행에는 문제없어서 진행합니다:\n- %s", "\n- ".join(soft))
     return post, fails
 
 
@@ -123,7 +126,7 @@ def load_pending():
             photo_set = None  # 사진이 옮겨졌으면 사진 없이 올린다
     topic, related, post = data["topic"], data["related"], data["post"]
     # 프로그램이 바뀌었을 수 있으니 지금 규칙으로 다시 정리하고 검사한다
-    fails = checker.check(post, topic, photo_set, related)
+    fails = checker.hard_fails(checker.check(post, topic, photo_set, related))
     if fails:
         log.info("저장해 둔 글이 지금 기준에 맞지 않아 새로 씁니다:\n- %s", "\n- ".join(fails))
         PENDING_FILE.unlink(missing_ok=True)
@@ -174,14 +177,20 @@ def make_post(topic, photo_set, related):
     blocks = formatter.format_body(post["body"], related)
     preview_path = save_preview(post, topic, blocks, fails)
     log.info("미리보기 저장: %s", preview_path)
-    if fails:
-        stop("품질 검사를 2번 통과하지 못했어요. 미리보기 파일을 확인해 주세요: " + preview_path.name)
+    hard = checker.hard_fails(fails)
+    if hard:
+        stop("품질 검사를 2번 통과하지 못했어요. 미리보기 파일을 확인해 주세요: " + preview_path.name
+             + "\n이유:\n- " + "\n- ".join(hard[:3]))
     return post, blocks
 
 
 def save_preview(post, topic, blocks, fails):
     path = OUTPUT_DIR / f"{datetime.now():%Y-%m-%d_%H%M}_{topic['topic'].replace(' ', '')}.md"
-    check_text = "통과" if not fails else "실패\n" + "\n".join(f"- {f}" for f in fails)
+    if not fails:
+        check_text = "통과"
+    else:
+        check_text = ("실패" if checker.hard_fails(fails) else "통과 (권장 기준 일부 미달)") + "\n" + \
+            "\n".join(f"- {f}" for f in fails)
     path.write_text(
         f"# {post['title']}\n\n"
         f"주제: {topic['topic']} / 키워드: {topic['keyword']} / 카테고리: {topic['category'] or '기본'} / "

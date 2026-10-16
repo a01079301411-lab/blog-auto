@@ -28,7 +28,13 @@ PHOTO_RE = re.compile(r"\[사진:\s*([^\]]+?)\s*\]")
 LINK_RE = re.compile(r"\[링크:\s*(\d+)\s*\]")
 # 매 글에 반복되던 상투 문장 (독자가 넘겨 버린다)
 STOCK_PHRASES = ("끝까지 보시면", "끝까지 읽으시면", "아시게 됩니다", "들어보셨죠", "들어보셨을")
-REPEAT_MIN_CHARS = 20  # 이 길이 이상 같은 문장이 두 번 나오면 반복으로 본다
+REPEAT_MIN_CHARS = 20
+SOFT = "[권장] "  # 이 표시가 붙은 실패는 발행을 막지 않는다
+
+
+def hard_fails(fails):
+    """발행을 막는 실패만 (권장 기준은 뺀다)."""
+    return [f for f in fails if not f.startswith(SOFT)]  # 이 길이 이상 같은 문장이 두 번 나오면 반복으로 본다
 
 
 def load_forbidden(path=DATA_DIR / "forbidden.md"):
@@ -159,8 +165,8 @@ def check(post, topic, photo_set=None, related=None):
             fails.append(f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
             break
 
-    fails += _repeat_problems(title, body, topic)
-    fails += _snippet_problems(title, body, topic)
+    # 글맛, 스니펫 기준은 '권장'이다. 다시 쓸 때 고치게 하지만, 이것만 남으면 발행은 막지 않는다.
+    fails += [SOFT + f for f in _repeat_problems(title, body, topic) + _snippet_problems(title, body, topic)]
     return fails
 
 
