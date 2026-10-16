@@ -14,7 +14,7 @@ import logging
 import anthropic
 
 import season
-from config import MODEL
+from config import DATA_DIR, MODEL
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,8 @@ SYSTEM = """\
 3. 주제 섞임: 한 소제목 안에 다른 소제목이 맡은 이야기가 섞였는가. (예: 보관 환경 소제목 안의 포장 이야기)
 4. 근거 없는 주장: 다른 업체·컨테이너와 가격이나 품질을 비교하면서 숫자나 사실 근거가 없는 문장,
    회사 팩트에 없는 숫자나 사례를 지어낸 문장.
+   회사 팩트 모음에 있는 숫자(운영 11년, 예약 45일 전과 30일 전, 하루 7,000원 등)는 근거 있는 사실이다.
+   이런 숫자는 근거 없는 주장으로 지적하지 않는다.
 5. 단정·비방: 다른 업체나 보관 방식을 단정적으로 깎아내리는 표현 (예: '컨테이너는 무조건 상한다').
    '~할 수 있다'처럼 부드럽게 바꾸게 한다.
 6. 계절: 오늘 날짜와 계절에 맞지 않는 말 (태그, 댓글 보기 포함).
@@ -75,7 +77,8 @@ def _photo_text(post):
 def review(post, topic, client=None):
     """검토 결과 목록. 검토를 못 하면(인터넷, API 오류) 빈 목록."""
     content = (
-        f"오늘: {season.describe()}\n"
+        f"오늘: {season.describe()}\n\n"
+        f"회사 팩트 모음 (여기 있는 사실은 근거가 있다)\n{(DATA_DIR / 'company_facts.md').read_text(encoding='utf-8')}\n\n"
         f"주제: {topic['topic']} / 메인 키워드: {topic['keyword']}\n"
         f"이 글이 답하는 질문: {topic['question']}\n"
         f"제목 유형: {topic.get('title_type', '')}\n\n"
