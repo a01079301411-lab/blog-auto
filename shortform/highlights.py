@@ -11,8 +11,10 @@ MODEL = "claude-opus-5-5"
 
 SYSTEM_PROMPT = """\
 You are an experienced short-form video editor (YouTube Shorts, Reels, TikTok) who
-makes viral clips from long talks, lectures and interviews, especially Korean
-business, money and self-improvement content.
+makes viral clips from long Korean videos of any kind: talks, lectures, interviews,
+family vlogs, work footage and product videos. A <video_type> guide tells you what
+works for this particular video; when it conflicts with the generic advice below,
+follow the guide.
 You receive a timestamped transcript of a long-form video and pick the moments that
 would work best as standalone vertical short clips.
 
@@ -171,8 +173,10 @@ def _account_brief(acct) -> str:
 
 def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, max_len: float,
                 context: str, account=None, exclude: list[tuple[float, float]] | None = None,
-                ref_blocks: list[dict] | None = None) -> list[Highlight]:
+                ref_blocks: list[dict] | None = None, guide: str = "") -> list[Highlight]:
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
+    if guide:
+        about += f"<video_type>\n{guide}\n</video_type>\n\n"
     # 레퍼런스와 대본은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
     content = list(ref_blocks or []) + [{"type": "text",
                 "text": f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>",
@@ -281,13 +285,15 @@ def _excerpt(lines: list[Sentence], h: Highlight, pad: float = 20.0) -> str:
 
 
 def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_len: float,
-           max_len: float, context: str = "", account=None) -> list[Highlight]:
+           max_len: float, context: str = "", account=None, guide: str = "") -> list[Highlight]:
     """후보를 다시 엄격하게 평가해 경계를 다듬고, 통과한 것만 점수와 함께 돌려준다."""
     if not candidates:
         return []
     parts = []
     if context:
         parts.append(f"<about_video>\n{context}\n</about_video>")
+    if guide:
+        parts.append(f"<video_type>\n{guide}\n</video_type>")
     if account is not None:
         parts.append(f"<account>\n{_account_brief(account)}\n</account>")
     for i, h in enumerate(candidates):
@@ -340,6 +346,7 @@ def pick_highlights(
     exclude: list[tuple[float, float]] | None = None,
     words=None,
     ref_blocks: list[dict] | None = None,
+    guide: str = "",
 ) -> list[Highlight]:
     """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다."""
     import anthropic
@@ -354,14 +361,14 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         want = want_total if len(windows) == 1 else max(4, want_total // len(windows) + 2)
         candidates += _ask_claude(client, window, want, min_len, max_len, context, account,
-                                  exclude, ref_blocks)
+                                  exclude, ref_blocks, guide)
     if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
         candidates = [h for h in candidates
                       if not any(h.start < b and a < h.end for a, b in exclude)]
     print(f"  후보 {len(candidates)}개를 다시 꼼꼼히 검증하는 중...")
     try:
         picked = verify(client, candidates, lines, min_len=min_len, max_len=max_len,
-                        context=context, account=account)
+                        context=context, account=account, guide=guide)
     except Exception as e:  # 검증이 실패해도 1단계 결과로 계속
         print(f"  (검증 단계 건너뜀: {type(e).__name__}: {str(e)[:100]})")
         picked = sorted(candidates, key=lambda h: -h.score)

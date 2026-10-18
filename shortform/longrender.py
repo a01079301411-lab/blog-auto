@@ -26,7 +26,12 @@ from .styles import _ts, _esc
 from .subfix import fix_cues
 from .subtitles import Cue, Word, build_cues, write_srt
 
+# 출력 규격. render()가 촬영본에 맞춰 바꾼다 (60fps로 찍었으면 60fps, 4K 설정이면 3840x2160)
 W, H, FPS = 1920, 1080, 30
+SUB_W, SUB_H = 1920, 1080  # 자막 좌표 기준 (해상도가 달라도 같은 크기로 보이게)
+# 화질: 장면 조각은 거의 손실 없이, 마지막 한 번만 좋은 설정으로 압축한다
+PIECE_CRF, PIECE_PRESET = 12, "faster"
+FINAL_CRF, FINAL_PRESET = 17, "medium"
 SUB_FONTS = ["Pretendard ExtraBold", "Pretendard Bold", "Gmarket Sans TTF Bold",
              "GmarketSansBold", "NanumSquare ExtraBold", "NanumSquareEB"]
 AUDIO_EXT = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")
@@ -80,28 +85,35 @@ def make_pieces(edl: Edl, transcripts, *, jumpcut: bool, min_silence: float) -> 
 
 # ---------- 장면 인코딩 ----------
 
-def _norm_filter(w: int, h: int, width: int = W, height: int = H) -> str:
-    """[0:v] → [v] 를 width x height 화면에 맞춘다."""
+def _norm_filter(w: int, h: int, width: int | None = None, height: int | None = None,
+                 pre: str = "") -> str:
+    """[0:v] → [v] 를 width x height 화면에 맞춘다. pre: 맨 앞에 넣을 필터 (HDR 색 변환 등)."""
+    width, height = width or W, height or H
+    sc = "flags=lanczos"  # 크기를 바꿀 때 선명하게
     if not w or not h:
-        return f"[0:v]scale={width}:{height},setsar=1[v]"
+        return f"[0:v]{pre}scale={width}:{height}:{sc},setsar=1,format=yuv420p[v]"
     ar, target = w / h, width / height
     if abs(ar - target) < 0.03:
-        return f"[0:v]scale={width}:{height},setsar=1,format=yuv420p[v]"
+        if (w, h) == (width, height):
+            return f"[0:v]{pre}setsar=1,format=yuv420p[v]"
+        return f"[0:v]{pre}scale={width}:{height}:{sc},setsar=1,format=yuv420p[v]"
     if ar > target:  # 더 넓은 영상: 위아래 검은 띠
-        return (f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        return (f"[0:v]{pre}scale={width}:{height}:force_original_aspect_ratio=decrease:{sc},"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v]")
     # 세로 영상: 같은 영상을 크게 흐리게 깔고 가운데에 원본
-    return (f"[0:v]split[a][b];"
-            f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},boxblur=24:2,eq=brightness=-0.08[bg];"
-            f"[b]scale=-2:{height}[fg];"
+    return (f"[0:v]{pre}split[a][b];"
+            f"[a]scale={width // 4}:{height // 4}:force_original_aspect_ratio=increase,"
+            f"crop={width // 4}:{height // 4},boxblur=8:2,eq=brightness=-0.08,"
+            f"scale={width}:{height}[bg];"
+            f"[b]scale=-2:{height}:{sc}[fg];"
             f"[bg][fg]overlay=(W-w)/2:0,setsar=1,format=yuv420p[v]")
 
 
-def _encode_piece(src: str, p: Piece, out: str, size: tuple[int, int], audio: bool) -> None:
+def _encode_piece(src: str, p: Piece, out: str, size: tuple[int, int], audio: bool,
+                  pre: str = "") -> None:
     frames = max(1, round((p.end - p.start) * FPS))
     dur = frames / FPS  # 영상·소리 길이를 프레임 단위로 똑같이 맞춰야 이어 붙일 때 싱크가 안 밀린다
-    graph = _norm_filter(*size) + f";[v]fps={FPS}[vo]"
+    graph = _norm_filter(*size, pre=pre) + f";[v]fps={FPS}[vo]"
     fade = min(0.03, dur / 4)
     a_in = "[0:a]" if audio else "[1:a]"
     graph += (f";{a_in}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
@@ -114,8 +126,8 @@ def _encode_piece(src: str, p: Piece, out: str, size: tuple[int, int], audio: bo
     tmp = out + ".tmp.mp4"
     media.run(cmd + ["-filter_complex", graph, "-map", "[vo]", "-map", "[ao]",
                      "-t", f"{dur:.4f}",
-                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                     "-pix_fmt", "yuv420p", "-r", str(FPS),
+                     "-c:v", "libx264", "-preset", PIECE_PRESET, "-crf", str(PIECE_CRF),
+                     "-pix_fmt", "yuv420p", "-r", str(FPS), *media.COLOR_TAGS,
                      "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", tmp])
     os.replace(tmp, out)
 
@@ -129,16 +141,17 @@ def encode_pieces(edl: Edl, pieces: list[Piece], work: str) -> None:
         src = edl.clips[p.clip]
         if src not in info:
             info[src] = (media.display_size(src), media.has_audio(src),
-                         os.path.getmtime(src))
-        size, audio, mtime = info[src]
-        key = hashlib.md5(f"v1|{src}|{mtime}|{p.start:.3f}|{p.end:.3f}".encode()).hexdigest()[:16]
+                         os.path.getmtime(src), media.hdr_to_sdr(src))
+        size, audio, mtime, pre = info[src]
+        key = hashlib.md5(f"v2|{W}x{H}@{FPS}|{src}|{mtime}|{p.start:.3f}|{p.end:.3f}".encode()
+                          ).hexdigest()[:16]
         p.path = os.path.join(folder, f"{key}.mp4")
         label = f"  [{i}/{len(pieces)}] {os.path.basename(src)} {_hms(p.start)}~{_hms(p.end)}"
         if os.path.exists(p.path):
             print(f"\r{label} (저장된 장면 사용)" + " " * 10, end="", flush=True)
         else:
             print(f"\r{label}" + " " * 20, end="", flush=True)
-            _encode_piece(src, p, p.path, size, audio)
+            _encode_piece(src, p, p.path, size, audio, pre)
         p.offset = offset
         p.length = round((p.end - p.start) * FPS) / FPS
         offset += p.length
@@ -205,7 +218,7 @@ def write_ass(path: str, cues: list[Cue], chapters: list[tuple[float, str]], tot
                 f"1,0,0,0,100,100,0,0,{border},{outline},0,{align},{ml},{mr},{mv},1")
 
     lines = [
-        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {SUB_W}", f"PlayResY: {SUB_H}",
         "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
@@ -290,7 +303,8 @@ def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: 
         media.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                    *media.filter_script_args("filter.txt"),
                    "-map", "[vout]", "-map", "[aout]", "-map_chapters", str(meta_idx),
-                   "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+                   "-c:v", "libx264", "-preset", FINAL_PRESET, "-crf", str(FINAL_CRF),
+                   "-pix_fmt", "yuv420p", "-profile:v", "high", *media.COLOR_TAGS,
                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
                    "-movflags", "+faststart", tmp], cwd=work)
         os.replace(tmp, out)
@@ -383,7 +397,7 @@ def thumbnail(edl: Edl, out: str, font_path: str) -> None:
     src = edl.clips[edl.thumbnail_clip]
     with tempfile.TemporaryDirectory() as work:
         frame = os.path.join(work, "frame.png")
-        graph = _norm_filter(*media.display_size(src), 1280, 720)
+        graph = _norm_filter(*media.display_size(src), 1280, 720, pre=media.hdr_to_sdr(src))
         media.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                    "-ss", f"{edl.thumbnail_time:.2f}", "-i", src,
                    "-filter_complex", graph, "-map", "[v]", "-frames:v", "1", frame])
@@ -417,11 +431,37 @@ def _pick_bgm(folder: str | None) -> str | None:
 
 # ---------- 전체 ----------
 
+def choose_format(clips: list[str], resolution: str = "auto") -> tuple[int, int, int]:
+    """출력 가로·세로·프레임. 촬영본 대부분이 60fps면 60fps (30으로 줄이면 움직임이 뚝뚝 끊긴다).
+    resolution: auto(1080p, 촬영본이 전부 4K 이상이고 4K로 하라고 했을 때만 4K) / 1080 / 2160"""
+    total = fast = big = 0.0
+    for c in clips:
+        try:
+            d = media.duration(c)
+        except Exception:
+            continue
+        total += d
+        if media.fps_value(c) > 45:
+            fast += d
+        w, h = media.display_size(c)
+        if min(w, h) >= 2000:
+            big += d
+    fps = 60 if total and fast / total >= 0.5 else 30
+    if resolution == "2160" and total and big / total >= 0.5:
+        return 3840, 2160, fps
+    return 1920, 1080, fps
+
+
 def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
+    global W, H, FPS
+    W, H, FPS = choose_format(edl.clips, str(getattr(args, "resolution", "auto")))
+    hdr = sum(1 for c in set(edl.clips) if media.is_hdr(c))
+    print(f"\n[출력 규격] {W}x{H}, {FPS}fps" + (f" · HDR 촬영본 {hdr}개는 색을 일반 영상에 맞게 변환"
+                                                if hdr else ""))
     print("\n[장면 자르기] 말 사이 긴 무음을 찾는 중..." if args.jumpcut else "\n[장면 자르기]")
     pieces = make_pieces(edl, transcripts, jumpcut=args.jumpcut, min_silence=args.min_silence)
     print(f"  {len(pieces)}개 조각")
-    print("\n[장면 인코딩] 1920x1080 규격으로 맞추는 중 (저장해 두므로 멈춰도 이어서 해요)")
+    print(f"\n[장면 인코딩] {W}x{H} 규격으로 맞추는 중 (저장해 두므로 멈춰도 이어서 해요)")
     encode_pieces(edl, pieces, work)
     total = sum(p.length for p in pieces)
     chapters = chapter_starts(edl, pieces)

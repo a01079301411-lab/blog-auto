@@ -94,6 +94,45 @@ def is_vertical(path: str) -> bool:
     return h > w
 
 
+@functools.cache
+def has_filter(name: str) -> bool:
+    out = run(["ffmpeg", "-hide_banner", "-filters"]).stdout
+    return any(line.split()[1:2] == [name] for line in out.splitlines() if line.strip())
+
+
+def is_hdr(path: str) -> bool:
+    """아이폰·갤럭시 HDR 영상(HLG, PQ)인지. 그냥 변환하면 색이 뿌옇고 회색빛이 된다."""
+    for st in probe(path)["streams"]:
+        if st.get("codec_type") == "video":
+            return st.get("color_transfer") in ("arib-std-b67", "smpte2084") or \
+                st.get("color_primaries") == "bt2020"
+    return False
+
+
+def hdr_to_sdr(path: str) -> str:
+    """HDR 영상이면 일반(SDR) 색으로 바꾸는 필터 (끝에 쉼표 포함). 아니면 빈 글자."""
+    if not is_hdr(path):
+        return ""
+    if has_filter("zscale") and has_filter("tonemap"):
+        return ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
+                "tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,")
+    return "colorspace=all=bt709:fast=1,"  # zscale이 없는 FFmpeg: 대충이라도 맞춘다
+
+
+def fps_value(path: str) -> float:
+    rate = frame_rate(path)
+    try:
+        a, _, b = rate.partition("/")
+        return float(a) / float(b or 1)
+    except (ValueError, ZeroDivisionError):
+        return 30.0
+
+
+# 출력 파일에 색 정보를 적어 둔다 (플레이어마다 색이 다르게 보이지 않게)
+COLOR_TAGS = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+              "-color_range", "tv"]
+
+
 def has_audio(path: str) -> bool:
     return any(st.get("codec_type") == "audio" for st in probe(path)["streams"])
 
@@ -145,7 +184,8 @@ def render(
         parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
         parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
         labels.append(f"[v{i}][a{i}]")
-    parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[v][a]")
+    parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[vc][a]")
+    parts.append(f"[vc]{hdr_to_sdr(src)}null[v]")  # 아이폰 HDR 영상은 색을 일반 영상에 맞춘다
     parts.append(video_filter or "[v]null[vl]")
 
     # 배경음악·효과음 섞기
@@ -214,8 +254,8 @@ def render(
             *inputs,
             *filter_script_args("filter.txt"),
             "-map", "[vout]", "-map", audio_label,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-            "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", *COLOR_TAGS,
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart",
             os.path.abspath(out),

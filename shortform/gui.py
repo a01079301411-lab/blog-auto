@@ -15,7 +15,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import __version__, accounts, review, settings
+from . import __version__, accounts, guides, review, settings
 from .highlights import Highlight
 from .styles import PRESETS
 
@@ -296,6 +296,24 @@ class App:
             side="right")
         return box
 
+    def _guide_key(self) -> str:
+        name = self.guide_var.get()
+        return next((k for k, g in self.guide_list.items() if g["name"] == name), "lecture")
+
+    def _on_guide(self, _event=None) -> None:
+        """영상 종류를 바꾸면 영상 설명·인물 소개를 그 종류의 기본값으로 채운다."""
+        g = self.guide_list[self._guide_key()]
+        if g.get("context") or self._guide_key() == "custom":
+            self.context.delete("1.0", "end")
+            self.context.insert("1.0", g.get("context", ""))
+        self.speaker_var.set(g.get("speaker", ""))
+        if self._guide_key() != "lecture" and any(v.get() for v in self.acct_vars.values()):
+            for v in self.acct_vars.values():  # 코시 계정 디자인은 강의 영상용
+                v.set(False)
+            self._append("영상 종류를 바꿔서 코시 인스타 계정 선택을 풀었어요 "
+                         "(계정 가이드는 강의 영상용이에요).\n")
+        self._append(f"영상 종류: {g['name']} (영상 설명·인물 소개는 [고급 설정]에서 고칠 수 있어요)\n")
+
     def _row(self, parent, label: str) -> ttk.Frame:
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill="x", pady=3)
@@ -425,6 +443,14 @@ class App:
         sf.outer.pack(fill="x")
         self.short_refs = self._ref_card(right)
         self.short_refs.master.outer.pack(fill="x", pady=(10, 0))
+        row = self._row(sf, "영상 종류")
+        self.guide_list = guides.load()
+        names = {k: g["name"] for k, g in self.guide_list.items()}
+        self.guide_var = tk.StringVar(value=names.get(c.get("guide", "lecture"), names["lecture"]))
+        box = ttk.Combobox(row, textvariable=self.guide_var, values=list(names.values()),
+                           state="readonly", width=26)
+        box.pack(side="left", fill="x", expand=True)
+        box.bind("<<ComboboxSelected>>", self._on_guide)
         row = self._row(sf, "숏폼 개수")
         self.count_var = tk.StringVar(value=c["count"])
         ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5).pack(side="left")
@@ -557,6 +583,11 @@ class App:
         self.long_model = tk.StringVar(value=dict(MODELS).get(c["long_model"], c["long_model"]))
         ttk.Combobox(row, textvariable=self.long_model, values=[v for _, v in MODELS],
                      state="readonly", width=18).pack(side="left")
+        row = self._row(adv, "출력 화질")
+        self.long_res = tk.StringVar(value={"2160": "4K (오래 걸림)"}.get(c["long_resolution"],
+                                                                       "1080p (기본)"))
+        ttk.Combobox(row, textvariable=self.long_res, values=["1080p (기본)", "4K (오래 걸림)"],
+                     state="readonly", width=16).pack(side="left")
         row = self._row(adv, "배경음악")
         try:
             vol = float(c["long_bgm_volume"])
@@ -625,6 +656,7 @@ class App:
             "long_minutes": f"{_num(self.long_minutes.get()):g}",
             "long_model": {v: k for k, v in MODELS}.get(self.long_model.get(), "small"),
             "long_bgm_volume": f"{self.long_bgm.get():.2f}",
+            "long_resolution": "2160" if self.long_res.get().startswith("4K") else "auto",
         })
         return vals
 
@@ -714,6 +746,7 @@ class App:
             self.cfg["focus"] if self.cfg["focus"] != "auto" else "0.5")
         yes = lambda k: "yes" if self.flags[k].get() else "no"
         return {
+            "guide": self._guide_key(),
             "accounts": ",".join(str(n) for n, v in self.acct_vars.items() if v.get()),
             "per_account": self.per_var.get().strip(),
             "style": style, "count": self.count_var.get().strip(),

@@ -11,7 +11,7 @@ import sys
 from dataclasses import asdict
 
 from . import media
-from . import burnin, face, review
+from . import burnin, face, guides, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
 from .styles import (PRESETS, account_box_style, dump_style, load_style, video_filter,
@@ -280,7 +280,8 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
                              min_len=args.min_len, max_len=args.max_len,
                              context=args.context or "", account=acct,
                              exclude=[(h.start, h.end) for h in picked],
-                             words=transcript.words, ref_blocks=args.ref_blocks)
+                             words=transcript.words, ref_blocks=args.ref_blocks,
+                             guide=guides.brief(args.guide))
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -304,6 +305,8 @@ def cmd_shorts(args) -> None:
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
     key = (f"v2:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
            else f"v2:{args.count}")
+    if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
+        key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
         key += ":ref:" + hashlib.md5("|".join(args.ref).encode()).hexdigest()[:8]
     args.ref_blocks = None
@@ -330,7 +333,8 @@ def cmd_shorts(args) -> None:
             highlights = pick_highlights(transcript.sentences, count=args.count,
                                          min_len=args.min_len, max_len=args.max_len,
                                          context=args.context or "", words=transcript.words,
-                                         ref_blocks=args.ref_blocks)
+                                         ref_blocks=args.ref_blocks,
+                                         guide=guides.brief(args.guide))
         _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
@@ -532,6 +536,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="만들기 전에 메모장으로 목록을 보고 고르기 yes/no")
     s.add_argument("--ref", action="append", default=[],
                    help="레퍼런스: 링크, 사진·영상 파일, 또는 설명 글 (여러 번 쓸 수 있어요)")
+    s.add_argument("--guide", default="lecture",
+                   help="영상 종류: lecture(강의·인터뷰) / vlog(브이로그) / moving(이사 현장) / "
+                        "commerce(제품 광고) / custom")
     s.add_argument("--burned-subs", choices=["auto", "yes", "no"], default="auto",
                    help="원본에 박힌 자막: auto(찾으면 새 자막 대신 원본 자막 사용) / yes / no")
     s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
@@ -589,6 +596,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--font", help="자막 글꼴 이름")
     s.add_argument("--min-silence", type=float, default=1.0,
                    help="이 길이(초) 이상 말이 끊기면 잘라냄 (기본 1.0)")
+    s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
+                   help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)
 
     s = sub.add_parser("longauto", help="settings.ini [longform] 설정으로 롱폼 만들기")

@@ -8,7 +8,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.path.join(ROOT, "settings.ini")
 
 DEFAULTS = {
-    "accounts": "", "per_account": "3",
+    "guide": "lecture", "accounts": "", "per_account": "3",
     "style": "green", "count": "10", "min_len": "20", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
     "subtitles": "yes", "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
@@ -21,7 +21,7 @@ LONG_DEFAULTS = {
     "long_context": "", "long_minutes": "0", "long_commerce": "no", "long_review": "no",
     "long_frames": "yes", "long_jumpcut": "yes", "long_subtitles": "yes",
     "long_fix_subtitles": "yes", "long_chapter_titles": "yes", "long_bgm_volume": "0.10",
-    "long_thumbnail": "yes", "long_model": "small", "long_font": "",
+    "long_thumbnail": "yes", "long_model": "small", "long_font": "", "long_resolution": "auto",
 }
 
 
@@ -63,7 +63,8 @@ def to_argv(video: str, c: dict[str, str], out: str) -> list[str]:
             "--bgm", os.path.join(ROOT, "bgm"), "--bgm-volume", c["bgm_volume"],
             "--thumbnail", c["thumbnail"], "--upload", c["upload"],
             *(["--no-subtitles"] if c["subtitles"].lower() == "no" else []),
-            "--accounts", c["accounts"], "--per-account", c["per_account"]]
+            "--accounts", c["accounts"], "--per-account", c["per_account"],
+            "--guide", c["guide"] or "lecture"]
     for key in ("context", "speaker", "font"):
         if c.get(key, "").strip():
             argv += [f"--{key}", c[key].strip()]
@@ -91,7 +92,9 @@ def long_argv(inputs: list[str], c: dict[str, str], *, plan: str | None = None,
             "--fix-subtitles", c["long_fix_subtitles"],
             "--chapter-titles", c["long_chapter_titles"],
             "--bgm", os.path.join(ROOT, "bgm"), "--bgm-volume", c["long_bgm_volume"],
-            "--thumbnail", c["long_thumbnail"], "--model", c["long_model"] or "small"]
+            "--thumbnail", c["long_thumbnail"], "--model", c["long_model"] or "small",
+            "--resolution", c["long_resolution"] if c["long_resolution"] in ("auto", "1080", "2160")
+            else "auto"]
     if plan:
         argv += ["--plan", plan]
     if c.get("long_context", "").strip():
