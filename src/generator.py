@@ -102,16 +102,20 @@ def request_text(topic, photo_set, related=None, feedback=None):
     return text
 
 
-def generate(topic, photo_set, related=None, feedback=None):
-    client = anthropic.Anthropic(max_retries=3)  # .env의 ANTHROPIC_API_KEY 사용, 오류 시 3회 재시도
-    # AI는 글을 쓰기 전에 생각도 하는데, 그 생각도 글자 수 한도에 포함된다.
-    # 한도가 작으면 글이 중간에 끊기므로 넉넉히 주고, 오래 걸려도 끊기지 않게 스트리밍으로 받는다.
+MAX_TOKENS = 64000  # 생각 + 글 전체 한도. 규칙이 많아 생각이 길어져도 끊기지 않게 넉넉히 준다
+
+
+def _call(client, topic, photo_set, related, feedback, effort=None):
+    output_config = {"format": {"type": "json_schema", "schema": POST_SCHEMA}}
+    if effort:
+        output_config["effort"] = effort
+    # 오래 걸려도 끊기지 않게 스트리밍으로 받는다.
     with client.messages.stream(
         model=MODEL,
-        max_tokens=32000,
+        max_tokens=MAX_TOKENS,
         system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": request_text(topic, photo_set, related, feedback)}],
-        output_config={"format": {"type": "json_schema", "schema": POST_SCHEMA}},
+        output_config=output_config,
     ) as stream:
         response = stream.get_final_message()
     usage = response.usage
@@ -120,10 +124,20 @@ def generate(topic, photo_set, related=None, feedback=None):
         usage.input_tokens, usage.cache_read_input_tokens,
         usage.cache_creation_input_tokens, usage.output_tokens,
     )
+    return response
+
+
+def generate(topic, photo_set, related=None, feedback=None):
+    client = anthropic.Anthropic(max_retries=3)  # .env의 ANTHROPIC_API_KEY 사용, 오류 시 3회 재시도
+    response = _call(client, topic, photo_set, related, feedback)
+    if response.stop_reason == "max_tokens":
+        # AI가 쓰기 전에 생각을 너무 길게 해서 한도를 다 쓴 경우. 생각을 줄이게 하고 한 번 더 쓴다.
+        log.info("AI가 생각을 너무 길게 해서 글이 끊겼어요. 생각을 줄여서 다시 씁니다.")
+        response = _call(client, topic, photo_set, related, feedback, effort="medium")
     if response.stop_reason == "refusal":
         raise RuntimeError("AI가 글쓰기를 거절했어요.")
     if response.stop_reason == "max_tokens":
-        raise RuntimeError("글이 너무 길어서 중간에 끊겼어요.")
+        raise RuntimeError("AI가 생각과 글쓰기에 글자 한도를 다 써서 글이 중간에 끊겼어요.")
 
     text = next(b.text for b in response.content if b.type == "text")
     post = json.loads(text)

@@ -96,7 +96,15 @@ def write_with_check(topic, photo_set, related):
     if fails or must:
         feedback = fails + reviewer.as_feedback(issues)
         log.info("고칠 점이 있어 다시 씁니다:\n- %s", "\n- ".join(feedback))
-        post = generator.generate(topic, photo_set, related, feedback=feedback)
+        first = (post, fails, issues)
+        try:
+            post = generator.generate(topic, photo_set, related, feedback=feedback)
+        except Exception as e:
+            if checker.hard_fails(fails):
+                raise
+            # 다시 쓰기가 실패해도 첫 글이 발행 기준은 통과했으면 첫 글로 간다
+            log.info("다시 쓰기에 실패해서 처음 쓴 글로 진행합니다: %s", e)
+            return first[0], first[1], reviewer.as_feedback(first[2])
         fails = checker.check(post, topic, photo_set, related)
         issues = reviewer.review(post, topic)
         if issues:

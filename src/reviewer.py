@@ -93,7 +93,7 @@ def review(post, topic, client=None):
         client = client or anthropic.Anthropic(max_retries=2)
         with client.messages.stream(
             model=MODEL,
-            max_tokens=16000,
+            max_tokens=32000,
             system=SYSTEM,
             messages=[{"role": "user", "content": content}],
             output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
