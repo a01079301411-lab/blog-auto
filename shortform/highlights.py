@@ -46,6 +46,24 @@ For each clip also write, in the transcript's language:
 - keywords: 2-5 words or short phrases that appear verbatim in the clip's speech and
   carry its impact; they are highlighted in the subtitles.
 - caption: an upload description of 1-2 sentences followed by 3-5 hashtags.
+- hook_text: the big text shown over the video for the first 2 seconds, at most 14
+  characters. It must make the viewer need to see the end (open loop): a question the
+  clip answers, a surprising claim, or the stakes ("이거 모르면 손해", "딸의 마지막 한마디").
+  Never give away the payoff. Different from the title.
+- rehook_text and rehook_time: a short teaser (at most 12 characters, e.g. "진짜는 지금부터",
+  "근데 반전이…") shown just before the payoff to stop viewers leaving midway, and the
+  time in seconds from the clip start when it appears (about 40-70% into the clip, a
+  few seconds before the payoff). Empty text and 0 if the clip is short or needs none.
+- bgm_mood: background music mood for the clip: bright, calm, tension or funny.
+
+Retention (watch time) rules that proven Shorts and Reels follow; apply them:
+- Start on the strongest line or reaction, not on a greeting or setup. The first
+  sentence must create a question in the viewer's head.
+- Keep the payoff for the last third and end right after it (no outro), so the loop
+  restarts naturally and viewers rewatch.
+- Prefer clips where something changes every 3-5 seconds (new point, new emotion,
+  new image); avoid long explanations with no turn.
+- If <references> are given, copy their hook and pacing style, not their content.
 
 Order the clips from best to worst and score each one honestly."""
 
@@ -68,10 +86,15 @@ SCHEMA = {
                     "keywords": {"type": "array", "items": {"type": "string"}},
                     "caption": {"type": "string", "description": "upload description + hashtags"},
                     "reason": {"type": "string", "description": "why this works as a short"},
+                    "hook_text": {"type": "string"},
+                    "rehook_text": {"type": "string"},
+                    "rehook_time": {"type": "number"},
+                    "bgm_mood": {"type": "string", "enum": ["bright", "calm", "tension", "funny"]},
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
                 "required": ["start", "end", "title", "label", "sub_title", "speaker", "bottom", "keywords",
+                             "hook_text", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
             },
@@ -96,6 +119,10 @@ class Highlight:
     bottom: str = ""
     sub_title: str = ""
     account: int = 0   # 코시 계정 번호 (0이면 계정 없이 일반 스타일)
+    hook: str = ""       # 처음 2초 크게 띄우는 훅 자막
+    rehook: str = ""     # 중간 이탈을 막는 한마디
+    rehook_at: float = 0.0  # 원본 영상 기준 몇 초에 띄울지 (0이면 없음)
+    bgm_mood: str = ""   # 배경음악 분위기 (bright, calm, tension, funny)
 
 
 def split_lines(words, *, max_chars: int = 45, gap: float = 0.5) -> list[Sentence]:
@@ -214,7 +241,12 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
     return [Highlight(float(h["start"]), float(h["end"]), h["title"].replace("\\n", "\n"),
                       h["reason"], int(h["score"]), h["keywords"], h["caption"],
                       h["label"], h["speaker"], h["bottom"], h.get("sub_title", ""),
-                      account.no if account is not None else 0)
+                      account.no if account is not None else 0,
+                      h.get("hook_text", ""), h.get("rehook_text", ""),
+                      # 원본 기준 시간으로 저장 (검증 단계에서 시작점이 바뀌어도 그 장면에 뜨게)
+                      float(h["start"]) + float(h.get("rehook_time", 0) or 0)
+                      if float(h.get("rehook_time", 0) or 0) > 0 else 0.0,
+                      h.get("bgm_mood", ""))
             for h in json.loads(text)["highlights"]]
 
 

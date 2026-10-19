@@ -26,6 +26,24 @@ def run(cmd: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
     return proc
 
 
+def run_progress(total: float, cmd: list[str], cwd: str | None = None) -> None:
+    """오래 걸리는 FFmpeg 작업: 진행률을 프로그램 창에 알리면서 실행한다."""
+    from . import progress
+
+    cmd = cmd[:1] + ["-progress", "pipe:1", "-nostats"] + cmd[1:]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            encoding="utf-8", errors="replace", cwd=cwd, creationflags=NO_WINDOW)
+    for line in proc.stdout:
+        if line.startswith("out_time_us=") and total > 0:
+            try:
+                progress.report(int(line.split("=")[1]) / 1e6 / total, "최종 영상")
+            except ValueError:
+                pass
+    err = proc.stderr.read()
+    if proc.wait() != 0:
+        raise RuntimeError(f"명령 실패: {' '.join(cmd[:4])}...\n{err[-2000:]}")
+
+
 @functools.cache
 def _ffmpeg_major() -> int:
     out = run(["ffmpeg", "-hide_banner", "-version"]).stdout

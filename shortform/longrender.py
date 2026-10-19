@@ -152,6 +152,8 @@ def encode_pieces(edl: Edl, pieces: list[Piece], work: str) -> None:
         else:
             print(f"\r{label}" + " " * 20, end="", flush=True)
             _encode_piece(src, p, p.path, size, audio, pre)
+        from . import progress
+        progress.report(i / len(pieces), f"장면 {i}/{len(pieces)}")
         p.offset = offset
         p.length = round((p.end - p.start) * FPS) / FPS
         offset += p.length
@@ -300,7 +302,7 @@ def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: 
         with open(os.path.join(work, "filter.txt"), "w", encoding="utf-8") as f:
             f.write(";\n".join(parts))
         tmp = os.path.abspath(out) + ".tmp.mp4"
-        media.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
+        media.run_progress(total, ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                    *media.filter_script_args("filter.txt"),
                    "-map", "[vout]", "-map", "[aout]", "-map_chapters", str(meta_idx),
                    "-c:v", "libx264", "-preset", FINAL_PRESET, "-crf", str(FINAL_CRF),
@@ -461,7 +463,9 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     print("\n[장면 자르기] 말 사이 긴 무음을 찾는 중..." if args.jumpcut else "\n[장면 자르기]")
     pieces = make_pieces(edl, transcripts, jumpcut=args.jumpcut, min_silence=args.min_silence)
     print(f"  {len(pieces)}개 조각")
+    from . import progress
     print(f"\n[장면 인코딩] {W}x{H} 규격으로 맞추는 중 (저장해 두므로 멈춰도 이어서 해요)")
+    progress.set_range(0.32, 0.8)
     encode_pieces(edl, pieces, work)
     total = sum(p.length for p in pieces)
     chapters = chapter_starts(edl, pieces)
@@ -487,7 +491,16 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     write_ass(ass, cues, chapters, total, font=family, commerce=edl.commerce,
               chapter_cards=args.chapter_titles)
 
-    bgm = _pick_bgm(args.bgm)
+    progress.set_range(0.85, 1.0)
+    bgm = None
+    if getattr(args, "bgm_source", "auto") == "auto":
+        from . import music
+        mood = edl.bgm_mood or music.mood_for(getattr(args, "guide", "vlog") or "vlog")
+        bgm = music.make(os.path.join(work, f"배경음악_{mood}.wav"), mood, min(total, 150),
+                         edl.title or "롱폼")
+        print(f"  배경음악: 직접 만든 곡 ({music.MOOD_NAMES.get(mood, mood)}, 저작권 걱정 없음)")
+    elif getattr(args, "bgm_source", "auto") == "folder":
+        bgm = _pick_bgm(args.bgm)
     print(f"\n[최종 영상] 자막과 챕터 제목을 입히{'고 배경음악을 까' if bgm else ''}는 중... "
           f"(영상 {_hms(total)}, 몇 분~수십 분 걸려요)")
     out = os.path.join(out_dir, f"{name}.mp4")

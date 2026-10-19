@@ -15,3 +15,5 @@ fonts/*.ttc
 fonts/*.TTF
 fonts/*.OTF
 logs/
+youtube_read_token.json
+성과기록.csv

@@ -14,8 +14,8 @@ from . import media
 from . import burnin, face, guides, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, keep_segments
-from .styles import (PRESETS, account_box_style, dump_style, load_style, video_filter,
-                     view_ratio, write_account_subs, write_ass)
+from .styles import (PRESETS, account_box_style, add_retention, dump_style, load_style,
+                     video_filter, view_ratio, write_account_subs, write_ass)
 from .subfix import fix_cues
 from .subtitles import build_cues, remap, words_in_range, write_srt
 from .transcribe import transcribe
@@ -61,6 +61,18 @@ def _to_output_time(t: float, keeps: list[media.Segment]) -> float | None:
             return offset + t - s
         offset += e - s
     return None
+
+
+def _add_retention(args, subs, h, keeps, kept, font, style) -> None:
+    """훅 자막, 중간 한마디, 진행 막대를 자막 파일에 더한다 (설정에서 끌 수 있다)."""
+    if not getattr(args, "retention", True):
+        return
+    rehook_at = _to_output_time(h.rehook_at, keeps) if h.rehook_at else None
+    add_retention(subs, duration=kept, font=font, hook=h.hook, rehook=h.rehook,
+                  rehook_at=rehook_at, video_top=style.video_top,
+                  video_height=style.video_height)
+    if h.hook:
+        print(f"  훅 자막: {h.hook}" + (f" / 중간: {h.rehook}" if h.rehook else ""))
 
 
 def _render_clip(args, src, start, end, out, transcript, style=None,
@@ -142,12 +154,22 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         mid = (burned.x0 + burned.x1) / 2
         path = [(0.0, min(max(mid, lo), hi) if lo <= hi else (lo + hi) / 2)]
 
-    # 4) 배경음악
+    # 4) 배경음악: auto면 이 숏폼 분위기에 맞는 곡을 새로 만든다 (저작권 걱정 없는 자작곡)
     bgm = None
-    tracks = _audio_files(args.bgm)
-    if tracks:
-        bgm = tracks[args.clip_index % len(tracks)]  # 숏폼마다 돌아가며 사용
-        print(f"  배경음악: {os.path.basename(bgm)}")
+    if args.bgm_source == "auto":
+        from . import music
+        mood = music.mood_for(args.guide, h.bgm_mood)
+        folder = os.path.join(args.output, "_배경음악")
+        os.makedirs(folder, exist_ok=True)
+        seed = f"{h.title}|{h.start:.1f}"
+        name = hashlib.md5(seed.encode()).hexdigest()[:10]
+        bgm = music.make(os.path.join(folder, f"{mood}_{name}.wav"), mood, kept + 2, seed)
+        print(f"  배경음악: 직접 만든 곡 ({music.MOOD_NAMES[mood]})")
+    elif args.bgm_source == "folder":
+        tracks = _audio_files(args.bgm)
+        if tracks:
+            bgm = tracks[args.clip_index % len(tracks)]  # 숏폼마다 돌아가며 사용
+            print(f"  배경음악: {os.path.basename(bgm)}")
 
     subs = os.path.splitext(out)[0] + ".ass"
     vf = video_filter(style, focus, path=path, span=span, aspect=sw / sh if sh else 16 / 9,
@@ -156,6 +178,7 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
                   speaker=speaker if (cues or burned is None) else "", bottom=h.bottom,
                   keywords=h.keywords)
+        _add_retention(args, subs, h, keeps, kept, style.font, style)
         media.render(src, keeps, out, video_filter=vf, srt=subs,
                      bgm=bgm, bgm_volume=args.bgm_volume)
     else:
@@ -170,6 +193,8 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
                      speaker_y=low_speaker_y(acct) if cues else SPEAKER_Y).save(ov_path)
         sub_font, _ = fonts.find_or_fallback(acct.sub.fonts)
         write_account_subs(subs, acct, cues, font_path=sub_font)
+        from . import fonts as _fonts
+        _add_retention(args, subs, h, keeps, kept, _fonts.family(sub_font), style)
         try:
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
                          font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume)
@@ -268,6 +293,14 @@ def _save_picks(path: str, count, highlights: list[Highlight]) -> None:
                   f, ensure_ascii=False, indent=1)
 
 
+def _guide_text(args) -> str:
+    """영상 종류 가이드 + 지난 숏폼 성과 (있으면)."""
+    text = guides.brief(args.guide)
+    if getattr(args, "lessons", ""):
+        text += "\n\n" + args.lessons
+    return text
+
+
 def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
     """계정마다 그 컨셉에 맞는 구간을 고른다. 계정끼리 같은 구간은 쓰지 않는다."""
     from .accounts import ACCOUNTS
@@ -281,7 +314,7 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
                              context=args.context or "", account=acct,
                              exclude=[(h.start, h.end) for h in picked],
                              words=transcript.words, ref_blocks=args.ref_blocks,
-                             guide=guides.brief(args.guide))
+                             guide=_guide_text(args))
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -298,13 +331,17 @@ def cmd_shorts(args) -> None:
     os.makedirs(args.output, exist_ok=True)
     total = media.duration(args.input)
     vertical = media.is_vertical(args.input)
+    from . import performance, progress
+
     need_transcript = not args.no_subtitles or not args.ranges
+    progress.set_range(0.0, 0.4)
     transcript = _get_transcript(args, args.input, args.output) if need_transcript else None
+    progress.set_range(0.4, 0.5)
 
     picks_path = os.path.join(args.output, "highlights.json")
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
-    key = (f"v2:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
-           else f"v2:{args.count}")
+    key = (f"v3:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v3:{args.count}")
     if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
         key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
@@ -326,6 +363,12 @@ def cmd_shorts(args) -> None:
             from . import references
             print("[레퍼런스] 참고 자료 읽는 중...")
             args.ref_blocks = references.blocks(args.ref)
+        # 성과 학습: 지난 숏폼 중 잘된 것·안된 것을 알려 주고 그 공통점을 반영하게 한다
+        if performance.fetch_youtube():
+            print("[성과 학습] 유튜브에서 지난 숏폼 조회수를 가져왔어요.")
+        args.lessons = performance.lessons(args.guide)
+        if args.lessons:
+            print("[성과 학습] 지난 숏폼 성과를 반영해서 골라요.")
         if accts:
             highlights = _pick_for_accounts(args, transcript, accts)
         else:
@@ -334,7 +377,7 @@ def cmd_shorts(args) -> None:
                                          min_len=args.min_len, max_len=args.max_len,
                                          context=args.context or "", words=transcript.words,
                                          ref_blocks=args.ref_blocks,
-                                         guide=guides.brief(args.guide))
+                                         guide=_guide_text(args))
         _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했습니다.")
@@ -368,6 +411,8 @@ def cmd_shorts(args) -> None:
         out = os.path.join(folder, f"{num:02}_{_safe_name(name)}.mp4")
         args.clip_index = i - 1
         clip_style = account_box_style(vertical) if acct else style
+        progress.set_range(0.5 + 0.5 * (n - 1) / len(numbered), 0.5 + 0.5 * n / len(numbered))
+        progress.report(0.1, f"숏폼 {n}/{len(numbered)}")
         _render_clip(args, args.input, h.start, h.end, out,
                      None if args.no_subtitles else transcript, clip_style, h, acct=acct)
         if h.caption or h.title:
@@ -379,6 +424,12 @@ def cmd_shorts(args) -> None:
                         f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
                         f"[선정 이유] {h.reason}\n")
         made.append((out, h))
+        from . import music
+        performance.record(os.path.abspath(out), title=h.title, hook=h.hook,
+                           seconds=h.end - h.start, guide=args.guide,
+                           account=f"{acct.no}. {acct.name}" if acct else "",
+                           mood=music.mood_for(args.guide, h.bgm_mood))
+        progress.report(1.0, f"숏폼 {n}/{len(numbered)}")
 
     if args.upload != "no":
         _upload_all(args.output, made, args.upload)
@@ -542,6 +593,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--burned-subs", choices=["auto", "yes", "no"], default="auto",
                    help="원본에 박힌 자막: auto(찾으면 새 자막 대신 원본 자막 사용) / yes / no")
     s.add_argument("--bgm", help="배경음악 폴더 (mp3/wav를 숏폼마다 돌아가며 사용)")
+    s.add_argument("--bgm-source", choices=["auto", "folder", "none"], default="auto",
+                   help="배경음악: auto(분위기에 맞게 직접 만든 곡) / folder(bgm 폴더) / none")
+    s.add_argument("--retention", type=_yesno, default=True,
+                   help="훅 자막, 중간 한마디, 진행 막대 넣기 yes/no")
     s.add_argument("--bgm-volume", type=float, default=0.15, help="배경음악 볼륨 0~1")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
@@ -596,6 +651,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--font", help="자막 글꼴 이름")
     s.add_argument("--min-silence", type=float, default=1.0,
                    help="이 길이(초) 이상 말이 끊기면 잘라냄 (기본 1.0)")
+    s.add_argument("--bgm-source", choices=["auto", "folder", "none"], default="auto",
+                   help="배경음악: auto(분위기에 맞게 직접 만든 곡) / folder(bgm 폴더) / none")
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)

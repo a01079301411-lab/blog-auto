@@ -144,6 +144,14 @@ def style_field(widget: tk.Widget) -> None:
 
 LOG_DIR = os.path.join(ROOT, "logs")
 LAST_LOG = os.path.join(LOG_DIR, "마지막_실행기록.txt")
+BGM_SOURCES = {"auto": "자동 (직접 만든 곡, 저작권 안전)", "folder": "bgm 폴더의 음악",
+               "none": "안 깔기"}
+
+
+def _bgm_key(text: str) -> str:
+    return next((k for k, v in BGM_SOURCES.items() if v == text), "auto")
+
+
 LENGTHS = ["AI가 정해요", "3분", "5분", "8분", "10분", "15분", "20분", "30분"]
 
 
@@ -373,10 +381,16 @@ class App:
         self.open_btn = ttk.Button(rf, text="결과 폴더 열기", command=self._open_output,
                                    state="disabled")
         self.open_btn.pack(side="left", padx=(8, 0), ipady=4)
+        self.preview_btn = ttk.Button(rf, text="결과 미리보기", command=self._show_results,
+                                      state="disabled")
+        self.preview_btn.pack(side="left", padx=(8, 0), ipady=4)
         self.status = ttk.Label(rf, text="", style="Status.TLabel")
-        self.status.pack(side="left", padx=18)
+        self.status.pack(side="left", padx=(18, 0))
+        self.progress_text = ttk.Label(rf, text="", style="Sub.TLabel")
+        self.progress_text.pack(side="left", padx=(12, 0))
 
-        self.bar = ttk.Progressbar(main, mode="indeterminate", style="Accent.Horizontal.TProgressbar")
+        self.bar = ttk.Progressbar(main, mode="determinate", maximum=100,
+                                   style="Accent.Horizontal.TProgressbar")
         self.bar.pack(fill="x", pady=(12, 8))
 
         # 오른쪽: 진행 기록 (위에서 아래까지 길게)
@@ -474,6 +488,15 @@ class App:
                                                 c["burned_subs"] in ("auto", "yes"))
         self.flags["subtitles"] = self._check(sf, "자막 넣기", c["subtitles"].lower() != "no")
         self.flags["thumbnail"] = self._check(sf, "썸네일 만들기", c["thumbnail"].lower() == "yes")
+        self.flags["retention"] = self._check(sf, "훅 자막·중간 한마디·진행 막대 (시청 지속)",
+                                              c.get("retention", "yes").lower() != "no")
+        row = self._row(sf, "배경음악")
+        self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
+                                                          BGM_SOURCES["auto"]))
+        ttk.Combobox(row, textvariable=self.bgm_src, values=list(BGM_SOURCES.values()),
+                     state="readonly", width=24).pack(side="left")
+        ttk.Button(sf, text="📈 성과 기록 열기 (조회수 적기)", style="Link.TButton",
+                   command=self._open_performance).pack(anchor="w", pady=(6, 0))
 
         adv = self._advanced(sf, "숏폼 고급 설정")
         ttk.Label(adv, text="영상 설명 (누가, 무슨 내용인지)", style="Card.TLabel").pack(anchor="w")
@@ -492,7 +515,7 @@ class App:
         self.upload_var = tk.StringVar(value=dict(UPLOADS).get(c["upload"], "안 함"))
         ttk.Combobox(row, textvariable=self.upload_var, values=[v for _, v in UPLOADS],
                      state="readonly", width=10).pack(side="left")
-        row = self._row(adv, "배경음악")
+        row = self._row(adv, "음악 볼륨")
         try:
             vol = float(c["bgm_volume"])
         except ValueError:
@@ -589,6 +612,11 @@ class App:
         ttk.Combobox(row, textvariable=self.long_res, values=["1080p (기본)", "4K (오래 걸림)"],
                      state="readonly", width=16).pack(side="left")
         row = self._row(adv, "배경음악")
+        self.long_bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("long_bgm_source", "auto"),
+                                                               BGM_SOURCES["auto"]))
+        ttk.Combobox(row, textvariable=self.long_bgm_src, values=list(BGM_SOURCES.values()),
+                     state="readonly", width=24).pack(side="left")
+        row = self._row(adv, "음악 볼륨")
         try:
             vol = float(c["long_bgm_volume"])
         except ValueError:
@@ -657,6 +685,7 @@ class App:
             "long_model": {v: k for k, v in MODELS}.get(self.long_model.get(), "small"),
             "long_bgm_volume": f"{self.long_bgm.get():.2f}",
             "long_resolution": "2160" if self.long_res.get().startswith("4K") else "auto",
+            "long_bgm_source": _bgm_key(self.long_bgm_src.get()),
         })
         return vals
 
@@ -757,6 +786,7 @@ class App:
             "focus": focus, "fix_subtitles": yes("fix_subtitles"), "review": yes("review"),
             "burned_subs": "auto" if self.flags["burned_subs"].get() else "no",
             "thumbnail": yes("thumbnail"), "subtitles": yes("subtitles"),
+            "retention": yes("retention"), "bgm_source": _bgm_key(self.bgm_src.get()),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
@@ -833,6 +863,7 @@ class App:
             if self.stopping:
                 break
             self.queue.put(("status", f"[{n}/{len(videos)}] {os.path.basename(video)}"))
+            self.queue.put(("batch", n - 1, len(videos)))
             self.queue.put(("log", f"\n===== {video} =====\n", False))
             self.last_output = settings.output_dir(video)
             kwargs = {"creationflags": NO_WINDOW} if sys.platform == "win32" else \
@@ -883,6 +914,14 @@ class App:
                 if line.startswith("@@REVIEW@@ "):
                     self.queue.put(("review", line[len("@@REVIEW@@ "):].strip()))
                     continue
+                if line.startswith("@@PROGRESS@@ "):
+                    parts = line.split(" ", 2)
+                    try:
+                        self.queue.put(("progress", float(parts[1]),
+                                        parts[2] if len(parts) > 2 else ""))
+                    except ValueError:
+                        pass
+                    continue
                 if line.startswith("@@LONGREVIEW@@ "):
                     self.queue.put(("longreview", line[len("@@LONGREVIEW@@ "):].strip()))
                     continue
@@ -915,16 +954,51 @@ class App:
             except ProcessLookupError:
                 pass
 
+    batch = (0, 1)
+
     def _set_running(self, running: bool) -> None:
+        import time
         self.start_btn.configure(state="disabled" if running else "normal")
         self.stop_btn.configure(state="normal" if running else "disabled")
         if running:
-            self.bar.start(12)
+            self.batch = (0, 1)
+            self.started = time.time()
+            self.bar.configure(value=0)
+            self.progress_text.configure(text="준비 중...")
             self.open_btn.configure(state="disabled")
+            self.preview_btn.configure(state="disabled")
         else:
-            self.bar.stop()
             if self.last_output and os.path.isdir(self.last_output):
                 self.open_btn.configure(state="normal")
+                self.preview_btn.configure(state="normal")
+
+    def _show_progress(self, value: float, label: str = "") -> None:
+        """막대, %, 남은 시간 (여러 영상이면 전체 기준)."""
+        import time
+        k, n = self.batch
+        total = (k + value) / max(n, 1)
+        self.bar.configure(value=total * 100)
+        elapsed = time.time() - getattr(self, "started", time.time())
+        text = f"{total * 100:.0f}%"
+        if label:
+            text += f" · {label}"
+        if total > 0.03 and elapsed > 20:
+            left = elapsed * (1 - total) / total
+            text += f" · 남은 시간 약 {_fmt_left(left)}"
+        self.progress_text.configure(text=text)
+
+    def _open_performance(self) -> None:
+        from . import performance
+        path = performance.ensure_file()
+        messagebox.showinfo("성과 기록", "만든 숏폼이 한 줄씩 적혀 있어요.\n\n올린 뒤 '조회수', '평균 시청률(%)', "
+                            "'좋아요', '링크' 칸을 채우고 저장하면, 다음 숏폼부터 잘된 숏폼의 공통점을 "
+                            "따라 해요. (3개 이상 쌓이면 반영)\n\n유튜브 쇼츠 링크를 적어 두면 조회수는 "
+                            "프로그램이 알아서 가져와요 (유튜브 연결이 되어 있을 때).")
+        _open_folder(path)
+
+    def _show_results(self) -> None:
+        if self.last_output and os.path.isdir(self.last_output):
+            self.results = ResultsDialog(self.root, self.last_output)  # 그림이 사라지지 않게 잡아 둔다
 
     def _open_output(self) -> None:
         if self.last_output and os.path.isdir(self.last_output):
@@ -961,6 +1035,10 @@ class App:
                     self.status.configure(text=rest[0][:40])
                 elif kind == "status":
                     self.root.title(f"{APP_TITLE} - {rest[0]}")
+                elif kind == "batch":
+                    self.batch = (rest[0], rest[1])
+                elif kind == "progress":
+                    self._show_progress(*rest)
                 elif kind == "review":
                     self.dialog = ReviewDialog(self.root, rest[0])
                 elif kind == "longreview":
@@ -984,7 +1062,9 @@ class App:
             self.status.configure(text="중지했어요")
         elif code == 0:
             self.status.configure(text="완료!")
-            self._open_output()
+            self.bar.configure(value=100)
+            self.progress_text.configure(text="100% · 다 만들었어요")
+            self._show_results()
         else:
             self.status.configure(text="오류가 났어요 (오른쪽 기록을 캡처해 주세요)")
             self._append(f"\n작업이 멈췄어요 (종료 코드 {code}).\n"
@@ -1034,6 +1114,91 @@ class App:
             self.stopping = True
             self._kill()
         self.root.destroy()
+
+
+def _fmt_left(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds >= 3600:
+        return f"{seconds // 3600}시간 {seconds % 3600 // 60}분"
+    if seconds >= 60:
+        return f"{seconds // 60}분"
+    return f"{seconds}초"
+
+
+class ResultsDialog:
+    """다 만든 영상을 썸네일로 보여 주고 바로 재생하는 창."""
+
+    def __init__(self, parent: tk.Tk, folder: str):
+        videos = []
+        for root_dir, dirs, files in os.walk(folder):
+            dirs[:] = [d for d in dirs if d not in ("작업파일", "_배경음악", ".미리보기")]
+            videos += [os.path.join(root_dir, f) for f in files
+                       if f.lower().endswith(".mp4") and ".tmp" not in f]
+        videos.sort()
+        self.win = win = tk.Toplevel(parent, background=BG)
+        win.title(f"결과 미리보기 ({len(videos)}개)")
+        win.geometry("1180x760")
+        win.transient(parent)
+        head = ttk.Frame(win, padding=(16, 12))
+        head.pack(fill="x")
+        ttk.Label(head, text=f"만든 영상 {len(videos)}개", style="Logo.TLabel").pack(side="left")
+        ttk.Label(head, text="  누르면 재생돼요", style="Sub.TLabel").pack(side="left", pady=(6, 0))
+        ttk.Button(head, text="폴더 열기", command=lambda: _open_folder(folder)).pack(side="right")
+        outer = ttk.Frame(win)
+        outer.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        canvas = tk.Canvas(outer, background=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, command=canvas.yview)
+        body = ttk.Frame(canvas)
+        body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        win.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        self.images = []  # 화면에서 사라지지 않게 잡아 둔다
+        cache = os.path.join(folder, ".미리보기")
+        cols = 5
+        for i, video in enumerate(videos):
+            card = ttk.Frame(body, style="Card.TFrame", padding=8)
+            card.grid(row=i // cols, column=i % cols, padx=6, pady=6, sticky="n")
+            img = self._thumb(video, cache)
+            if img is not None:
+                btn = tk.Label(card, image=img, background=CARD, cursor="hand2")
+                btn.pack()
+                btn.bind("<Button-1>", lambda e, v=video: _open_folder(v))
+            name = os.path.splitext(os.path.basename(video))[0]
+            ttk.Label(card, text=name, style="Card.TLabel", wraplength=190).pack(pady=(6, 2))
+            sub = os.path.basename(os.path.dirname(video))
+            if os.path.abspath(os.path.dirname(video)) != os.path.abspath(folder):
+                ttk.Label(card, text=sub, style="Sub.Card.TLabel").pack()
+            ttk.Button(card, text="▶ 재생", style="Soft.TButton",
+                       command=lambda v=video: _open_folder(v)).pack(fill="x", pady=(4, 0))
+
+    def _thumb(self, video: str, cache: str):
+        """썸네일 그림: 함께 만든 썸네일이 있으면 그것, 없으면 영상 1초 장면."""
+        base = os.path.splitext(video)[0]
+        src = next((p for p in (base + "_썸네일.png", base + ".jpg") if os.path.exists(p)), None)
+        os.makedirs(cache, exist_ok=True)
+        small = os.path.join(cache, hashlib_name(video) + ".png")
+        try:
+            if not os.path.exists(small):  # FFmpeg로 작게 줄인 그림을 만든다
+                seek = [] if src else ["-ss", "1"]
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *seek, "-i", src or video,
+                                "-frames:v", "1", "-vf",
+                                "scale='min(190,iw)':'min(300,ih)':force_original_aspect_ratio=decrease",
+                                small], creationflags=NO_WINDOW, check=True)
+            return self._keep(tk.PhotoImage(file=small))
+        except Exception:
+            return None
+
+    def _keep(self, img):
+        self.images.append(img)
+        return img
+
+
+def hashlib_name(path: str) -> str:
+    import hashlib
+    return hashlib.md5(f"{path}|{os.path.getmtime(path)}".encode()).hexdigest()[:12]
 
 
 class AutoStart:

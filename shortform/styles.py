@@ -364,3 +364,50 @@ def account_box_style(vertical: bool) -> Style:
         return Style(video_top=0, video_height=H, video_fit="fill")
     return Style(background="black", video_top=BOX_TOP, video_height=BOX_BOTTOM - BOX_TOP,
                  video_fit="fill")
+
+
+# ---------- 시청 지속 장치 (훅 자막, 중간 한마디, 진행 막대) ----------
+
+def add_retention(path: str, *, duration: float, font: str, hook: str = "", rehook: str = "",
+                  rehook_at: float | None = None, video_top: int = 0, video_height: int = H,
+                  bar: bool = True, color: str = "#FFE600") -> None:
+    """이미 만든 ASS 자막 파일에 이탈을 막는 장치를 더한다.
+
+    - 훅 자막: 처음 2.2초 동안 영상 위쪽에 크게 '툭' 튀어나오는 한 줄 (끝까지 볼 이유)
+    - 중간 한마디: 결론 직전에 '진짜는 지금부터' 같은 짧은 예고
+    - 진행 막대: 영상 위 가장자리에서 차오르는 얇은 막대 (얼마 안 남은 게 보이면 끝까지 본다)
+    """
+    events = []
+    styles = [
+        f"Style: Hook,{font},96,{_c('#FFFFFF')},&H000000FF&,&H00000000&,&H00000000&,"
+        f"-1,0,0,0,100,100,0,0,1,9,3,5,40,40,0,1",
+        f"Style: Rehook,{font},62,{_c('#FFFFFF')},&H000000FF&,&HC0000000&,&H00000000&,"
+        f"-1,0,0,0,100,100,0,0,3,16,0,5,40,40,0,1",
+        f"Style: Bar,{font},20,{_c(color)},&H000000FF&,&H00000000&,&H00000000&,"
+        f"0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
+    ]
+    y = int(video_top + video_height * (0.24 if video_top else 0.30))
+    if hook.strip():
+        end = min(2.2, duration)
+        # 작게 시작해 살짝 커졌다가 제자리로 (눈길을 끄는 '툭')
+        pop = r"{\fscx70\fscy70\t(0,140,\fscx108\fscy108)\t(140,260,\fscx100\fscy100)\fad(0,250)}"
+        text = _esc(hook.strip().replace("{", "").replace("}", ""))
+        events.append(f"Dialogue: 5,{_ts(0)},{_ts(end)},Hook,,0,0,0,,{{\\pos({W // 2},{y})}}{pop}{text}")
+    if rehook.strip() and rehook_at is not None and 2.5 < rehook_at < duration - 1.0:
+        end = min(rehook_at + 2.0, duration)
+        events.append(f"Dialogue: 5,{_ts(rehook_at)},{_ts(end)},Rehook,,0,0,0,,"
+                      f"{{\\pos({W // 2},{y})\\fad(150,200)}}{_esc(rehook.strip())}")
+    if bar and duration > 3:
+        top = max(video_top, 0)
+        ms = int(duration * 1000)
+        shape = f"m 0 0 l {W} 0 l {W} 10 l 0 10"
+        events.append(f"Dialogue: 4,{_ts(0)},{_ts(duration)},Bar,,0,0,0,,"
+                      f"{{\\pos(0,{top})\\clip(0,{top},1,{top + 10})"
+                      f"\\t(0,{ms},\\clip(0,{top},{W},{top + 10}))\\p1}}{shape}")
+    if not events:
+        return
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read()
+    text = text.replace("\n[Events]", "\n" + "\n".join(styles) + "\n\n[Events]", 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text.rstrip("\n") + "\n" + "\n".join(events) + "\n")

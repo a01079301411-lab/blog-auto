@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from . import media
+from . import media, progress
 from .silence import detect_silences, split_points
 from .subtitles import Word
 
@@ -93,7 +93,7 @@ def _load_model(model: str, device: str):
 
 
 def _transcribe_chunk(whisper, path: str, s: float, e: float,
-                      language: str | None, label: str) -> Transcript:
+                      language: str | None, label: str, total: float = 0.0) -> Transcript:
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "chunk.wav")
         _extract_audio(path, s, e, wav)
@@ -106,6 +106,8 @@ def _transcribe_chunk(whisper, path: str, s: float, e: float,
             chunk.sentences.append(Sentence(seg.start + s, seg.end + s, seg.text.strip()))
             chunk.words.extend(Word(w.start + s, w.end + s, w.word) for w in seg.words or [])
             print(f"\r{label}  {_fmt(seg.end + s)}", end="", flush=True)
+            if total:
+                progress.report((seg.end + s) / total, "음성 인식")
     return chunk
 
 
@@ -153,7 +155,7 @@ def transcribe(
                 if whisper is None:
                     whisper = _load_model(model, device)
                 try:
-                    chunk = _transcribe_chunk(whisper, path, s, e, language, label)
+                    chunk = _transcribe_chunk(whisper, path, s, e, language, label, total)
                     break
                 except RuntimeError as err:
                     # NVIDIA 그래픽카드는 있는데 CUDA 라이브러리가 없으면 여기서 실패한다
@@ -168,6 +170,7 @@ def transcribe(
             remaining = sum(b - a for a, b in bounds[i:])
             eta = (time.time() - began) / done_secs * remaining
             print(f"\r{label}  완료 (남은 예상 시간 {_fmt(eta)})")
+        progress.report(e / total if total else 1.0, "음성 인식")
         if language is None and chunk.language:
             language = chunk.language  # 첫 조각에서 감지한 언어를 계속 사용
         sentences += chunk.sentences

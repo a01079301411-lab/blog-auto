@@ -76,3 +76,35 @@ def upload(video: str, *, title: str, description: str, privacy: str = "private"
         except Exception as e:  # 채널 인증 전에는 썸네일 설정이 막혀 있다
             print(f"  (썸네일은 올리지 못했어요: 채널 전화번호 인증이 필요할 수 있어요. {e})")
     return f"https://youtube.com/shorts/{vid}"
+
+
+READ_TOKEN = os.path.join(ROOT, "youtube_read_token.json")
+READ_SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
+
+
+def statistics(video_ids: list[str]) -> dict[str, dict]:
+    """영상들의 조회수·좋아요 ({영상ID: {"viewCount": "123", ...}}). 처음 한 번 로그인 필요."""
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+
+    creds = None
+    if os.path.exists(READ_TOKEN):
+        creds = Credentials.from_authorized_user_file(READ_TOKEN, READ_SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            print("  조회수를 가져오려면 브라우저에서 유튜브 계정으로 한 번 허용해 주세요.")
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, READ_SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open(READ_TOKEN, "w", encoding="utf-8") as f:
+            f.write(creds.to_json())
+    yt = build("youtube", "v3", credentials=creds)
+    out = {}
+    for i in range(0, len(video_ids), 50):
+        resp = yt.videos().list(part="statistics", id=",".join(video_ids[i:i + 50])).execute()
+        for item in resp.get("items", []):
+            out[item["id"]] = item.get("statistics", {})
+    return out

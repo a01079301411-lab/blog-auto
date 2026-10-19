@@ -54,6 +54,7 @@ class Edl:
     chapters: list[Chapter] = field(default_factory=list)
     dropped: list[dict] = field(default_factory=list)  # 뺀 구간과 이유 (참고용)
     key: str = ""  # 기획안·목표 길이·레퍼런스가 바뀌면 순서표를 새로 짠다
+    bgm_mood: str = ""  # 배경음악 분위기 (bright, calm, tension, funny)
 
     def save(self, path: str) -> None:
         tmp = path + ".tmp"
@@ -110,6 +111,8 @@ def transcribe_all(clips: list[str], workdir: str, *, model: str, language: str 
         name = os.path.splitext(os.path.basename(clip))[0]
         cache = os.path.join(workdir, f"{i:03}_{_safe(name)}.{model}.transcript.json")
         print(f"  [{i}/{len(clips)}] {os.path.basename(clip)}")
+        from . import progress
+        progress.sub(i - 1, len(clips))
         if not media.has_audio(clip):
             out.append(Transcript([], [], language))
             continue
@@ -174,7 +177,9 @@ Build the edit (EDL):
 - description: a YouTube description in Korean (2-4 sentences + 3-5 hashtags). Do not
   write chapter timestamps; they are added automatically.
 - thumbnail: pick the most expressive frame (clip + time) and write thumbnail_text,
-  1-2 short Korean lines separated by "\\n", at most 10 characters per line."""
+  1-2 short Korean lines separated by "\\n", at most 10 characters per line.
+- bgm_mood: the background music mood that fits the whole episode
+  (bright, calm, tension or funny)."""
 
 SCHEMA = {
     "type": "object",
@@ -182,6 +187,7 @@ SCHEMA = {
         "title": {"type": "string"},
         "description": {"type": "string"},
         "thumbnail_text": {"type": "string"},
+        "bgm_mood": {"type": "string", "enum": ["bright", "calm", "tension", "funny"]},
         "thumbnail_clip": {"type": "integer"},
         "thumbnail_time": {"type": "number"},
         "chapters": {
@@ -224,7 +230,7 @@ SCHEMA = {
             },
         },
     },
-    "required": ["title", "description", "thumbnail_text", "thumbnail_clip", "thumbnail_time",
+    "required": ["title", "description", "thumbnail_text", "bgm_mood", "thumbnail_clip", "thumbnail_time",
                  "chapters", "dropped"],
     "additionalProperties": False,
 }
@@ -315,6 +321,7 @@ def ask_claude(clips, durations, verticals, transcripts, *, plan: str, context: 
     data = json.loads(next(b.text for b in response.content if b.type == "text"))
     edl = Edl(clips=list(clips), title=data["title"], description=data["description"],
               thumbnail_text=data["thumbnail_text"].replace("\\n", "\n"),
+              bgm_mood=data.get("bgm_mood", ""),
               thumbnail_clip=int(data["thumbnail_clip"]),
               thumbnail_time=float(data["thumbnail_time"]),
               chapters=[Chapter(c["title"], [Segment(int(s["clip"]), float(s["start"]),
@@ -509,6 +516,8 @@ def run(args) -> str:
         print(f"  {os.path.basename(c)}  {_hms(d)}{'  (세로)' if v else ''}")
 
     print("\n[음성 인식]")
+    from . import progress
+    progress.set_range(0.0, 0.25)
     transcripts = transcribe_all(clips, work, model=args.model,
                                  language=args.language or None, device=args.device)
 
@@ -532,6 +541,8 @@ def run(args) -> str:
                 from . import references
                 print("  레퍼런스 읽는 중...")
                 ref_blocks = references.blocks(refs)
+            progress.set_range(0.25, 0.32)
+            progress.report(0.2, "편집 순서")
             edl = ask_claude(clips, durations, verticals, transcripts, plan=plan_text,
                              context=args.context or "", target_minutes=args.minutes,
                              frames=args.frames, workdir=work, ref_blocks=ref_blocks)
