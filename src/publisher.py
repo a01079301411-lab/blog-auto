@@ -166,25 +166,63 @@ def type_line(page, text):
 
 
 def read_title(editor):
-    try:
-        return editor.locator(", ".join(TITLE_AREA)).first.inner_text().strip()
-    except Exception:
-        return ""
+    """제목 칸에 실제로 들어간 글자. 제목 글자 칸(.se-text-paragraph)을 먼저 읽는다."""
+    for selector in TITLE_AREA:
+        try:
+            found = editor.locator(selector)
+            if found.count():
+                text = found.first.inner_text().strip()
+                return "" if text == "제목" else text  # 빈 칸의 안내 글자
+        except Exception:
+            pass
+    return ""
+
+
+def _same_title(a, b):
+    """띄어쓰기·보이지 않는 글자는 빼고 비교한다 (에디터가 공백을 특수 공백으로 바꾸기도 한다)."""
+    clean = lambda t: re.sub(r"[\s\u00a0\u200b-\u200d\ufeff]", "", t or "")
+    return clean(a) == clean(b)
+
+
+def clear_title(page, editor):
+    """제목 칸을 비운다. 제목이 길어 두 줄로 접히면 Shift+Home은 아랫줄만 지우므로,
+    제목은 글의 맨 앞이라는 점을 이용해 Ctrl+Shift+Home으로 처음까지 선택해 지운다."""
+    for _ in range(5):
+        if not read_title(editor):
+            return
+        page.keyboard.press("End")
+        page.keyboard.press("Control+Shift+Home")
+        page.keyboard.press("Backspace")
+        page.wait_for_timeout(200)
+        if read_title(editor):  # 그래도 남아 있으면 한 줄씩 지운다
+            page.keyboard.press("Shift+Home")
+            page.keyboard.press("Backspace")
+            page.wait_for_timeout(200)
 
 
 def type_title(page, editor, title):
-    """제목을 입력하고, 앞 글자가 빠지지 않았는지 확인한다. 틀리면 지우고 다시 친다."""
-    for _ in range(3):
+    """제목을 입력하고, 앞 글자가 빠지지 않았는지 확인한다. 틀리면 지우고 다시 친다.
+    한 글자씩 치기가 계속 틀리면 마지막에는 한 번에 붙여 넣는다."""
+    title = " ".join(title.split())
+    got = ""
+    for attempt in range(4):
         page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
-        page.keyboard.type(title, delay=30)
-        page.wait_for_timeout(500)
-        if read_title(editor) == title.strip():
+        if read_title(editor):
+            clear_title(page, editor)
+            click_first(editor, TITLE_AREA)
+        if attempt < 3:
+            page.keyboard.type(title, delay=30)
+        else:
+            page.keyboard.insert_text(title)
+        page.wait_for_timeout(700)
+        got = read_title(editor)
+        if _same_title(got, title):
             return
-        # 제목 칸 안의 글자만 선택해서 지우고 다시 입력
-        page.keyboard.press("End")
-        page.keyboard.press("Shift+Home")
-        page.keyboard.press("Backspace")
-    raise PublishError(f"제목이 제대로 입력되지 않았어요: {title}")
+        log.info("제목이 다르게 들어갔어요 (%s번째). 넣은 것: %s / 칸에 있는 것: %s", attempt + 1, title, got)
+        clear_title(page, editor)
+        click_first(editor, TITLE_AREA)
+    raise PublishError(f"제목이 제대로 입력되지 않았어요: {title} (칸에 들어간 글자: {got}) "
+                       f"화면: {screenshot(page, 'bad_title')}")
 
 
 def insert_photo(page, editor, path, caption):
