@@ -11,10 +11,11 @@ import history
 import season
 from config import COMPANY_PHONE, DATA_DIR, SAMPLES_DIR
 
-MIN_CHARS = 2000
-KEYWORD_MIN, KEYWORD_MAX = 5, 8
+MIN_CHARS, MAX_CHARS = 1700, 2000  # 목표 분량 (벗어나면 권장 기준으로 알려 줌)
+HARD_MIN_CHARS, HARD_MAX_CHARS = 1500, 2400  # 이 밖이면 발행하지 않음
+KEYWORD_MIN, KEYWORD_MAX = 4, 7
 MIN_QUESTION_HEADINGS = 2
-MIN_FAQ = 3
+MIN_FAQ = 2
 MIN_FACTS = 2
 SIMILAR_TITLE = 0.75
 SIMILAR_SAMPLE_TITLE = 0.6
@@ -81,8 +82,11 @@ def check(post, topic, photo_set=None, related=None):
     fails = []
 
     # 1. 분량
-    if len(plain) < MIN_CHARS:
-        fails.append(f"본문이 {len(plain)}자예요. {MIN_CHARS}자 이상 써야 해요.")
+    if not HARD_MIN_CHARS <= len(plain) <= HARD_MAX_CHARS:
+        fails.append(f"본문이 {len(plain)}자예요. {MIN_CHARS}자에서 {MAX_CHARS}자로 써야 해요.")
+    elif not MIN_CHARS <= len(plain) <= MAX_CHARS:
+        fails.append(SOFT + f"본문이 {len(plain)}자예요. 목표는 {MIN_CHARS}자에서 {MAX_CHARS}자예요. "
+                     "궁금증, 의심, 반박에 속하지 않는 문장부터 빼세요.")
 
     # 2. 메인 키워드
     kw = _keyword_re(topic["keyword"])
