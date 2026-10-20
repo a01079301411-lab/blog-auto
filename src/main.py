@@ -93,8 +93,10 @@ def write_with_check(topic, photo_set, related):
     must = [i for i in issues if i["must_fix"]]
     if issues:
         log.info("AI 검토:\n- %s", "\n- ".join(reviewer.as_feedback(issues)))
-    if fails or must:
-        feedback = fails + reviewer.as_feedback(issues)
+    # 다시 쓰기는 발행을 막는 문제나 편집장이 꼭 고치라는 문제가 있을 때만 한다.
+    # (권장 기준까지 다 고치게 하면 글이 누더기처럼 어색해진다)
+    if checker.hard_fails(fails) or must:
+        feedback = checker.hard_fails(fails) + reviewer.as_feedback(must)
         log.info("고칠 점이 있어 다시 씁니다:\n- %s", "\n- ".join(feedback))
         first = (post, fails, issues)
         try:

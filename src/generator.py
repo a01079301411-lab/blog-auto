@@ -83,6 +83,7 @@ def request_text(topic, photo_set, related=None, feedback=None):
         "이번 글 정보\n"
         f"- topic: {topic['topic']}\n"
         f"- keyword: {topic['keyword']}\n"
+        f"- 서브 키워드: {', '.join(topic.get('sub_keywords') or []) or '없음'}\n"
         f"- 이 글이 답하는 단 하나의 질문: {topic['question']}\n"
         f"- title_type: {topic['title_type']}\n"
         f"- hook_type: {topic['hook_type']}\n"

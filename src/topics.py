@@ -34,9 +34,10 @@ def load_topics(path=DATA_DIR / "topics.md"):
         if cells[0] == "주제" or set(cells[0]) <= set("-: "):
             continue  # 표 머리줄, 구분줄
         category = cells[3] if len(cells) > 3 else ""
+        subs = [w.strip() for w in cells[4].split(",") if w.strip()] if len(cells) > 4 else []
         topics.append({
             "section": section, "topic": cells[0], "keyword": cells[1],
-            "question": cells[2], "category": category or NAVER_CATEGORY,
+            "question": cells[2], "category": category or NAVER_CATEGORY, "sub_keywords": subs,
         })
     return topics, ratios
 

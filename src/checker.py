@@ -13,8 +13,8 @@ from config import COMPANY_PHONE, DATA_DIR, SAMPLES_DIR
 
 MIN_CHARS = 2000
 KEYWORD_MIN, KEYWORD_MAX = 5, 8
-MIN_QUESTION_HEADINGS = 3
-MIN_FAQ = 4
+MIN_QUESTION_HEADINGS = 2
+MIN_FAQ = 3
 MIN_FACTS = 2
 SIMILAR_TITLE = 0.75
 SIMILAR_SAMPLE_TITLE = 0.6
@@ -117,7 +117,7 @@ def check(post, topic, photo_set=None, related=None):
     if COMPANY_PHONE and COMPANY_PHONE not in "\n".join(lines[-15:]):
         fails.append("마무리 부분에 전화번호가 없어요.")
     if not _has_middle_cta(body, photo_set):
-        fails.append("본문 중간(강점 사진 바로 아래)에 전화번호가 들어간 연락 유도가 없어요. "
+        fails.append("본문 가운데쯤에 전화번호가 들어간 연락 유도가 없어요. "
                      "예: 전화 상담 " + (COMPANY_PHONE or "전화번호"))
 
     # 6. 금지 표현
@@ -177,7 +177,7 @@ def check(post, topic, photo_set=None, related=None):
     soft = (_repeat_problems(title, body, topic) + _snippet_problems(title, body, topic)
             + _structure_problems(title, body) + _claim_problems(lines)
             + _fact_repeat_problems(lines, topic) + _near_duplicate_problems(lines)
-            + _number_problems(body))
+            + _number_problems(body) + _sub_keyword_problems(title, body, topic))
     fails += [SOFT + f for f in soft]
     return fails
 
@@ -298,6 +298,15 @@ def _snippet_problems(title, body, topic):
 NO_NUMBER_SKIP = ("자주 묻는", "FAQ", "마무리", "정리", "마치며")
 
 
+def _sub_keyword_problems(title, body, topic):
+    """서브 키워드가 한 번도 안 나오면 알려 준다."""
+    text = re.sub(r"\s", "", title + body)
+    missing = [w for w in topic.get("sub_keywords") or [] if re.sub(r"\s", "", w) not in text]
+    if not missing:
+        return []
+    return ["서브 키워드가 빠졌어요: " + ", ".join(missing) + ". 각각 1~2번 문장 속에 자연스럽게 넣으세요."]
+
+
 def _number_problems(body):
     """숫자 원칙: 소제목마다 숫자 1개 이상 (FAQ, 마무리 소제목은 뺀다)."""
     sections, current = [], None
@@ -344,8 +353,8 @@ def _has_phone(line):
 
 
 def _has_middle_cta(body, photo_set):
-    """본문 중간(앞쪽 85% 안)에 전화번호가 들어간 연락 유도가 있는지.
-    사진이 있는 글이면 그 연락 유도가 사진 바로 아래(4줄 이내)에 있어야 한다."""
+    """본문 중간(앞 20%에서 85% 사이)에 전화번호가 들어간 연락 유도가 있는지.
+    사진 위치는 프로그램이 따로 정하므로 사진과 붙어 있을 필요는 없다."""
     digits = re.sub(r"\D", "", COMPANY_PHONE)
     if not digits:
         return True
@@ -355,11 +364,4 @@ def _has_middle_cta(body, photo_set):
     def has_phone(line):
         return digits in re.sub(r"\D", "", line)
 
-    if photo_set:
-        for i, line in enumerate(raw[:end]):
-            if PHOTO_RE.fullmatch(line):
-                after = [l for l in raw[i + 1:i + 5] if not PHOTO_RE.fullmatch(l)]
-                if any(has_phone(l) for l in after):
-                    return True
-        return False
     return any(has_phone(l) for l in raw[int(len(raw) * 0.2):end])

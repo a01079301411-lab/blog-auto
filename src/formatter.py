@@ -208,7 +208,60 @@ def format_body(body, related=None):
         else:
             paragraph.append(line)
     flush()
-    return _tidy_blanks(_mark_phone_lines(_spread_photos(_tidy_blanks(blocks))))
+    return _tidy_blanks(_even_photos(_mark_phone_lines(_tidy_blanks(blocks))))
+
+
+PHOTO_GAP_MIN = 6  # 사진과 사진 사이에는 글이 이 줄 수 이상 있어야 한다
+FAQ_WORDS = ("자주 묻는", "FAQ", "질문")
+
+
+def _even_photos(blocks):
+    """사진을 글 전체에 고르게 나눠 넣는다. (AI가 정한 사진 순서는 지키고, 자리는 프로그램이 정한다)
+
+    - 자리는 글 문단이 끝난 곳만. 전화번호 줄, 링크 카드 바로 앞뒤에는 넣지 않는다.
+    - 첫 사진은 도입부 첫 문단 뒤 (대표 이미지). 나머지는 글 줄 수 기준으로 같은 간격.
+    - 사진 사이에는 글이 6줄 이상. 자주 묻는 질문과 마무리에는 넣지 않는다.
+    - 자리가 모자라면 남는 사진은 넣지 않는다 (사진끼리 붙이는 것보다 낫다).
+    """
+    photos = [b for b in blocks if b["type"] == "photo"]
+    rest = [b for b in blocks if b["type"] != "photo"]
+    if not photos:
+        return rest
+
+    slots, lines = [], 0  # (rest 안의 빈 줄 위치, 그 앞까지 글 줄 수)
+    for i, b in enumerate(rest):
+        if b["type"] == "heading" and any(w in b["text"] for w in FAQ_WORDS):
+            break
+        if b["type"] == "line":
+            lines += 1
+        if b["type"] != "blank" or i == 0:
+            continue
+        prev = rest[i - 1]
+        nxt = next((n for n in rest[i + 1:] if n["type"] != "blank"), None)
+        if prev["type"] != "line" or prev.get("phone"):
+            continue
+        if nxt is not None and (nxt["type"] not in ("line", "heading") or nxt.get("phone")):
+            continue
+        slots.append((i, lines))
+    if not slots:
+        return rest
+
+    total = slots[-1][1]
+    step = max(PHOTO_GAP_MIN, (total - slots[0][1]) / max(len(photos) - 1, 1))
+    chosen = [slots[0]]
+    for i, at in slots[1:]:
+        if len(chosen) == len(photos):
+            break
+        target = slots[0][1] + step * len(chosen)
+        if at - chosen[-1][1] >= PHOTO_GAP_MIN and at >= target - step * 0.4:
+            chosen.append((i, at))
+
+    out, where = [], {i: photos[n] for n, (i, _) in enumerate(chosen)}
+    for i, b in enumerate(rest):
+        out.append(b)
+        if i in where:
+            out += [where[i], {"type": "blank"}]
+    return out
 
 
 def _last_content(blocks):
