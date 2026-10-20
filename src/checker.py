@@ -4,6 +4,7 @@
 """
 import difflib
 import re
+from datetime import date
 
 import formatter
 import history
@@ -130,6 +131,10 @@ def check(post, topic, photo_set=None, related=None):
     # 7. 채워지지 않은 자리표시, 없는 사진
     if "{{" in full or "}}" in full:
         fails.append("채워지지 않은 {{ }} 자리표시가 남아 있어요.")
+    if re.search(r"OOO|ㅇㅇㅇ", plain):  # 가림 표시는 제목 후킹에만 쓴다. 본문에 남으면 자리표시 흔적
+        fails.append("본문에 OOO가 남아 있어요. 가림 표시는 제목에서만 쓰고, 본문에서는 답을 숫자로 밝히세요.")
+    if season.season_of(date.today().month) == "겨울" and re.search(r"140\s*만", full):
+        fails.append("겨울 성수기에는 포장이사 기본 금액 140만 원이 적용되지 않아요. 140만 원을 빼세요.")
     allowed = {p.name for p in photo_set["files"]} if photo_set else set()
     unknown = [f for f in PHOTO_RE.findall(body) if f not in allowed]
     if unknown:
@@ -264,7 +269,7 @@ def _near_duplicate_problems(lines):
 
 # 질문형 소제목 바로 아래 첫 문장이 이렇게 시작하면 떼어 가도 답이 안 된다 (스니펫, AI 브리핑)
 WEAK_ANSWER_START = re.compile(r"^((네|아니요|아니오)[,.!\s]|이것|이건|그건|그것|아래|다음과|위에서|앞에서)")
-TITLE_KEYWORD_WITHIN = 10  # 메인 키워드는 제목 앞 10글자 안에서 시작해야 한다
+TITLE_KEYWORD_WITHIN = 20  # 메인 키워드는 제목 앞 20글자 안에서 시작해야 한다 (따옴표 후킹이 앞에 올 수 있다)
 
 
 def _snippet_problems(title, body, topic):
@@ -313,8 +318,8 @@ def _number_problems(body):
 def _repeat_problems(title, body, topic):
     """매 글이 같은 틀이 되지 않게: 제목의 경력 숫자, 'N가지', 상투 문장, 같은 문장 반복."""
     fails = []
-    if re.search(r"11\s*년", title) and topic.get("title_type") != "권위 부여형":
-        fails.append("제목에 11년은 권위 부여형 제목일 때만 써요. 경력은 본문에서 보여주세요.")
+    if re.search(r"11\s*년", title) and topic.get("title_type") not in ("권위 부여형", "사건 폭로형"):
+        fails.append("제목에 11년은 권위 부여형, 사건 폭로형 제목일 때만 써요. 경력은 본문에서 보여주세요.")
     if re.search(r"\d+\s*가지", title) and topic.get("title_type") != "숫자 목록형":
         fails.append(f"이번 제목 유형은 {topic.get('title_type')}이에요. 'N가지'는 숫자 목록형일 때만 써요.")
     used = [p for p in STOCK_PHRASES if p in body]

@@ -35,12 +35,14 @@ REPLACEMENTS = [
     (re.compile(r"℃|°C|°"), "도"),
     (re.compile(r"\s*[·ㆍ]\s*"), ", "),  # 대구·경산 → 대구, 경산
     (re.compile(r"(?<!\d)-|-(?!\d)"), " "),  # 하이픈은 전화번호(숫자 사이)만 남긴다
+    (re.compile(r"[“”«»]"), '"'),  # 둥근 따옴표는 곧은 따옴표로
+    (re.compile(r"[‘’`]"), "'"),
 ]
-NOT_ALLOWED = re.compile(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ\s.,?!%\-]")
+NOT_ALLOWED = re.compile(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ\s.,?!%\-'\"]")  # 따옴표는 후킹에 쓰므로 남긴다
 
 
 def sanitize(text):
-    """한글, 영어, 숫자, 띄어쓰기, . , ? ! % 와 전화번호 하이픈만 남긴다."""
+    """한글, 영어, 숫자, 띄어쓰기, . , ? ! % 따옴표와 전화번호 하이픈만 남긴다."""
     for pattern, repl in REPLACEMENTS:
         text = pattern.sub(repl, text)
     text = NOT_ALLOWED.sub(" ", text)

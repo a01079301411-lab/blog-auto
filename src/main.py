@@ -223,6 +223,7 @@ def save_preview(post, topic, blocks, fails, notes=None):
         check_text += " / AI 편집장 검토: 고칠 점 없음"
     path.write_text(
         f"# {post['title']}\n\n"
+        f"인용구: {post.get('quote', '')}\n\n"
         f"주제: {topic['topic']} / 키워드: {topic['keyword']} / 카테고리: {topic['category'] or '기본'} / "
         f"제목 유형: {topic['title_type']} / 도입: {topic['hook_type']} / 구조: {topic['variant']}\n"
         f"품질 검사: {check_text}\n"
@@ -309,6 +310,7 @@ def main():
                 result = publisher.post(
                     page, post["title"], blocks, post["tags"],
                     photo_paths, post["photo_captions"], publish=AUTO_PUBLISH, category=topic["category"],
+                    quote=post.get("quote", ""),
                 )
             except publisher.PublishError as e:
                 stop(f"{e}\n다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, 없을 때만 다시 올립니다.")

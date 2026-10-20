@@ -12,8 +12,8 @@ import season
 from config import DATA_DIR, NAVER_CATEGORY
 
 # 초사고 제목 공식 (prompts/moving_post.md 3번과 이름이 같아야 한다)
-TITLE_TYPES = ["상식 파괴형", "금지 경고형", "자아 자극형", "권위 부여형", "호기심형", "구체 장면형", "숫자 목록형"]
-HOOK_TYPES = ["현장 장면형", "질문형", "숫자 제시형", "흔한 오해 지적형", "결론 먼저형"]
+TITLE_TYPES = ["자아 자극형", "손실 경고형", "호기심 가림형", "사건 폭로형", "가격 공개형", "권위 부여형", "숫자 목록형"]
+HOOK_TYPES = ["현장 장면형", "질문형", "숫자 제시형", "흔한 오해 지적형", "결론 먼저형", "고객 목소리형"]
 VARIANTS = [1, 2, 3, 4]
 RECENT_DAYS = 30
 

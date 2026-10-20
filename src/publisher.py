@@ -56,6 +56,9 @@ TEXT_LINK_INPUT = [
     "input[placeholder*='URL']:not(.se-popup-oglink *)", "input[placeholder*='링크']:not(.se-popup-oglink *)",
 ]
 TEXT_LINK_APPLY = ["button.se-custom-layer-link-apply-button", ".se-custom-layer-link button:has-text('확인')"]
+# 인용구 (제목 아래 큰 글씨 한 줄). 기본 모양은 큰 따옴표 스타일
+QUOTE_BUTTON = ["button.se-quotation-toolbar-button", ".se-toolbar-item-quotation button", 'button[data-name="quotation"]']
+QUOTE_COMPONENT = ".se-component.se-quotation"
 # 발행 설정 창의 태그 입력 칸
 TAG_INPUT = ['input[placeholder*="태그"]', "#tag-input", "input[class*='tag_input']", "input[class*='tag']"]
 CATEGORY_BUTTON = ['button[aria-label*="카테고리"]', '[class*="category"] button', 'button:has-text("카테고리")']
@@ -262,6 +265,32 @@ def insert_photo(page, editor, path, caption):
 
     move_below(page, editor, image)
     return True
+
+
+def insert_quote(page, editor, text):
+    """본문 맨 앞에 인용구를 넣고 그 아래 글 칸으로 커서를 옮긴다.
+    돌려주는 값: 'ok', 'no_quote'(인용구를 못 만듦), 'no_text'(인용구는 생겼는데 글자가 안 보임)
+    인용구 아래에 글 칸이 남도록, 빈 줄을 하나 만들어 두고 그 위 줄에 넣는다."""
+    page.keyboard.press("Enter")
+    page.keyboard.press("ArrowUp")
+    before = editor.locator(QUOTE_COMPONENT).count()
+    if not click_first(editor, QUOTE_BUTTON, timeout=2000):
+        return "no_quote"
+    for _ in range(10):
+        page.wait_for_timeout(300)
+        if editor.locator(QUOTE_COMPONENT).count() > before:
+            break
+    else:
+        page.keyboard.press("Escape")
+        return "no_quote"
+    quote = editor.locator(QUOTE_COMPONENT).first
+    page.wait_for_timeout(300)
+    type_line(page, text)
+    if _plain(text)[:5] not in _plain(quote.inner_text()):  # 커서가 인용구 안에 없었으면 칸을 눌러 다시 친다
+        click_text(quote.locator(".se-text-paragraph").first)
+        type_line(page, text)
+    move_below(page, editor, quote)
+    return "ok" if _plain(text)[:5] in _plain(quote.inner_text()) else "no_text"
 
 
 def align_center(page, editor):
@@ -588,7 +617,7 @@ def post_url(page):
     return page.url
 
 
-def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=False, category=""):
+def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=False, category="", quote=""):
     """글을 입력하고 임시저장(publish=False) 또는 발행(publish=True)한다.
 
     돌려주는 값: {"result": "draft" | "published", "url": ..., "failed_photos": [...], "warnings": [...]}
@@ -617,6 +646,27 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
     if not align_center(page, editor):
         warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
+    if quote:
+        status = insert_quote(page, editor, quote)
+        if status == "ok":
+            log.info("인용구를 넣었어요: %s", quote)
+        elif status == "no_text":
+            log.info("인용구 칸은 생겼는데 글자를 확인하지 못했어요. 화면: %s", screenshot(page, "quote_text"))
+            warnings.append("인용구 글자가 제대로 들어갔는지 확인해 주세요.")
+        else:
+            # 인용구 버튼을 못 찾으면 굵은 글씨 한 줄로라도 맨 위에 보여준다
+            shot = screenshot(page, "quote_fail")
+            log.info("인용구를 넣지 못해서 굵은 글씨로 넣어요. 화면: %s", shot)
+            warnings.append("인용구를 넣지 못해 제목 아래에 굵은 글씨로 넣었어요.")
+            go_to_end(page, editor)
+            before = set_bold(page, editor, True)
+            type_line(page, quote)
+            if before is None:
+                page.keyboard.press("Control+b")
+            else:
+                set_bold(page, editor, False)
+            page.keyboard.press("Enter")
+            page.keyboard.press("Enter")
     failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
     # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
     for block in blocks:
