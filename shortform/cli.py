@@ -192,18 +192,24 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     if cues and any(c.who == "other" for c in cues):
         print(f"  묻는 사람 자막 {sum(c.who == 'other' for c in cues)}줄은 노란색으로")
 
+    color = ""
+    if getattr(args, "auto_color", False):
+        color = media.auto_color(src, start, end)
+        print("  자동 색 보정: " + ("밝기·대비·채도를 조금 맞췄어요" if color else "손볼 게 없어요"))
+    karaoke, pop = getattr(args, "karaoke", False), getattr(args, "sub_pop", False)
+
     subs = os.path.splitext(out)[0] + ".ass"
     vf = video_filter(style, focus, path=path, span=span, aspect=sw / sh if sh else 16 / 9,
                       keep_bottom=keep_bottom)
     if acct is None:
         write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
                   speaker=speaker if (cues or burned is None) else "", bottom=h.bottom,
-                  keywords=h.keywords)
+                  keywords=h.keywords, karaoke=karaoke, pop=pop)
         _add_retention(args, subs, h, keeps, kept, style.font, style)
         media.render(src, keeps, out, video_filter=vf, srt=subs,
                      bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
                      insert_bottom=style.sub_bottom - round(style.sub_size * 2.6),
-                     voice_enhance=getattr(args, "voice_enhance", False))
+                     voice_enhance=getattr(args, "voice_enhance", False), color=color)
     else:
         from . import draw, fonts
 
@@ -215,14 +221,14 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
                      bottom=h.bottom, boxed=boxed,
                      speaker_y=low_speaker_y(acct) if cues else SPEAKER_Y).save(ov_path)
         sub_font, _ = fonts.find_or_fallback(acct.sub.fonts)
-        write_account_subs(subs, acct, cues, font_path=sub_font)
+        write_account_subs(subs, acct, cues, font_path=sub_font, karaoke=karaoke, pop=pop)
         from . import fonts as _fonts
         _add_retention(args, subs, h, keeps, kept, _fonts.family(sub_font), style)
         try:
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
                          font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
                          inserts=cut_ins, insert_bottom=low_speaker_y(acct) - 70,
-                         voice_enhance=getattr(args, "voice_enhance", False))
+                         voice_enhance=getattr(args, "voice_enhance", False), color=color)
         finally:
             os.remove(ov_path)
     print(f"  저장: {out}")
@@ -629,6 +635,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="목소리 또렷하게: 잡음 줄이고 소리 크기 맞추기 yes/no (기본 yes)")
     s.add_argument("--inserts", type=_yesno, default=True,
                    help="'짤' 폴더의 사진·짧은 영상을 자막에 맞춰 끼워 넣기 yes/no (기본 yes)")
+    s.add_argument("--karaoke", type=_yesno, default=False,
+                   help="캡컷 자동 자막처럼 지금 말하는 단어에 색 채우기 yes/no (기본 no)")
+    s.add_argument("--sub-pop", type=_yesno, default=True,
+                   help="자막이 나올 때 살짝 튀어나오기 yes/no (기본 yes)")
+    s.add_argument("--auto-color", type=_yesno, default=True,
+                   help="자동 색 보정: 어두우면 밝게, 흐리면 선명하게 yes/no (기본 yes)")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
                    help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")
@@ -689,6 +701,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="목소리 또렷하게 (잡음 줄이고 소리 크기 맞추기) yes/no")
     s.add_argument("--inserts", type=_yesno, default=True,
                    help="'짤' 폴더의 사진·짧은 영상을 자막에 맞춰 끼워 넣기 yes/no")
+    s.add_argument("--auto-color", type=_yesno, default=True,
+                   help="자동 색 보정: 어두우면 밝게, 흐리면 선명하게 yes/no")
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)

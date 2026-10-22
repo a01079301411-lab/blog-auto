@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .media import Segment
 
@@ -22,6 +22,7 @@ class Cue:
     who: str = "main"     # main: 주인공 / other: 묻는 사람·진행자 등 (노란 자막)
     note: str = ""        # (고민) 같은 표정·행동 자막
     image: str = ""       # 이 줄에 끼워 넣을 짤 파일 이름
+    words: list[tuple[float, float]] = field(default_factory=list)  # 띄어쓰기 단위 말한 시간
 
 
 def words_in_range(words: list[Word], start: float, end: float) -> list[Word]:
@@ -66,7 +67,9 @@ def build_cues(
         if cur:
             text = "".join(w.text for w in cur).strip()
             if text:
-                cues.append(Cue(cur[0].start, cur[-1].end, text))
+                times = ([(w.start, w.end) for w in cur]
+                         if len(text.split()) == len(cur) else [])
+                cues.append(Cue(cur[0].start, cur[-1].end, text, words=times))
             cur.clear()
 
     for w in words:

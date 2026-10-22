@@ -140,7 +140,7 @@ def _encode_piece(src: str, p: Piece, out: str, size: tuple[int, int], audio: bo
     os.replace(tmp, out)
 
 
-def encode_pieces(edl: Edl, pieces: list[Piece], work: str) -> None:
+def encode_pieces(edl: Edl, pieces: list[Piece], work: str, auto_color: bool = False) -> None:
     folder = os.path.join(work, "장면")
     os.makedirs(folder, exist_ok=True)
     info = {}
@@ -148,10 +148,12 @@ def encode_pieces(edl: Edl, pieces: list[Piece], work: str) -> None:
     for i, p in enumerate(pieces, 1):
         src = edl.clips[p.clip]
         if src not in info:
+            # HDR 색 변환 + 자동 색 보정 (촬영본마다 한 번 재서 그 촬영본 장면 모두에)
+            color = media.auto_color(src) if auto_color else ""
             info[src] = (media.display_size(src), media.has_audio(src),
-                         os.path.getmtime(src), media.hdr_to_sdr(src))
+                         os.path.getmtime(src), media.hdr_to_sdr(src) + color)
         size, audio, mtime, pre = info[src]
-        key = hashlib.md5(f"v2|{W}x{H}@{FPS}|{src}|{mtime}|{p.start:.3f}|{p.end:.3f}".encode()
+        key = hashlib.md5(f"v2|{W}x{H}@{FPS}|{src}|{mtime}|{p.start:.3f}|{p.end:.3f}|{pre}".encode()
                           ).hexdigest()[:16]
         p.path = os.path.join(folder, f"{key}.mp4")
         label = f"  [{i}/{len(pieces)}] {os.path.basename(src)} {_hms(p.start)}~{_hms(p.end)}"
@@ -495,7 +497,7 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     from . import progress
     print(f"\n[장면 인코딩] {W}x{H} 규격으로 맞추는 중 (저장해 두므로 멈춰도 이어서 해요)")
     progress.set_range(0.32, 0.8)
-    encode_pieces(edl, pieces, work)
+    encode_pieces(edl, pieces, work, auto_color=getattr(args, "auto_color", False))
     total = sum(p.length for p in pieces)
     chapters = chapter_starts(edl, pieces)
 

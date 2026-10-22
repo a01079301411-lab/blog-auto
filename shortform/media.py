@@ -211,6 +211,48 @@ def insert_graph(inserts: list[tuple[str, float, float]], first_idx: int, label:
     return inputs, parts, cur
 
 
+def auto_color(src: str, start: float = 0.0, end: float | None = None, samples: int = 6) -> str:
+    """캡컷 '자동 조정'처럼: 장면 몇 장을 보고 어두우면 밝게, 흐리멍덩하면 대비를,
+    색이 바래 보이면 채도를 조금 올리는 필터. 손볼 게 없으면 빈 글자. (뒤에 쉼표가 붙는다)"""
+    import numpy as np
+
+    end = end if end is not None else duration(src)
+    if end - start < 0.5:
+        return ""
+    lum, sat = [], []
+    for k in range(samples):
+        t = start + (end - start) * (k + 0.5) / samples
+        try:
+            raw = subprocess.run(
+                ["ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", src, "-frames:v", "1",
+                 "-vf", f"{hdr_to_sdr(src)}scale=96:54", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                capture_output=True, creationflags=NO_WINDOW, timeout=60).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if len(raw) < 96 * 54 * 3:
+            continue
+        px = np.frombuffer(raw[:96 * 54 * 3], np.uint8).reshape(-1, 3) / 255.0
+        lum.append(px @ np.array([0.2126, 0.7152, 0.0722]))
+        sat.append(px.max(axis=1) - px.min(axis=1))
+    if not lum:
+        return ""
+    y = np.concatenate(lum)
+    mean, lo, hi = float(y.mean()), float(np.percentile(y, 2)), float(np.percentile(y, 98))
+    chroma = float(np.concatenate(sat).mean())
+    gamma = 1.0
+    if mean < 0.42:  # 어두운 실내: 중간 밝기를 올린다 (밝은 곳은 덜 날아가게 감마로)
+        gamma = min(1.0 + (0.42 - mean) * 1.6, 1.35)
+    contrast = 1.0
+    if hi - lo < 0.75:  # 뿌옇게 떠 보이면 대비를 조금
+        contrast = min(1.0 + (0.75 - (hi - lo)) * 0.5, 1.12)
+    saturation = 1.0
+    if chroma < 0.22:  # 색이 바래 보이면 채도를 조금
+        saturation = min(1.0 + (0.22 - chroma) * 1.2, 1.15)
+    if gamma == contrast == saturation == 1.0:
+        return ""
+    return f"eq=gamma={gamma:.3f}:contrast={contrast:.3f}:saturation={saturation:.3f},"
+
+
 def render(
     src: str,
     segments: list[Segment],
@@ -229,6 +271,7 @@ def render(
     inserts: list[tuple[str, float, float]] | None = None,
     insert_bottom: int = 1250,
     voice_enhance: bool = False,
+    color: str = "",
 ) -> None:
     """src에서 segments 구간만 이어붙여 out으로 렌더링한다.
 
@@ -248,7 +291,8 @@ def render(
         labels.append(f"[v{i}][a{i}]")
     parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[vc][a0]")
     parts.append(f"[a0]{voice_chain() if voice_enhance else 'anull'}[a]")
-    parts.append(f"[vc]{hdr_to_sdr(src)}null[v]")  # 아이폰 HDR 영상은 색을 일반 영상에 맞춘다
+    # 아이폰 HDR 영상은 색을 일반 영상에 맞추고, 자동 색 보정(color)이 있으면 그다음에
+    parts.append(f"[vc]{hdr_to_sdr(src)}{color}null[v]")
     parts.append(video_filter or "[v]null[vl]")
 
     # 배경음악·효과음 섞기

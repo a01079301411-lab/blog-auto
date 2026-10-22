@@ -168,7 +168,18 @@ def align(lines: list[str], words: list[Word], *, min_ratio: float = 0.55) -> li
         if cues:
             start = max(start, cues[-1].end)
         end = max(c_end[b], start + 0.3)
-        cues.append(Cue(start, end, text))
+        # 띄어쓰기 단위로 말한 시간 (단어마다 색 채우기에 쓴다)
+        times, p = [], pos - len(n)
+        for tok in text.split():
+            k = len(_norm(tok))
+            if k:
+                ta = c_start[min(to_orig[p], last)]
+                tb = c_end[min(to_orig[p + k - 1], last)]
+                p += k
+            else:  # 문장부호만 있는 덩어리
+                ta = tb = times[-1][1] if times else start
+            times.append((min(max(ta, start), end), min(max(tb, start), end)))
+        cues.append(Cue(start, end, text, words=times))
     for x, y in zip(cues, cues[1:]):  # 다음 자막과 겹치지 않게, 너무 빨리 사라지지 않게
         x.end = min(max(x.end, x.start + 0.6), y.start)
     return cues

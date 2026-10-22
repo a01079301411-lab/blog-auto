@@ -240,13 +240,13 @@ def _marked(text: str, color: str) -> str:
     return "".join(out)
 
 
-def _keywords(text: str, keywords: list[str], color: str) -> str:
+def _keywords(text: str, keywords: list[str], color: str, reset: str = "{\\r}") -> str:
     text = _esc(text)
     kws = sorted({_esc(k.strip()) for k in keywords if k.strip()}, key=len, reverse=True)
     if not kws:
         return text
     pattern = re.compile("|".join(re.escape(k) for k in kws))
-    return pattern.sub(lambda m: f"{{\\c{_c(color)}}}{m.group(0)}{{\\r}}", text)
+    return pattern.sub(lambda m: f"{{\\c{_c(color)}}}{m.group(0)}{reset}", text)
 
 
 def _title_text(style: Style, title: str) -> str:
@@ -267,11 +267,44 @@ OTHER_COLOR = "#FFE14D"  # 묻는 사람·진행자 말 (주인공 말은 흰색
 NOTE_COLOR = "#C8C8C8"   # (고민) 같은 표정 자막
 
 
-def _note(c: Cue, size: int) -> str:
+KARAOKE_COLOR = "#4DFF7A"  # 단어마다 색 채우기: 지금 말하는 단어 (노란 자막과 겹치지 않는 초록)
+POP = "{\\fscx82\\fscy82\\t(0,120,\\fscx100\\fscy100)}"  # 자막이 살짝 튀어나오기
+
+
+def _note(c: Cue, size: int, color: str | None = None) -> str:
     """(고민) 같은 표정 자막: 자막 앞에 작은 회색 글자로."""
     if not c.note:
         return ""
-    return f"{{\\fs{round(size * 0.72)}\\c{_c(NOTE_COLOR)}}}{_esc(c.note)}{{\\r}} "
+    reset = f"{{\\fs{size}\\c{_c(color)}}}" if color else "{\\r}"
+    return f"{{\\fs{round(size * 0.72)}\\c{_c(NOTE_COLOR)}}}{_esc(c.note)}{reset} "
+
+
+def sub_events(c: Cue, name: str, size: int, color: str, *, keywords: list[str] | None = None,
+               kw_color: str = "", karaoke: bool = False, pop: bool = False) -> list[str]:
+    """자막 한 줄의 Dialogue 줄들.
+
+    karaoke: 캡컷 자동 자막처럼 지금 말하는 단어에 색을 칠한다 (단어마다 한 줄씩).
+    pop: 자막이 나올 때 살짝 튀어나온다.
+    """
+    reset = f"{{\\c{_c(color)}}}"  # \r을 쓰면 튀어나오기 효과까지 지워져서 색만 되돌린다
+    fx = POP if pop else ""
+    note = _note(c, size, color)
+    toks = c.text.split()
+    if karaoke and len(toks) > 1 and len(c.words) == len(toks):
+        out = []
+        for k in range(len(toks)):
+            t0 = c.start if k == 0 else max(c.words[k][0], c.start)
+            t1 = c.end if k == len(toks) - 1 else min(max(c.words[k + 1][0], t0), c.end)
+            if t1 - t0 < 0.01:
+                continue
+            text = " ".join(f"{{\\c{_c(KARAOKE_COLOR)}}}{_esc(t)}{reset}" if j == k else _esc(t)
+                            for j, t in enumerate(toks))
+            out.append(f"Dialogue: 0,{_ts(t0)},{_ts(t1)},{name},,0,0,0,,"
+                       f"{fx if k == 0 else ''}{note}{text}")
+        if out:
+            return out
+    text = _keywords(c.text, keywords or [], kw_color, reset) if kw_color else _esc(c.text)
+    return [f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,{fx}{note}{text}"]
 
 
 def write_ass(
@@ -285,6 +318,8 @@ def write_ass(
     speaker: str = "",
     bottom: str = "",
     keywords: list[str] | None = None,
+    karaoke: bool = False,
+    pop: bool = False,
 ) -> None:
     s = style
     tfont = s.title_font or s.font
@@ -333,14 +368,16 @@ def write_ass(
         lines.append(f"Dialogue: 1,{whole},Bottom,,0,0,0,,{pos}"
                      f"{_esc(s.bottom_format.format(bottom.strip()))}")
     for c in cues:
-        name = "SubOther" if c.who == "other" else "Sub"
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,"
-                     + _note(c, s.sub_size) + _keywords(c.text, keywords or [], s.sub_highlight))
+        other = c.who == "other"
+        lines += sub_events(c, "SubOther" if other else "Sub", s.sub_size,
+                            OTHER_COLOR if other else s.sub_color, keywords=keywords,
+                            kw_color=s.sub_highlight, karaoke=karaoke, pop=pop)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
-def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> None:
+def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str,
+                       karaoke: bool = False, pop: bool = False) -> None:
     """계정 가이드의 말자막 (하얀 글자, 설명자막 바로 아래). 글자 모양은 계정 글꼴 그대로."""
     from . import fonts
     from .accounts import SAFE_BOTTOM, SUB_MARGIN_L, SUB_MARGIN_R
@@ -367,9 +404,9 @@ def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> N
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     for c in cues:
-        name = "SubOther" if c.who == "other" else "Sub"
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,"
-                     f"{_note(c, t.size)}{_esc(c.text)}")
+        other = c.who == "other"
+        lines += sub_events(c, "SubOther" if other else "Sub", t.size,
+                            OTHER_COLOR if other else t.color, karaoke=karaoke, pop=pop)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 

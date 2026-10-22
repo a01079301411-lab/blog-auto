@@ -189,6 +189,27 @@ class Tooltip:
             self.tip = None
 
 
+TEMPLATES = os.path.join(ROOT, "템플릿.json")
+
+
+def _load_templates() -> dict[str, dict[str, str]]:
+    import json
+    try:
+        with open(TEMPLATES, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_templates(data: dict) -> None:
+    import json
+    tmp = TEMPLATES + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, TEMPLATES)
+
+
 def _python() -> str:
     """작업용 파이썬. 창은 pythonw로 떠도 작업은 python.exe로 돌려야 출력을 받을 수 있다."""
     if os.environ.get("SHORTFORM_PYTHON"):
@@ -377,8 +398,9 @@ class App:
         self.count_box.state(["disabled"] if picked else ["!disabled"])
         self.style_box.state(["disabled"] if picked else ["!disabled"])
         self.per_box.state(["!disabled"] if picked else ["disabled"])
-        self.flags["burned_subs"].widget.state(
-            ["!disabled"] if self.flags["subtitles"].get() else ["disabled"])
+        for key in ("burned_subs", "sub_pop", "karaoke"):
+            self.flags[key].widget.state(
+                ["!disabled"] if self.flags["subtitles"].get() else ["disabled"])
         if picked:
             per = int(_num(self.per_var.get())) or 3
             text = (f"→ 코시 계정 {len(picked)}개 × {per}개 = 숏폼 {len(picked) * per}개를 "
@@ -522,6 +544,16 @@ class App:
         sf.outer.pack(fill="x")
         self.short_refs = self._ref_card(left)
         self.short_refs.master.outer.pack(fill="x", pady=(10, 0))
+        row = self._row(sf, "템플릿")
+        self.tpl_var = tk.StringVar()
+        self.tpl_box = ttk.Combobox(row, textvariable=self.tpl_var, state="readonly", width=14,
+                                    values=list(_load_templates()))
+        self.tpl_box.pack(side="left", fill="x", expand=True)
+        self.tpl_box.bind("<<ComboboxSelected>>", self._use_template)
+        ttk.Button(row, text="저장", width=5, command=self._save_template).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="삭제", width=5, command=self._delete_template).pack(side="left", padx=(6, 0))
+        Tooltip(self.tpl_box, "자주 쓰는 설정 조합(영상 종류, 길이, 디자인, 켜고 끄기, 배경음악 등)을 "
+                              "이름 붙여 저장해 두고 골라 쓰세요. 영상 목록은 저장하지 않아요.")
         row = self._row(sf, "영상 종류")
         self.guide_list = guides.load()
         names = {k: g["name"] for k, g in self.guide_list.items()}
@@ -551,38 +583,54 @@ class App:
         self.flags = {}
         ttk.Label(sf, text="켜고 끄기 (각각 따로, 마우스를 올리면 설명)",
                   style="Sub.Card.TLabel").pack(anchor="w", pady=(10, 0))
+        cols = ttk.Frame(sf, style="Card.TFrame")
+        cols.pack(fill="x")
+        cl = ttk.Frame(cols, style="Card.TFrame")
+        cl.pack(side="left", anchor="n", fill="x", expand=True)
+        cr = ttk.Frame(cols, style="Card.TFrame")
+        cr.pack(side="left", anchor="n", fill="x", expand=True)
+        on = lambda k, d="yes": c.get(k, d).lower() not in ("no", "")
+        # 왼쪽: 화면·자막 / 오른쪽: 캡컷처럼 자동으로 해 주는 편집
         self.flags["focus"] = self._check(
-            sf, "얼굴 따라가기", c["focus"] == "auto",
+            cl, "얼굴 따라가기", c["focus"] == "auto",
             "가로 영상을 세로로 자를 때 말하는 사람 얼굴이 화면 가운데 오게 따라가요.")
         self.flags["subtitles"] = self._check(
-            sf, "자막 넣기", c["subtitles"].lower() != "no",
+            cl, "자막 넣기", c["subtitles"].lower() != "no",
             "말하는 내용을 자막으로 넣어요. 끄면 자막 없이 만들어요.")
         self.flags["burned_subs"] = self._check(
-            sf, "  └ 원본에 자막 있으면 그대로 쓰기", c["burned_subs"] in ("auto", "yes"),
+            cl, "  └ 원본 자막 그대로", c["burned_subs"] in ("auto", "yes"),
             "원본 영상에 이미 자막이 박혀 있으면 새 자막을 겹쳐 넣지 않고 원본 자막이 "
             "보이게 화면을 잘라요. '자막 넣기'를 켰을 때만 쓰여요.")
+        self.flags["sub_pop"] = self._check(
+            cl, "  └ 자막 튀어나오기", on("sub_pop"),
+            "캡컷 텍스트 애니메이션처럼, 자막이 나올 때마다 살짝 커지며 튀어나와 눈길을 잡아요.")
+        self.flags["karaoke"] = self._check(
+            cl, "  └ 단어마다 색 채우기", on("karaoke", "no"),
+            "캡컷 자동 자막 템플릿처럼, 지금 말하는 단어를 초록색으로 칠해요. "
+            "젊은 층 숏폼에서 많이 써요. 켜면 강조 단어 색 대신 이 효과가 들어가요.")
         self.flags["thumbnail"] = self._check(
-            sf, "썸네일 만들기", c["thumbnail"].lower() == "yes",
+            cl, "썸네일 만들기", c["thumbnail"].lower() == "yes",
             "숏폼마다 피드에 올릴 대표 사진(PNG)을 함께 만들어요.")
         self.flags["retention"] = self._check(
-            sf, "훅 자막·중간 한마디·진행 막대 (시청 지속)", c.get("retention", "yes").lower() != "no",
+            cl, "훅 자막·진행 막대", on("retention"),
             "처음 2초 큰 글씨, 중간에 '근데 반전이…' 같은 한마디, 위쪽 진행 막대로 "
             "끝까지 보게 만들어요.")
         self.flags["fillers"] = self._check(
-            sf, "군말(음·어) 자르기", c.get("fillers", "yes").lower() != "no",
+            cr, "군말(음·어) 자르기", on("fillers"),
             "캡컷 '군말 삭제'처럼, '음', '어'만 있는 부분을 잘라서 말이 빨라져요.")
         self.flags["voice_enhance"] = self._check(
-            sf, "목소리 또렷하게", c.get("voice_enhance", "yes").lower() != "no",
+            cr, "목소리 또렷하게", on("voice_enhance"),
             "캡컷 '음성 향상'처럼, 웅웅거림과 잡음을 줄이고 소리 크기를 숏폼 기준에 맞춰요.")
-        ins = ttk.Frame(sf, style="Card.TFrame")
-        ins.pack(fill="x")
+        self.flags["auto_color"] = self._check(
+            cr, "자동 색 보정", on("auto_color"),
+            "캡컷 '자동 조정'처럼, 장면을 보고 어두우면 밝게, 뿌연 영상은 선명하게, "
+            "색이 바랬으면 채도를 조금 올려요. 괜찮은 영상은 그대로 둬요.")
         self.flags["inserts"] = self._check(
-            ins, "짤·사진 끼워 넣기", c.get("inserts", "yes").lower() != "no",
+            cr, "짤·사진 끼워 넣기", on("inserts"),
             "'짤' 폴더에 넣어 둔 사진·짧은 영상 중에서 AI가 자막에 맞는 걸 골라 1~2초 띄워요. "
             "AI는 파일 이름만 보고 고르니 이름을 내용대로 지어 주세요. 폴더가 비어 있으면 안 넣어요.")
-        self.flags["inserts"].widget.pack_configure(side="left")
-        ttk.Button(ins, text="🖼 짤 폴더", style="Link.TButton",
-                   command=self._open_inserts).pack(side="left", padx=6)
+        ttk.Button(cr, text="🖼 짤 폴더 열기", style="Link.TButton",
+                   command=self._open_inserts).pack(anchor="w", padx=(22, 0))
         row = self._row(sf, "배경음악")
         self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
                                                           BGM_SOURCES["auto"]))
@@ -702,6 +750,9 @@ class App:
         self.long_flags["long_voice_enhance"] = self._check(
             sf, "목소리 또렷하게", c.get("long_voice_enhance", "yes").lower() != "no",
             "캡컷 '음성 향상'처럼, 웅웅거림과 잡음을 줄이고 소리 크기를 유튜브 기준에 맞춰요.")
+        self.long_flags["long_auto_color"] = self._check(
+            sf, "자동 색 보정", c.get("long_auto_color", "yes").lower() != "no",
+            "캡컷 '자동 조정'처럼, 촬영본마다 어두우면 밝게, 뿌연 영상은 선명하게 맞춰요.")
         ins = ttk.Frame(sf, style="Card.TFrame")
         ins.pack(fill="x")
         self.long_flags["long_inserts"] = self._check(
@@ -904,10 +955,83 @@ class App:
             "thumbnail": yes("thumbnail"), "subtitles": yes("subtitles"),
             "retention": yes("retention"), "bgm_source": _bgm_key(self.bgm_src.get()),
             "fillers": yes("fillers"), "voice_enhance": yes("voice_enhance"),
-            "inserts": yes("inserts"),
+            "inserts": yes("inserts"), "karaoke": yes("karaoke"), "sub_pop": yes("sub_pop"),
+            "auto_color": yes("auto_color"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
+
+    # ---------- 템플릿 ----------
+
+    def _apply_values(self, v: dict[str, str]) -> None:
+        """저장해 둔 숏폼 설정을 화면에 채운다."""
+        g = self.guide_list.get(v.get("guide", ""))
+        if g:
+            self.guide_var.set(g["name"])
+        chosen = set(accounts.parse(v.get("accounts", "")))
+        for n, var in self.acct_vars.items():
+            var.set(n in chosen)
+        for key, var in (("per_account", self.per_var), ("count", self.count_var),
+                         ("min_len", self.min_var), ("max_len", self.max_var),
+                         ("speaker", self.speaker_var)):
+            if key in v:
+                var.set(v[key])
+        if "style" in v:
+            self.style_var.set(STYLE_NAMES.get(v["style"], v["style"]))
+        if "context" in v:
+            self.context.delete("1.0", "end")
+            self.context.insert("1.0", v["context"])
+        if "model" in v:
+            self.model_var.set(dict(MODELS).get(v["model"], v["model"]))
+        if "upload" in v:
+            self.upload_var.set(dict(UPLOADS).get(v["upload"], "안 함"))
+        if "bgm_source" in v:
+            self.bgm_src.set(BGM_SOURCES.get(v["bgm_source"], BGM_SOURCES["auto"]))
+        try:
+            self.bgm_var.set(float(v.get("bgm_volume", self.bgm_var.get())))
+        except ValueError:
+            pass
+        for key, var in self.flags.items():
+            if key == "focus" and "focus" in v:
+                var.set(v["focus"] == "auto")
+            elif key == "burned_subs" and key in v:
+                var.set(v[key] in ("auto", "yes"))
+            elif key in v:
+                var.set(v[key] == "yes")
+        self._sync_shorts()
+
+    def _use_template(self, _event=None) -> None:
+        name = self.tpl_var.get()
+        v = _load_templates().get(name)
+        if v:
+            self._apply_values(v)
+            self._append(f"템플릿 '{name}' 설정을 불러왔어요.\n")
+
+    def _save_template(self) -> None:
+        from tkinter import simpledialog
+        name = simpledialog.askstring("템플릿 저장", "이 설정 조합의 이름 (예: 꼴통사장 강의, 브이로그 짧게)",
+                                      initialvalue=self.tpl_var.get(), parent=self.root)
+        name = (name or "").strip()
+        if not name:
+            return
+        data = _load_templates()
+        if name in data and not messagebox.askyesno("템플릿 저장", f"'{name}'이 이미 있어요. 덮어쓸까요?"):
+            return
+        data[name] = self._values()
+        _save_templates(data)
+        self.tpl_box.configure(values=list(data))
+        self.tpl_var.set(name)
+        self._append(f"템플릿 '{name}'을 저장했어요.\n")
+
+    def _delete_template(self) -> None:
+        name = self.tpl_var.get()
+        data = _load_templates()
+        if name not in data or not messagebox.askyesno("템플릿 삭제", f"'{name}'을 지울까요?"):
+            return
+        del data[name]
+        _save_templates(data)
+        self.tpl_box.configure(values=list(data))
+        self.tpl_var.set("")
 
     def _check_fonts(self) -> None:
         """고른 계정에 필요한 글꼴이 이 컴퓨터에 있는지 보여준다."""
