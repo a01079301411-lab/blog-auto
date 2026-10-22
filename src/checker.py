@@ -12,7 +12,7 @@ import season
 from config import COMPANY_PHONE, DATA_DIR, SAMPLES_DIR
 
 MIN_CHARS, MAX_CHARS = 1700, 2000  # 목표 분량 (벗어나면 권장 기준으로 알려 줌)
-HARD_MIN_CHARS, HARD_MAX_CHARS = 1500, 2400  # 이 밖이면 발행하지 않음
+HARD_MIN_CHARS, HARD_MAX_CHARS = 1300, 3500  # 이 밖이면 발행하지 않음 (목표 밖이면 다시 쓰게 하고, 그래도 넘으면 발행은 한다)
 KEYWORD_MIN, KEYWORD_MAX = 4, 7
 MIN_QUESTION_HEADINGS = 2
 MIN_FAQ = 2
