@@ -184,6 +184,33 @@ def voice_chain() -> str:
     return ",".join(chain)
 
 
+def insert_graph(inserts: list[tuple[str, float, float]], first_idx: int, label: str,
+                 bottom: int, max_w: int = 600, max_h: int = 440) -> tuple[list[str], list[str], str]:
+    """짤·사진을 label 영상의 가운데, 아래쪽이 bottom(y)인 자리에 정해진 시간만 띄운다.
+
+    돌려주는 것: (추가할 입력 인자, 필터 줄들, 마지막 영상 이름)"""
+    inputs: list[str] = []
+    parts: list[str] = []
+    cur = label
+    for k, (path, t0, t1) in enumerate(inserts):
+        idx = first_idx + k
+        still = os.path.splitext(path)[1].lower() in IMAGE_EXTS
+        if still:
+            inputs += ["-loop", "1", "-t", f"{t1 + 0.5:.3f}", "-i", os.path.abspath(path)]
+            src_v = f"[{idx}:v]"
+        else:  # 짧은 영상·움짤: 소리 없이 그 시각부터 재생
+            inputs += ["-t", f"{t1 - t0 + 0.5:.3f}", "-i", os.path.abspath(path)]
+            src_v = f"[{idx}:v]setpts=PTS-STARTPTS+{t0:.3f}/TB,"
+        parts.append(f"{src_v}scale=w={max_w}:h={max_h}:force_original_aspect_ratio=decrease,"
+                     f"format=rgba[im{k}]")
+        nxt = f"[vi{k}]"
+        parts.append(f"{cur}[im{k}]overlay=x=(W-w)/2:y={bottom}-h:"
+                     f"enable='between(t,{t0:.3f},{t1:.3f})':"
+                     f"eof_action={'repeat' if still else 'pass'}{nxt}")
+        cur = nxt
+    return inputs, parts, cur
+
+
 def render(
     src: str,
     segments: list[Segment],
@@ -264,27 +291,11 @@ def render(
         else:
             parts.append("[vl]null[vl2]")
         # 짤·사진 끼워 넣기: 자막 바로 위 가운데에 잠깐 띄운다 (자막은 그 위에 그려진다)
-        cur = "[vl2]"
-        for k, (path, t0, t1) in enumerate(inserts or []):
-            idx, n_inputs = n_inputs, n_inputs + 1
-            still = os.path.splitext(path)[1].lower() in IMAGE_EXTS
-            if still:
-                inputs += ["-loop", "1", "-t", f"{t1 + 0.5:.3f}", "-i", os.path.abspath(path)]
-                src_v = f"[{idx}:v]"
-            else:  # 짧은 영상·움짤: 소리 없이 그 시각부터 재생
-                inputs += ["-t", f"{t1 - t0 + 0.5:.3f}", "-i", os.path.abspath(path)]
-                src_v = f"[{idx}:v]setpts=PTS-STARTPTS+{t0:.3f}/TB,"
-            parts.append(f"{src_v}scale=w=600:h=440:force_original_aspect_ratio=decrease,"
-                         f"format=rgba[im{k}]")
-            nxt = f"[vi{k}]"
-            parts.append(f"{cur}[im{k}]overlay=x=(W-w)/2:y={insert_bottom}-h:"
-                         f"enable='between(t,{t0:.3f},{t1:.3f})':"
-                         f"eof_action={'repeat' if still else 'pass'}{nxt}")
-            cur = nxt
-        if cur != "[vl2]":
-            parts.append(f"{cur}null[vl3]")
-        else:
-            parts.append("[vl2]null[vl3]")
+        ins_in, ins_parts, cur = insert_graph(inserts or [], n_inputs, "[vl2]", insert_bottom)
+        inputs += ins_in
+        n_inputs += len(inserts or [])
+        parts += ins_parts
+        parts.append(f"{cur}null[vl3]")
         fontsdir = ""
         if font_files:  # 자막 글꼴을 작업 폴더에 모아 libass가 이름으로 찾게 한다
             os.makedirs(os.path.join(work, "fonts"), exist_ok=True)

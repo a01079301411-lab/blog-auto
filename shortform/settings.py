@@ -23,6 +23,7 @@ LONG_DEFAULTS = {
     "long_frames": "yes", "long_jumpcut": "yes", "long_subtitles": "yes",
     "long_fix_subtitles": "yes", "long_chapter_titles": "yes", "long_bgm_volume": "0.10",
     "long_thumbnail": "yes", "long_model": "small", "long_font": "", "long_resolution": "auto", "long_bgm_source": "auto",
+    "long_fillers": "yes", "long_voice_enhance": "yes", "long_inserts": "yes",
 }
 
 
@@ -101,7 +102,10 @@ def long_argv(inputs: list[str], c: dict[str, str], *, plan: str | None = None,
             "--resolution", c["long_resolution"] if c["long_resolution"] in ("auto", "1080", "2160")
             else "auto",
             "--bgm-source", c["long_bgm_source"] if c["long_bgm_source"] in ("auto", "folder", "none")
-            else "auto"]
+            else "auto",
+            "--fillers", c["long_fillers"] or "yes",
+            "--voice-enhance", c["long_voice_enhance"] or "yes",
+            "--inserts", c["long_inserts"] or "yes"]
     if plan:
         argv += ["--plan", plan]
     if c.get("long_context", "").strip():

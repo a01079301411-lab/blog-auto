@@ -696,6 +696,21 @@ class App:
                                                        yes("long_commerce"))
         self.long_flags["long_subtitles"] = self._check(sf, "자막 넣기", yes("long_subtitles"))
         self.long_flags["long_thumbnail"] = self._check(sf, "썸네일 만들기", yes("long_thumbnail"))
+        self.long_flags["long_fillers"] = self._check(
+            sf, "군말(음·어) 자르기", c.get("long_fillers", "yes").lower() != "no",
+            "캡컷 '군말 삭제'처럼, '음', '어'만 있는 부분을 잘라서 말이 빨라져요.")
+        self.long_flags["long_voice_enhance"] = self._check(
+            sf, "목소리 또렷하게", c.get("long_voice_enhance", "yes").lower() != "no",
+            "캡컷 '음성 향상'처럼, 웅웅거림과 잡음을 줄이고 소리 크기를 유튜브 기준에 맞춰요.")
+        ins = ttk.Frame(sf, style="Card.TFrame")
+        ins.pack(fill="x")
+        self.long_flags["long_inserts"] = self._check(
+            ins, "짤·사진 끼워 넣기", c.get("long_inserts", "yes").lower() != "no",
+            "'짤' 폴더(숏폼과 같은 폴더)의 사진·짧은 영상 중에서 AI가 자막에 맞는 걸 골라 "
+            "1~2초 띄워요. 폴더가 비어 있으면 안 넣어요.")
+        self.long_flags["long_inserts"].widget.pack_configure(side="left")
+        ttk.Button(ins, text="🖼 짤 폴더", style="Link.TButton",
+                   command=self._open_inserts).pack(side="left", padx=6)
 
         adv = self._advanced(sf, "롱폼 고급 설정")
         ttk.Label(adv, text="채널 설명 (세계관, 출연자)", style="Card.TLabel").pack(anchor="w")
@@ -725,7 +740,7 @@ class App:
         self.long_bgm = tk.DoubleVar(value=vol)
         ttk.Scale(row, from_=0, to=0.4, variable=self.long_bgm, length=120).pack(side="left")
         for key, text in [("long_jumpcut", "말 사이 긴 무음 자르기"),
-                          ("long_fix_subtitles", "자막 오타 교정"),
+                          ("long_fix_subtitles", "AI 자막 다듬기 (오타·묻는 사람 노란색·표정 자막·짤)"),
                           ("long_chapter_titles", "챕터 제목 띄우기"),
                           ("long_frames", "장면 사진도 AI에게 보여주기"),
                           ("long_review", "만들기 전에 순서표 고치기")]:

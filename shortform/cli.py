@@ -13,7 +13,7 @@ from dataclasses import asdict
 from . import media
 from . import burnin, face, guides, review
 from .highlights import Highlight, parse_ranges, pick_highlights
-from .silence import detect_silences, keep_segments
+from .silence import detect_silences, drop_fillers, keep_segments
 from .styles import (PRESETS, account_box_style, add_retention, dump_style, load_style,
                      video_filter, view_ratio, write_account_subs, write_ass)
 from .subfix import fix_cues
@@ -24,31 +24,6 @@ from .transcribe import transcribe
 def _hms(t: float) -> str:
     t = round(t)
     return f"{t // 3600}:{t % 3600 // 60:02}:{t % 60:02}" if t >= 3600 else f"{t // 60}:{t % 60:02}"
-
-
-FILLERS = {"음", "어", "으", "엄", "흠", "음음", "어어", "으음", "어음"}
-
-
-def _drop_fillers(keeps: list[media.Segment], words) -> list[media.Segment]:
-    """캡컷 '군말 삭제'처럼: '음', '어' 같은 군말만 있는 단어를 잘라낸다."""
-    cuts = []
-    for w in words:
-        if re.sub(r"[\s.,?!~…]", "", w.text) in FILLERS and w.end - w.start >= 0.12:
-            cuts.append((w.start + 0.02, w.end - 0.02))
-    if not cuts:
-        return keeps
-    out: list[media.Segment] = []
-    for s, e in keeps:
-        cur = s
-        for a, b in cuts:
-            if b <= cur or a >= e:
-                continue
-            if a - cur >= 0.15:
-                out.append((cur, a))
-            cur = max(cur, b)
-        if e - cur >= 0.15:
-            out.append((cur, e))
-    return out or keeps
 
 
 def _cut_ranges(args, path: str, start: float, end: float) -> list[media.Segment]:
@@ -111,7 +86,7 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
     if getattr(args, "fillers", False) and transcript is not None:
         before = len(keeps)
-        keeps = _drop_fillers(keeps, words_in_range(transcript.words, start, end))
+        keeps = drop_fillers(keeps, words_in_range(transcript.words, start, end))
         if len(keeps) > before:
             print(f"  군말(음·어) {len(keeps) - before}군데 잘라냄")
     kept = sum(e - s for s, e in keeps)
@@ -390,8 +365,8 @@ def cmd_shorts(args) -> None:
 
     picks_path = os.path.join(args.output, "highlights.json")
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
-    key = (f"v4:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
-           else f"v4:{args.count}")
+    key = (f"v5:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v5:{args.count}")
     if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
         key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
@@ -709,6 +684,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="이 길이(초) 이상 말이 끊기면 잘라냄 (기본 1.0)")
     s.add_argument("--bgm-source", choices=["auto", "folder", "none"], default="auto",
                    help="배경음악: auto(분위기에 맞게 직접 만든 곡) / folder(bgm 폴더) / none")
+    s.add_argument("--fillers", type=_yesno, default=True, help="'음', '어' 군말 잘라내기 yes/no")
+    s.add_argument("--voice-enhance", type=_yesno, default=True,
+                   help="목소리 또렷하게 (잡음 줄이고 소리 크기 맞추기) yes/no")
+    s.add_argument("--inserts", type=_yesno, default=True,
+                   help="'짤' 폴더의 사진·짧은 영상을 자막에 맞춰 끼워 넣기 yes/no")
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)

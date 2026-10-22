@@ -32,8 +32,14 @@ line and end it at the end of a line. The transcript comes from speech recogniti
 infer the intended words when a line is slightly garbled.
 
 For each clip also write, in the transcript's language:
-- title: the hook headline shown above the video, 1-2 lines separated by "\\n", at
-  most 16 characters in total including spaces; follow the title rules in <video_type>. Wrap the 1-2 most striking words in curly
+- title_options: 4 different hook titles for the clip, each built on a different hook
+  type (e.g. number + question, result first, warning, secret, reaction, turn teaser).
+  Write them from the clip's single most surprising concrete fact or moment, NOT from
+  its topic. Test each one: if it could be a chapter name or a topic label ("사장 마인드",
+  "악플 해명", "직원 관리 노하우"), throw it away and write a hook instead.
+- title: the one of title_options that would win an A/B test for stopping a stranger's
+  scroll. 1-2 lines separated by "\\n", at most 16 characters in total including spaces;
+  follow the title rules in <video_type>. Wrap the 1-2 most striking words in curly
   braces; they are shown in an accent color. The first line sets up, the last line is
   the punch, e.g. "사장님 속터지는\\n{진상 직원}의 한마디" or "망하는 사장님의\\n{치명적 실수}".
   Make people stop scrolling, but do not promise anything the clip does not deliver.
@@ -78,6 +84,7 @@ SCHEMA = {
                 "properties": {
                     "start": {"type": "number", "description": "seconds"},
                     "end": {"type": "number", "description": "seconds"},
+                    "title_options": {"type": "array", "items": {"type": "string"}},
                     "title": {"type": "string", "description": "hook headline, {accent}"},
                     "label": {"type": "string"},
                     "sub_title": {"type": "string",
@@ -94,7 +101,7 @@ SCHEMA = {
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title", "label", "sub_title", "speaker", "bottom", "keywords",
+                "required": ["start", "end", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
                              "hook_text", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
@@ -124,6 +131,7 @@ class Highlight:
     rehook: str = ""     # 중간 이탈을 막는 한마디
     rehook_at: float = 0.0  # 원본 영상 기준 몇 초에 띄울지 (0이면 없음)
     bgm_mood: str = ""   # 배경음악 분위기 (bright, calm, tension, funny)
+    title_options: list[str] = field(default_factory=list)  # AI가 쓴 제목 후보들
 
 
 def split_lines(words, *, max_chars: int = 45, gap: float = 0.5) -> list[Sentence]:
@@ -196,6 +204,8 @@ def _account_brief(acct) -> str:
         "Only pick moments that fit this account's concept and audience; return fewer clips "
         "rather than clips that do not fit.",
         f"Title style for this account: {acct.title_hint.replace(' / ', chr(92) + 'n')}",
+        "Even when the account style says informational (정보형), the title must still be a "
+        "hook with a curiosity gap, not a topic label.",
         f"Each title line at most {max_chars} characters, at most 2 lines.",
         "sub_title: " + ("a short line of at most 10 characters (shown above the title or as a "
                          "badge on the thumbnail)." if uses_sub else "leave empty."),
@@ -258,7 +268,8 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
                       # 원본 기준 시간으로 저장 (검증 단계에서 시작점이 바뀌어도 그 장면에 뜨게)
                       float(h["start"]) + float(h.get("rehook_time", 0) or 0)
                       if float(h.get("rehook_time", 0) or 0) > 0 else 0.0,
-                      h.get("bgm_mood", ""))
+                      h.get("bgm_mood", ""),
+                      [clean_title(t) for t in h.get("title_options", []) if t.strip()])
             for h in json.loads(text)["highlights"]]
 
 
@@ -287,7 +298,10 @@ timestamps of the lines shown, and keep the length between {min_len:.0f} and
 sub_title by the same rules as before (keep the {{accent}} braces style); otherwise
 return them unchanged. Also check every title against the title rules in <video_type>
 (short, plain words, no "/" or other symbols, a curiosity gap with a concrete fact, not
-giving away the answer) and rewrite any title that breaks them. verdict: one Korean sentence on why it works or why it fails."""
+giving away the answer) and rewrite any title that breaks them. Return the title that
+would win an A/B test for stopping a stranger's scroll: the proposed one, one of the other
+title ideas, or a better one you write. A title that only names the clip's topic is never
+acceptable, even for informational accounts. verdict: one Korean sentence on why it works or why it fails."""
 
 VERIFY_SCHEMA = {
     "type": "object",
@@ -344,8 +358,11 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
         parts.append(f"<account>\n{_account_brief(account)}\n</account>")
     for i, h in enumerate(candidates):
         sub = f" / sub_title: {h.sub_title}" if h.sub_title else ""
+        nl = lambda t: t.replace(chr(10), chr(92) + "n")
+        opts = [o for o in h.title_options if o != h.title]
+        other = ("other title ideas: " + " | ".join(nl(o) for o in opts) + "\n") if opts else ""
         parts.append(f"<candidate id=\"{i}\">\nproposed: {h.start:.1f}-{h.end:.1f}s\n"
-                     f"title: {h.title.replace(chr(10), chr(92) + 'n')}{sub}\n"
+                     f"title: {nl(h.title)}{sub}\n{other}"
                      f"{_excerpt(lines, h)}\n</candidate>")
     with client.beta.messages.stream(
         model=MODEL,

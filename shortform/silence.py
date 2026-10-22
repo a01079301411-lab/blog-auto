@@ -88,3 +88,28 @@ def split_points(
         cuts.append(cut)
         target = cut + chunk_len
     return cuts
+
+
+FILLERS = {"음", "어", "으", "엄", "흠", "음음", "어어", "으음", "어음"}
+
+
+def drop_fillers(keeps: list[Segment], words) -> list[Segment]:
+    """캡컷 '군말 삭제'처럼: '음', '어' 같은 군말만 있는 단어를 잘라낸다."""
+    cuts = []
+    for w in words:
+        if re.sub(r"[\s.,?!~…]", "", w.text) in FILLERS and w.end - w.start >= 0.12:
+            cuts.append((w.start + 0.02, w.end - 0.02))
+    if not cuts:
+        return keeps
+    out: list[Segment] = []
+    for s, e in keeps:
+        cur = s
+        for a, b in cuts:
+            if b <= cur or a >= e:
+                continue
+            if a - cur >= 0.15:
+                out.append((cur, a))
+            cur = max(cur, b)
+        if e - cur >= 0.15:
+            out.append((cur, e))
+    return out or keeps

@@ -48,7 +48,7 @@ def files() -> dict[str, str]:
     return out
 
 
-def timeline(cues, chosen: dict[str, str]) -> list[tuple[str, float, float]]:
+def timeline(cues, chosen: dict[str, str], limit: int = 8) -> list[tuple[str, float, float]]:
     """자막 줄에 고른 짤 → (파일, 시작, 끝). 1.2~2초 보여 주고 서로 겹치지 않게."""
     out: list[tuple[str, float, float]] = []
     for c in cues:
@@ -60,4 +60,4 @@ def timeline(cues, chosen: dict[str, str]) -> list[tuple[str, float, float]]:
             continue
         end = min(max(c.end, start + 1.2), start + 2.0)
         out.append((path, start, end))
-    return out[:8]
+    return out[:limit]

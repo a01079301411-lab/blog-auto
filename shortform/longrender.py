@@ -21,8 +21,8 @@ from xml.sax.saxutils import escape
 
 from . import fonts, media
 from .longform import Edl, _hms, _safe
-from .silence import detect_silences
-from .styles import _ts, _esc
+from .silence import detect_silences, drop_fillers
+from .styles import OTHER_COLOR, _c, _esc, _note, _ts
 from .subfix import fix_cues
 from .subtitles import Cue, Word, build_cues, write_srt
 
@@ -72,14 +72,22 @@ def _jumpcut(clip: str, start: float, end: float, words: list[Word], *,
     return [(a, b) for a, b in keeps if b - a >= 0.2]
 
 
-def make_pieces(edl: Edl, transcripts, *, jumpcut: bool, min_silence: float) -> list[Piece]:
+def make_pieces(edl: Edl, transcripts, *, jumpcut: bool, min_silence: float,
+                fillers: bool = False) -> list[Piece]:
     pieces = []
+    dropped = 0
     for ch, seg in edl.kept():
         clip = edl.clips[seg.clip]
-        ranges = (_jumpcut(clip, seg.start, seg.end, transcripts[seg.clip].words,
-                           min_silence=min_silence)
+        words = transcripts[seg.clip].words
+        ranges = (_jumpcut(clip, seg.start, seg.end, words, min_silence=min_silence)
                   if jumpcut else [(seg.start, seg.end)])
+        if fillers:  # '음', '어' 같은 군말 잘라내기
+            before = len(ranges)
+            ranges = drop_fillers(ranges, [w for w in words if seg.start <= w.start < seg.end])
+            dropped += len(ranges) - before
         pieces += [Piece(seg.clip, a, b, ch) for a, b in ranges]
+    if dropped:
+        print(f"  군말(음·어) {dropped}군데 잘라냄")
     return pieces
 
 
@@ -186,14 +194,17 @@ def timeline_words(pieces: list[Piece], transcripts) -> list[list[Word]]:
     return [by_chapter[k] for k in sorted(by_chapter)]
 
 
-def make_cues(pieces, transcripts, *, fix: bool, context: str, max_chars: int = 20) -> list[Cue]:
+def make_cues(pieces, transcripts, *, fix: bool, context: str, max_chars: int = 20,
+              images: list[str] | None = None) -> list[Cue]:
+    """챕터마다 AI로 자막을 다듬는다: 오타, 말한 사람(묻는 사람은 노란색), (고민) 같은 표정 자막,
+    끼워 넣을 짤(images 중에서)."""
     cues: list[Cue] = []
     groups = timeline_words(pieces, transcripts)
     for n, words in enumerate(groups, 1):
         fixed = None
         if fix and words:
             print(f"\r  자막 다듬는 중 [{n}/{len(groups)}]", end="", flush=True)
-            fixed = fix_cues(words, max_chars=max_chars, context=context)
+            fixed = fix_cues(words, max_chars=max_chars, context=context, images=images)
         cues += fixed if fixed is not None else build_cues(
             words, max_chars=max_chars, max_duration=3.5, max_gap=0.6)
     if fix and groups:
@@ -227,6 +238,8 @@ def write_ass(path: str, cues: list[Cue], chapters: list[tuple[float, str]], tot
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         style("Sub", 72, 2, 80, 80, 64, 1, 5),
+        style("SubOther", 72, 2, 80, 80, 64, 1, 5).replace(
+            "&H00FFFFFF&,&H00FFFFFF&", f"{_c(OTHER_COLOR)},&H00FFFFFF&", 1),
         style("Chapter", 52, 7, 72, 72, 64, 3, 18, "&H70000000&"),
         style("Ad", 34, 9, 56, 56, 44, 3, 12, "&H60000000&"),
         "",
@@ -234,7 +247,9 @@ def write_ass(path: str, cues: list[Cue], chapters: list[tuple[float, str]], tot
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     for c in cues:
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Sub,,0,0,0,,{_esc(c.text)}")
+        name = "SubOther" if c.who == "other" else "Sub"
+        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,"
+                     f"{_note(c, 72)}{_esc(c.text)}")
     if chapter_cards:
         for k, (t, title) in enumerate(chapters):
             if k == 0 or not title.strip():
@@ -265,12 +280,22 @@ def _chapters_meta(path: str, chapters: list[tuple[float, str]], total: float) -
 
 def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: str | None,
            bgm_volume: float, chapters: list[tuple[float, str]], total: float,
-           loudnorm: bool = True) -> None:
+           loudnorm: bool = True, voice_enhance: bool = False,
+           inserts: list[tuple[str, float, float]] | None = None) -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory() as work:
         inputs = ["-i", os.path.abspath(body)]
         parts = []
+        # 짤·사진: 자막 바로 위 가운데에 잠깐 (자막은 그 위에 그려진다)
+        scale = H / SUB_H
+        ins_in, ins_parts, cur = media.insert_graph(
+            inserts or [], 1, "[0:v]", round(H - (64 + 72 * 1.5 + 20) * scale),
+            max_w=round(W * 0.38), max_h=round(H * 0.36))
+        inputs += ins_in
+        parts += ins_parts
+        parts.append(f"{cur}null[vbase]")
+        n_in = 1 + len(inserts or [])
         if ass:
             shutil.copyfile(ass, os.path.join(work, "subs.ass"))
             fontsdir = ""
@@ -279,15 +304,18 @@ def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: 
                 shutil.copyfile(font_path, os.path.join(work, "fonts",
                                                         "f0" + os.path.splitext(font_path)[1]))
                 fontsdir = ":fontsdir=fonts"
-            parts.append(f"[0:v]subtitles=filename=subs.ass{fontsdir}[vout]")
+            parts.append(f"[vbase]subtitles=filename=subs.ass{fontsdir}[vout]")
         else:
-            parts.append("[0:v]null[vout]")
-        voice = "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000" if loudnorm else "[0:a]anull"
+            parts.append("[vbase]null[vout]")
+        if voice_enhance:  # 캡컷 '음성 향상'처럼: 웅웅거림·잡음 줄이고 소리 크기 맞추기
+            voice = f"[0:a]{media.voice_chain()}"
+        else:
+            voice = "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000" if loudnorm else "[0:a]anull"
         if bgm:
             inputs += ["-stream_loop", "-1", "-i", os.path.abspath(bgm)]
             fade = max(total - 3.0, 0)
             parts.append(f"{voice},asplit[voice][key]")
-            parts.append(f"[1:a]aresample=48000,aformat=channel_layouts=stereo,"
+            parts.append(f"[{n_in}:a]aresample=48000,aformat=channel_layouts=stereo,"
                          f"volume={bgm_volume:.3f},atrim=0:{total:.3f},"
                          f"afade=t=in:d=1.5,afade=t=out:st={fade:.3f}:d=3[bg0]")
             parts.append("[bg0][key]sidechaincompress=threshold=0.03:ratio=6:attack=40:"
@@ -297,7 +325,7 @@ def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: 
             parts.append(f"{voice}[aout]")
         meta = os.path.join(work, "chapters.txt")
         _chapters_meta(meta, chapters, total)
-        meta_idx = 2 if bgm else 1  # 0: 이어붙인 영상, 1: 배경음악(있으면)
+        meta_idx = n_in + (1 if bgm else 0)  # 0: 이어붙인 영상, 짤들, 배경음악(있으면)
         inputs += ["-f", "ffmetadata", "-i", meta]
         with open(os.path.join(work, "filter.txt"), "w", encoding="utf-8") as f:
             f.write(";\n".join(parts))
@@ -461,7 +489,8 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     print(f"\n[출력 규격] {W}x{H}, {FPS}fps" + (f" · HDR 촬영본 {hdr}개는 색을 일반 영상에 맞게 변환"
                                                 if hdr else ""))
     print("\n[장면 자르기] 말 사이 긴 무음을 찾는 중..." if args.jumpcut else "\n[장면 자르기]")
-    pieces = make_pieces(edl, transcripts, jumpcut=args.jumpcut, min_silence=args.min_silence)
+    pieces = make_pieces(edl, transcripts, jumpcut=args.jumpcut, min_silence=args.min_silence,
+                         fillers=getattr(args, "fillers", False))
     print(f"  {len(pieces)}개 조각")
     from . import progress
     print(f"\n[장면 인코딩] {W}x{H} 규격으로 맞추는 중 (저장해 두므로 멈춰도 이어서 해요)")
@@ -483,10 +512,19 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     srt = os.path.join(out_dir, f"{name}.srt")
     if args.subtitles:
         print("\n[자막]")
-        cues = make_cues(pieces, transcripts, fix=args.fix_subtitles, context=args.context or "")
+        from . import inserts as _inserts
+        pics = _inserts.files() if getattr(args, "inserts", False) else {}
+        cues = make_cues(pieces, transcripts, fix=args.fix_subtitles, context=args.context or "",
+                         images=list(pics) or None)
+        cut_ins = _inserts.timeline(cues, pics, limit=max(8, int(total // 40)))
+        if cut_ins:
+            print(f"  짤 {len(cut_ins)}개 끼워 넣기")
+        others = sum(c.who == "other" for c in cues)
+        if others:
+            print(f"  묻는 사람 자막 {others}줄은 노란색으로")
         write_srt(cues, srt)
     else:
-        cues = []
+        cues, cut_ins = [], []
     ass = os.path.join(work, "subs.ass")
     write_ass(ass, cues, chapters, total, font=family, commerce=edl.commerce,
               chapter_cards=args.chapter_titles)
@@ -505,7 +543,8 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
           f"(영상 {_hms(total)}, 몇 분~수십 분 걸려요)")
     out = os.path.join(out_dir, f"{name}.mp4")
     finish(body, out, ass=ass, font_path=font_path, bgm=bgm, bgm_volume=args.bgm_volume,
-           chapters=chapters, total=total)
+           chapters=chapters, total=total, inserts=cut_ins,
+           voice_enhance=getattr(args, "voice_enhance", False))
     os.remove(body)
 
     durations = [media.duration(c) for c in edl.clips]
