@@ -340,8 +340,8 @@ def cmd_shorts(args) -> None:
 
     picks_path = os.path.join(args.output, "highlights.json")
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
-    key = (f"v3:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
-           else f"v3:{args.count}")
+    key = (f"v4:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v4:{args.count}")
     if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
         key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다

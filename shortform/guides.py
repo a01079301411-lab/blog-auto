@@ -15,6 +15,24 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 USER_FILE = os.path.join(ROOT, "guides.json")
+# 실제로 터진 숏폼 제목 (한 줄에 하나). 프로그램이 처음 켜질 때 만들고, 사용자가 계속 적어 넣는다.
+HITS_FILE = os.path.join(ROOT, "잘된제목.txt")
+HITS_SEED = ["연봉 1억 아내 남편 직업은?"]
+
+# 제목 규칙: 조회수를 가르는 건 제목이라 장르와 상관없이 지킨다
+TITLE_RULES = """\
+Title rules (the title decides whether people stop scrolling):
+- Short: at most 16 characters in total including spaces, 1-2 lines (split with \\n).
+  If a shorter title works, use it.
+- Plain words only: no "/", "|", "·", ":", brackets or other symbols ("?" at the end is
+  fine). Never write "/" to separate lines.
+- Build a curiosity gap the clip answers: a concrete, surprising fact (a number, money,
+  a job, a relationship, a place) + an open question or unexpected outcome.
+  e.g. "연봉 1억 아내\\n남편 직업은?" (number + people + question; the answer is in the clip).
+- Concrete beats abstract. Avoid report words such as 해명, 정리, 이야기, 공개, 소개, 방법
+  unless nothing else fits, and never stack two ideas in one title.
+- Never reveal the answer or punchline in the title.
+- Write it the way the viewer would say it, not like a news headline."""
 
 # 장르와 상관없이 조회수·시청 지속이 높은 숏폼에서 반복해서 보이는 패턴
 COMMON = """\
@@ -47,8 +65,8 @@ BUILTIN: dict[str, dict] = {
             "A talk, lecture, interview or podcast. Pick moments with a provocative claim, a "
             "blunt opinion, a specific number, a common mistake, or a short story with a turn "
             "that ends in a clear lesson or punchline. Best hooks: 2, 4, 6, 9, 11."),
-        "title": ("도발적인 주장·숫자·실수로 시작. 예: 사장님 속터지는\\n{진상 직원}의 한마디 / "
-                  "월매출 1억 찍고\\n{망한 이유} / 직원 뽑을 때\\n{이 질문} 하세요"),
+        "title": ("도발적인 주장·숫자·실수로 시작. 예: 사장님 속터지는\\n{진상 직원}의 한마디; "
+                  "월매출 1억 찍고\\n{망한 이유}; 직원 뽑을 때\\n{이 질문} 하세요"),
         "avoid": "Long theory without an example; greetings; references to slides the viewer can't see.",
     },
     "vlog": {
@@ -63,8 +81,8 @@ BUILTIN: dict[str, dict] = {
             "small win in a hobby or at work. The first 2 seconds must already show the situation "
             "or the reaction. Best hooks: 1, 3, 5, 10. If the context describes a channel concept "
             "or nicknames (e.g. daughters called 'girlfriends'), keep it."),
-        "title": ("위트 있는 반말 제목, 세계관 살리기. 예: 여친이 셋인 유부남의\\n{현실 데이트} / "
-                  "첫째 여친의\\n{팩트 폭행} / 아빠가 {울컥}한\\n딸의 한마디"),
+        "title": ("위트 있는 반말 제목, 세계관 살리기. 예: 여친이 셋인 유부남의\\n{현실 데이트}; "
+                  "첫째 여친의\\n{팩트 폭행}; 아빠가 {울컥}한\\n딸의 한마디"),
         "avoid": "Anything exposing a child's school, address or something embarrassing for the child.",
     },
     "moving": {
@@ -76,8 +94,8 @@ BUILTIN: dict[str, dict] = {
             "moments (perfect packing, a tight staircase, a full truck), practical tips a "
             "customer can use, before/after contrasts, and lines only a professional would say. "
             "Best hooks: 1, 6, 7, 9."),
-        "title": ("꿀팁·반전·전후. 예: 이사할 때 {이것} 모르면\\n돈 두 번 냅니다 / "
-                  "냉장고 옮기기 전\\n{꼭 할 일} / 3시간 걸린 짐이\\n{1톤 트럭} 하나에"),
+        "title": ("꿀팁·반전·전후. 예: 이사할 때 {이것} 모르면\\n돈 두 번 냅니다; "
+                  "냉장고 옮기기 전\\n{꼭 할 일}; 3시간 걸린 짐이\\n{1톤 트럭} 하나에"),
         "avoid": "A customer's face, address or private belongings in detail.",
     },
     "commerce": {
@@ -89,7 +107,7 @@ BUILTIN: dict[str, dict] = {
             "product -> visible change, real usage, honest reactions and clear before/after. Do "
             "not exaggerate beyond what is shown. If it is a paid ad, the caption must start "
             "with '#광고'. Best hooks: 5, 7, 1."),
-        "title": ("문제 → 해결이 보이게. 예: 매일 아프던 손목\\n{이걸로} 끝냈습니다 / "
+        "title": ("문제 → 해결이 보이게. 예: 매일 아프던 손목\\n{이걸로} 끝냈습니다; "
                   "써보고 놀란\\n{진짜 차이}"),
         "avoid": "Claims not shown in the footage (medical effects, 'best', 'No.1').",
     },
@@ -101,7 +119,7 @@ BUILTIN: dict[str, dict] = {
             "Comedy, variety or reaction footage. Pick the setups that pay off with a laugh, "
             "awkward silences, unexpected answers, fails and strong reactions. Keep the setup "
             "short (under 5 s) and end right on the laugh. Best hooks: 10, 3, 8."),
-        "title": ("상황을 짧게 비틀기. 예: 이걸 이렇게\\n{받아친다고?} / 아무도 예상 못한\\n{마지막 대답}"),
+        "title": ("상황을 짧게 비틀기. 예: 이걸 이렇게\\n{받아친다고?}; 아무도 예상 못한\\n{마지막 대답}"),
         "avoid": "Mocking someone who is not in on the joke.",
     },
     "story": {
@@ -112,7 +130,7 @@ BUILTIN: dict[str, dict] = {
             "Personal stories, confessions, turning points and emotional moments. Pick a story "
             "with a clear before, a low point and a turn, told in one breath; or a single line "
             "that hits hard. Best hooks: 11, 4, 3."),
-        "title": ("한 문장 고백형. 예: 빚 3억에서\\n{다시 시작한} 날 / 그때 아버지가\\n{하신 말}"),
+        "title": ("한 문장 고백형. 예: 빚 3억에서\\n{다시 시작한} 날; 그때 아버지가\\n{하신 말}"),
         "avoid": "Cutting before the turn of the story.",
     },
     "howto": {
@@ -123,7 +141,7 @@ BUILTIN: dict[str, dict] = {
             "Tips, how-tos and explainers. Pick one tip per short that is useful on its own and "
             "can be shown or said in under a minute, ideally with a visible result. Best hooks: "
             "6, 2, 1, 7."),
-        "title": ("결과·실수 중심. 예: 이거 하나로\\n{30분} 아낍니다 / 다들 {거꾸로}\\n하고 있어요"),
+        "title": ("결과·실수 중심. 예: 이거 하나로\\n{30분} 아낍니다; 다들 {거꾸로}\\n하고 있어요"),
         "avoid": "Lists of many tips in one clip; vague tips without a concrete step.",
     },
     "custom": {
@@ -154,10 +172,29 @@ def get(key: str | None) -> dict:
     return guides.get(key or "lecture", guides["lecture"])
 
 
+def hit_titles() -> list[str]:
+    """잘된제목.txt의 제목들. 파일이 없으면 기본 제목으로 만든다."""
+    try:
+        if not os.path.exists(HITS_FILE):
+            with open(HITS_FILE, "w", encoding="utf-8-sig") as f:
+                f.write("# 조회수가 잘 나온 숏폼 제목을 한 줄에 하나씩 적어 주세요. AI가 이 모양을 따라 해요.\n")
+                f.write("\n".join(HITS_SEED) + "\n")
+        with open(HITS_FILE, encoding="utf-8-sig") as f:
+            return [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+    except OSError:
+        return list(HITS_SEED)
+
+
 def brief(key: str | None) -> str:
     """Claude에게 줄 가이드 글 (하이라이트 고르기·검증·제목 쓰기에 쓴다)."""
     g = get(key)
-    lines = [COMMON, "", f"Video type: {g['name']}"]
+    lines = [COMMON, "", TITLE_RULES]
+    hits = hit_titles()[-15:]
+    if hits:
+        lines.append("Titles of this creator's shorts that went viral (copy their shape and length, "
+                     "not their words):")
+        lines += [f"- {t}" for t in hits]
+    lines += ["", f"Video type: {g['name']}"]
     if g.get("focus"):
         lines.append(g["focus"])
     if g.get("title"):

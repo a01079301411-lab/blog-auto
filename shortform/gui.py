@@ -575,6 +575,8 @@ class App:
                      state="readonly", width=24).pack(side="left")
         ttk.Button(sf, text="📈 성과 기록 열기 (조회수 적기)", style="Link.TButton",
                    command=self._open_performance).pack(anchor="w", pady=(6, 0))
+        ttk.Button(sf, text="🔥 잘된 제목 적기 (AI가 따라 해요)", style="Link.TButton",
+                   command=self._open_hits).pack(anchor="w")
 
         adv = self._advanced(sf, "숏폼 고급 설정")
         ttk.Label(adv, text="영상 설명 (누가, 무슨 내용인지)", style="Card.TLabel").pack(anchor="w")
@@ -1077,6 +1079,13 @@ class App:
                             "따라 해요. (3개 이상 쌓이면 반영)\n\n유튜브 쇼츠 링크를 적어 두면 조회수는 "
                             "프로그램이 알아서 가져와요 (유튜브 연결이 되어 있을 때).")
         _open_folder(path)
+
+    def _open_hits(self) -> None:
+        guides.hit_titles()  # 파일이 없으면 만든다
+        messagebox.showinfo("잘된 제목", "조회수가 잘 나온 숏폼 제목을 한 줄에 하나씩 적고 저장하세요.\n\n"
+                            "AI가 제목을 쓸 때 이 제목들의 길이와 모양(숫자 + 사람 + 질문 등)을 "
+                            "따라 해요. 최근에 적은 15개까지 써요.")
+        _open_folder(guides.HITS_FILE)
 
     def _show_results(self) -> None:
         if self.last_output and os.path.isdir(self.last_output):

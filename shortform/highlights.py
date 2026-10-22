@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 
@@ -31,8 +32,8 @@ line and end it at the end of a line. The transcript comes from speech recogniti
 infer the intended words when a line is slightly garbled.
 
 For each clip also write, in the transcript's language:
-- title: the hook headline shown above the video, 2 lines (at most 3) separated by
-  "\\n", each line at most 13 characters. Wrap the 1-2 most striking words in curly
+- title: the hook headline shown above the video, 1-2 lines separated by "\\n", at
+  most 16 characters in total including spaces; follow the title rules in <video_type>. Wrap the 1-2 most striking words in curly
   braces; they are shown in an accent color. The first line sets up, the last line is
   the punch, e.g. "사장님 속터지는\\n{진상 직원}의 한마디" or "망하는 사장님의\\n{치명적 실수}".
   Make people stop scrolling, but do not promise anything the clip does not deliver.
@@ -171,6 +172,17 @@ def _windows(sentences: list[Sentence], max_chars: int) -> list[list[Sentence]]:
     return windows
 
 
+def clean_title(title: str) -> str:
+    """AI가 쓴 제목 정리: 줄바꿈 표시(\\n, ' / ')를 진짜 줄바꿈으로, 화면에 어색한 기호는 뺀다."""
+    t = title.replace("\\n", "\n")
+    if "\n" not in t and "/" in t:  # '앞줄 / 뒷줄'로 쓴 경우
+        t = re.sub(r"\s*/\s*", "\n", t, count=1)
+    t = re.sub(r"\s*[/|·]\s*", " ", t)
+    t = re.sub(r"[\[\]()<>:;~]", "", t)
+    lines = [" ".join(ln.split()) for ln in t.split("\n")]
+    return "\n".join(ln for ln in lines if ln.strip("{} "))
+
+
 def _account_brief(acct) -> str:
     """계정 컨셉과 이 계정 가이드에 맞는 글자 작성 요령."""
     max_chars = max(8, int(960 / (acct.video.title.size * 0.92)))
@@ -182,7 +194,7 @@ def _account_brief(acct) -> str:
         f"Profile tone: {acct.bio}",
         "Only pick moments that fit this account's concept and audience; return fewer clips "
         "rather than clips that do not fit.",
-        f"Title style for this account: {acct.title_hint}",
+        f"Title style for this account: {acct.title_hint.replace(' / ', chr(92) + 'n')}",
         f"Each title line at most {max_chars} characters, at most 2 lines.",
         "sub_title: " + ("a short line of at most 10 characters (shown above the title or as a "
                          "badge on the thumbnail)." if uses_sub else "leave empty."),
@@ -237,7 +249,7 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
     if response.stop_reason == "max_tokens":
         raise RuntimeError("응답이 너무 길어 잘렸습니다. --count를 줄여 보세요.")
     text = next(b.text for b in response.content if b.type == "text")
-    return [Highlight(float(h["start"]), float(h["end"]), h["title"].replace("\\n", "\n"),
+    return [Highlight(float(h["start"]), float(h["end"]), clean_title(h["title"]),
                       h["reason"], int(h["score"]), h["keywords"], h["caption"],
                       h["label"], h["speaker"], h["bottom"], h.get("sub_title", ""),
                       account.no if account is not None else 0,
@@ -272,7 +284,9 @@ preamble) and end right after the payoff line (drop trailing filler). Use only
 timestamps of the lines shown, and keep the length between {min_len:.0f} and
 {max_len:.0f} seconds. If the boundaries change what the clip says, rewrite title and
 sub_title by the same rules as before (keep the {{accent}} braces style); otherwise
-return them unchanged. verdict: one Korean sentence on why it works or why it fails."""
+return them unchanged. Also check every title against the title rules in <video_type>
+(short, plain words, no "/" or other symbols, a curiosity gap with a concrete fact, not
+giving away the answer) and rewrite any title that breaks them. verdict: one Korean sentence on why it works or why it fails."""
 
 VERIFY_SCHEMA = {
     "type": "object",
@@ -330,7 +344,7 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
     for i, h in enumerate(candidates):
         sub = f" / sub_title: {h.sub_title}" if h.sub_title else ""
         parts.append(f"<candidate id=\"{i}\">\nproposed: {h.start:.1f}-{h.end:.1f}s\n"
-                     f"title: {h.title.replace(chr(10), ' / ')}{sub}\n"
+                     f"title: {h.title.replace(chr(10), chr(92) + 'n')}{sub}\n"
                      f"{_excerpt(lines, h)}\n</candidate>")
     with client.beta.messages.stream(
         model=MODEL,
@@ -357,7 +371,7 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
         if r["end"] > r["start"]:
             h.start, h.end = float(r["start"]), float(r["end"])
         if r["title"].strip():
-            h.title = r["title"].replace("\\n", "\n")
+            h.title = clean_title(r["title"])
         if r["sub_title"].strip():
             h.sub_title = r["sub_title"]
         h.reason = f"{r['verdict']} (훅 {r['hook']}·결론 {r['payoff']}·이해 {r['standalone']}·컨셉 {r['fit']})"
