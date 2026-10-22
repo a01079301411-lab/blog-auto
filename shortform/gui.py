@@ -163,6 +163,47 @@ def _num(text: str) -> float:
     return float(m.group()) if m else 0.0
 
 
+class ScrollFrame(ttk.Frame):
+    """내용이 창보다 길면 세로로 내려 볼 수 있는 상자 (마우스 휠 지원). 내용은 .inner에 넣는다."""
+
+    def __init__(self, parent: tk.Misc) -> None:
+        super().__init__(parent, style="Panel.TFrame")
+        self.canvas = tk.Canvas(self, background=PANEL, highlightthickness=0, borderwidth=0)
+        self.bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas, style="Panel.TFrame")
+        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.bar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.inner.bind("<Configure>", self._resize)
+        self.canvas.bind("<Configure>", self._resize)
+        self.bind_all("<MouseWheel>", self._wheel, add="+")
+        self.bind_all("<Button-4>", self._wheel, add="+")
+        self.bind_all("<Button-5>", self._wheel, add="+")
+
+    def _resize(self, _event=None) -> None:
+        self.canvas.itemconfigure(self._win, width=self.canvas.winfo_width())
+        need = self.inner.winfo_reqheight()
+        self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), need))
+        if need > self.canvas.winfo_height() + 2:  # 넘칠 때만 스크롤 막대
+            if not self.bar.winfo_ismapped():
+                self.bar.pack(side="right", fill="y", before=self.canvas)
+        elif self.bar.winfo_ismapped():
+            self.bar.pack_forget()
+            self.canvas.yview_moveto(0)
+
+    def _wheel(self, event) -> None:
+        if not self.winfo_ismapped() or not self.bar.winfo_ismapped():
+            return
+        w = event.widget
+        # 마우스가 이 상자 위에 있을 때만, 목록·글 칸 안에서는 그 칸이 스크롤되게 둔다
+        if not str(w).startswith(str(self)) or isinstance(w, (tk.Text, tk.Listbox)):
+            return
+        if getattr(event, "num", 0) == 4 or getattr(event, "delta", 0) > 0:
+            self.canvas.yview_scroll(-1, "units")
+        else:
+            self.canvas.yview_scroll(1, "units")
+
+
 class Tooltip:
     """마우스를 올리면 작은 설명 상자를 보여 준다."""
 
@@ -428,29 +469,12 @@ class App:
         ttk.Label(top, text="✂  자동 편집기", style="Logo.TLabel").pack(side="left")
         ttk.Label(top, text=f"v{__version__}", style="Sub.TLabel").pack(side="left", padx=(8, 0),
                                                                         pady=(6, 0))
-        self.tabs = ttk.Notebook(main)
-        self.tabs.pack(fill="x", pady=(10, 0))
-        short = ttk.Frame(self.tabs, style="Panel.TFrame", padding=12)
-        self.long_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=12)
-        self.tabs.add(short, text="숏폼 만들기")
-        self.tabs.add(self.long_tab, text="롱폼 만들기")
-        self.tabs.bind("<<NotebookTabChanged>>", self._on_tab)
-        self._build_short(short)
-        self._build_long(self.long_tab)
-
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            kf = ttk.Frame(main)
-            kf.pack(fill="x", pady=(8, 0))
-            ttk.Label(kf, text="Claude API 키", style="Warn.TLabel").pack(side="left")
-            self.key_var = tk.StringVar()
-            ttk.Entry(kf, textvariable=self.key_var, show="•", width=50).pack(side="left", padx=8)
-            ttk.Button(kf, text="저장", command=self._save_key).pack(side="left")
-        else:
-            self.key_var = None
-
-        # 실행 줄
+        # 아래: 실행 버튼 줄과 진행 막대. 창이 작아도 늘 보이게 탭보다 먼저 아래에 붙인다
+        self.bar = ttk.Progressbar(main, mode="determinate", maximum=100,
+                                   style="Accent.Horizontal.TProgressbar")
+        self.bar.pack(side="bottom", fill="x", pady=(10, 4))
         rf = ttk.Frame(main)
-        rf.pack(fill="x", pady=(12, 0))
+        rf.pack(side="bottom", fill="x", pady=(10, 0))
         self.start_btn = ttk.Button(rf, text="▶  숏폼 만들기", style="Accent.TButton",
                                     command=self._start)
         self.start_btn.pack(side="left")
@@ -467,9 +491,30 @@ class App:
         self.progress_text = ttk.Label(rf, text="", style="Sub.TLabel")
         self.progress_text.pack(side="left", padx=(12, 0))
 
-        self.bar = ttk.Progressbar(main, mode="determinate", maximum=100,
-                                   style="Accent.Horizontal.TProgressbar")
-        self.bar.pack(fill="x", pady=(12, 8))
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            kf = ttk.Frame(main)
+            kf.pack(side="bottom", fill="x", pady=(8, 0))
+            ttk.Label(kf, text="Claude API 키", style="Warn.TLabel").pack(side="left")
+            self.key_var = tk.StringVar()
+            ttk.Entry(kf, textvariable=self.key_var, show="•", width=50).pack(side="left", padx=8)
+            ttk.Button(kf, text="저장", command=self._save_key).pack(side="left")
+        else:
+            self.key_var = None
+
+        # 가운데: 숏폼/롱폼 탭. 내용이 창보다 길면 마우스 휠로 내려 볼 수 있다
+        self.tabs = ttk.Notebook(main)
+        self.tabs.pack(fill="both", expand=True, pady=(10, 0))
+        short_box = ScrollFrame(self.tabs)
+        long_box = ScrollFrame(self.tabs)
+        short = ttk.Frame(short_box.inner, style="Panel.TFrame", padding=12)
+        short.pack(fill="both", expand=True)
+        self.long_tab = ttk.Frame(long_box.inner, style="Panel.TFrame", padding=12)
+        self.long_tab.pack(fill="both", expand=True)
+        self.tabs.add(short_box, text="숏폼 만들기")
+        self.tabs.add(long_box, text="롱폼 만들기")
+        self.tabs.bind("<<NotebookTabChanged>>", self._on_tab)
+        self._build_short(short)
+        self._build_long(self.long_tab)
 
         # 오른쪽: 진행 기록 (위에서 아래까지 길게)
         lf = ttk.Frame(outer, style="Card.TFrame", padding=(14, 12))
