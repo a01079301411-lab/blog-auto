@@ -31,6 +31,9 @@ Title rules (the title decides whether people stop scrolling):
   e.g. "연봉 1억 아내\\n남편 직업은?" (number + people + question; the answer is in the clip).
 - Concrete beats abstract. Avoid report words such as 해명, 정리, 이야기, 공개, 소개, 방법
   unless nothing else fits, and never stack two ideas in one title.
+- Use the number viewers measure themselves against (연봉 1억, 월 300, 30평) even when the
+  real figure is bigger: understating is fine (someone earning 월 1억 also earns 연봉 1억),
+  overstating never. A reachable, familiar number feels real; a huge one feels fake.
 - Never reveal the answer or punchline in the title.
 - Write it the way the viewer would say it, not like a news headline."""
 
@@ -52,6 +55,10 @@ Hook types for the first 1-2 seconds (pick the one the footage really supports):
 11. Unfinished line: start mid-sentence on the most charged words (open loop).
 Story shapes that hold attention: problem -> solution, expectation -> twist,
 before -> after, situation -> conflict -> resolution, claim -> proof.
+Q&A chain (works very well for interviews and talks): start at the question the title
+asks, give the unexpected answer within 3 seconds, then a follow-up question and a bigger
+punchline, and stop there. e.g. "남편 직업은?" -> "제 매니저예요, 제가 고용했어요" ->
+"월급 얼마 받아?" -> "매번 달라요" -> the negotiation punchline (about 20 seconds in all).
 Pacing: something new every 3-5 seconds (a new point, emotion, face or image).
 One idea per short; drop side stories.
 Ending: stop right after the payoff, no outro, so the loop restarts and viewers rewatch."""

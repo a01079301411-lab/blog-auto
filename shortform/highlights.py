@@ -40,7 +40,8 @@ For each clip also write, in the transcript's language:
 - label: a short teaser shown in a small badge above the title, at most 10 characters,
   e.g. "당신만 몰랐던..".
 - speaker: who is talking, as "name / role" (e.g. "권기준 / 꼴통사장 대표"), using the
-  information about the video when available.
+  information about the video when available; or, when the clip is a situation rather
+  than a talk, a short situation note instead (e.g. "남편과 월급 협상 중").
 - bottom: a one-line viewer reaction shown at the bottom, at most 14 characters,
   e.g. "나 같아도 열 받겠다".
 - keywords: 2-5 words or short phrases that appear verbatim in the clip's speech and
