@@ -32,11 +32,17 @@ LINK_RE = re.compile(r"\[링크:\s*(\d+)\s*\]")
 # 매 글에 반복되던 상투 문장 (독자가 넘겨 버린다)
 STOCK_PHRASES = ("끝까지 보시면", "끝까지 읽으시면", "아시게 됩니다", "들어보셨죠", "들어보셨을")
 REPEAT_MIN_CHARS = 20
-SOFT = "[권장] "  # 이 표시가 붙은 실패는 발행을 막지 않는다
+SOFT = "[권장] "  # 이 표시가 붙은 실패는 발행을 막지 않고, 다시 쓰게 하지도 않는다 (알림으로만)
+FIX = "[보완] "  # 이 표시가 붙은 실패는 한 번 다시 쓰게 하지만, 그래도 남으면 발행은 한다
 
 
 def hard_fails(fails):
-    """발행을 막는 실패만 (권장 기준은 뺀다)."""
+    """발행을 막는 실패만 (권장, 보완 기준은 뺀다)."""
+    return [f for f in fails if not f.startswith((SOFT, FIX))]
+
+
+def rewrite_fails(fails):
+    """다시 쓰게 할 실패 (발행을 막는 것 + 보완)."""
     return [f for f in fails if not f.startswith(SOFT)]  # 이 길이 이상 같은 문장이 두 번 나오면 반복으로 본다
 
 
@@ -94,10 +100,10 @@ def check(post, topic, photo_set=None, related=None):
         fails.append(f"제목에 메인 키워드 '{topic['keyword']}'가 없어요.")
     first_sentences = re.split(r"(?<=[.?!])\s+", " ".join(lines))[:3]
     if not kw.search(" ".join(first_sentences)):
-        fails.append(f"첫 3문장 안에 메인 키워드 '{topic['keyword']}'가 없어요.")
+        fails.append(FIX + f"첫 3문장 안에 메인 키워드 '{topic['keyword']}'가 없어요.")
     count = len(kw.findall(title + "\n" + plain))
     if not KEYWORD_MIN <= count <= KEYWORD_MAX:
-        fails.append(f"메인 키워드가 제목+본문에 {count}번 나와요. {KEYWORD_MIN}~{KEYWORD_MAX}번이어야 해요.")
+        fails.append(FIX + f"메인 키워드가 제목+본문에 {count}번 나와요. {KEYWORD_MIN}~{KEYWORD_MAX}번이어야 해요.")
 
     # 3. 질문형 소제목, FAQ
     headings = [l.lstrip("#").strip() for l in body.splitlines() if l.strip().startswith("#")]
@@ -105,17 +111,17 @@ def check(post, topic, photo_set=None, related=None):
     if not headings:
         fails.append("소제목이 없어요. 소제목은 '## '로 시작하는 줄에 따로 쓰세요.")
     elif len(questions) < MIN_QUESTION_HEADINGS:
-        fails.append(
+        fails.append(FIX +
             f"질문형 소제목이 {len(questions)}개예요. '## '로 시작하는 소제목 중 {MIN_QUESTION_HEADINGS}개 이상을 "
             "물음표로 끝나는 질문으로 쓰세요. 예: ## 몇 달 맡기면 보관료는 얼마나 드나요?"
         )
     faq = sum(1 for l in lines if re.match(r"^Q\s*[.:]", l))
     if faq < MIN_FAQ:
-        fails.append(f"FAQ가 {faq}개예요. {MIN_FAQ}개 이상이어야 해요.")
+        fails.append(FIX + f"FAQ가 {faq}개예요. {MIN_FAQ}개 이상이어야 해요.")
 
     # 4. 회사 팩트
     if len(post.get("used_facts", [])) < MIN_FACTS:
-        fails.append(f"회사 팩트가 {MIN_FACTS}개 이상 들어가야 해요.")
+        fails.append(FIX + f"회사 팩트가 {MIN_FACTS}개 이상 들어가야 해요.")
 
     # 5. 전화번호와 연락 유도 (중간 1회 + 마무리 1회)
     if COMPANY_PHONE and COMPANY_PHONE not in "\n".join(lines[-15:]):
@@ -145,18 +151,18 @@ def check(post, topic, photo_set=None, related=None):
         fails.append("목록에 없는 사진을 썼어요: " + ", ".join(unknown))
     used = set(PHOTO_RE.findall(body)) & allowed
     if allowed and len(used) < min(len(allowed), MIN_PHOTOS):
-        fails.append(f"사진을 {len(used)}장만 썼어요. 받은 사진 {len(allowed)}장 중 "
+        fails.append(FIX + f"사진을 {len(used)}장만 썼어요. 받은 사진 {len(allowed)}장 중 "
                      f"{min(len(allowed), MIN_PHOTOS)}장 이상을 소제목마다 나눠 넣으세요.")
 
     # 8. 내부링크: 후보가 있으면 1~3개, 없는 번호는 안 됨
     numbers = [int(n) for n in LINK_RE.findall(body)]
     related = related or []
     if [n for n in numbers if not 1 <= n <= len(related)]:
-        fails.append("없는 번호의 내부링크를 썼어요. related_posts 번호만 쓰세요.")
+        fails.append(FIX + "없는 번호의 내부링크를 썼어요. related_posts 번호만 쓰세요.")
     if related and not numbers:
-        fails.append("관련 글이 있는데 내부링크가 없어요. 1~3개 연결하세요.")
+        fails.append(FIX + "관련 글이 있는데 내부링크가 없어요. 1~3개 연결하세요.")
     if len(numbers) > MAX_LINKS:
-        fails.append(f"내부링크가 {len(numbers)}개예요. {MAX_LINKS}개 이하로 줄이세요.")
+        fails.append(FIX + f"내부링크가 {len(numbers)}개예요. {MAX_LINKS}개 이하로 줄이세요.")
 
     # 9. 매번 다르게: 샘플 글, 최근 글과 제목·첫 문장이 비슷하면 안 됨
     def similar(a, b):
@@ -164,15 +170,15 @@ def check(post, topic, photo_set=None, related=None):
 
     sample = sample_title()
     if sample and similar(title, sample) >= SIMILAR_SAMPLE_TITLE:
-        fails.append(f"샘플 글 제목과 문장 구조가 너무 비슷해요: {sample}")
+        fails.append(FIX + f"샘플 글 제목과 문장 구조가 너무 비슷해요: {sample}")
     first = formatter.opening(formatter.format_body(body))
     for record in history.within_days(history.load(), 60):
         if similar(title, record.get("title", "")) >= SIMILAR_TITLE:
-            fails.append(f"최근 글 제목과 너무 비슷해요: {record['title']}")
+            fails.append(FIX + f"최근 글 제목과 너무 비슷해요: {record['title']}")
             break
     for record in history.load()[-10:]:
         if record.get("opening") and similar(first, record["opening"]) >= SIMILAR_OPENING:
-            fails.append(f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
+            fails.append(FIX + f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
             break
 
     # 계절은 사실 오류라 발행을 막는다.

@@ -10,6 +10,7 @@ import logging
 
 import anthropic
 
+import autofix
 import formatter
 import history
 import links
@@ -147,4 +148,6 @@ def generate(topic, photo_set, related=None, feedback=None):
     post["quote"] = formatter.sanitize(post.get("quote", ""))
     post["photo_captions"] = {c["file"]: formatter.sanitize(c["caption"]) for c in post["photo_captions"]}
     post["tags"] = [t.replace(" ", "").lstrip("#") for t in post["tags"] if t.strip()]
+    for note in autofix.fix(post, photo_set):
+        log.info("자동 수정: %s", note)
     return post
