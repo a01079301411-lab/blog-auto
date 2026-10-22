@@ -230,4 +230,5 @@ def mood_for(guide: str = "", hint: str = "") -> str:
         if hint in (key, name):
             return key
     return {"vlog": "bright", "lecture": "tension", "moving": "bright",
-            "commerce": "bright"}.get(guide, "bright")
+            "commerce": "bright", "funny": "funny", "story": "calm",
+            "howto": "bright"}.get(guide, "bright")

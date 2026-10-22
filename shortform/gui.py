@@ -93,8 +93,8 @@ def apply_theme(root: tk.Misc, family: str) -> None:
         style.configure(name, background=bg, foreground=FG, indicatorbackground=FIELD,
                         indicatorforeground=ACCENT_TEXT, indicatormargin=(0, 0, 8, 0),
                         padding=(0, 2))
-        style.map(name, background=[("active", bg)],
-                  indicatorbackground=[("selected", ACCENT), ("active", LINE)],
+        style.map(name, background=[("active", bg)], foreground=[("disabled", "#5c5c66")],
+                  indicatorbackground=[("disabled", LINE), ("selected", ACCENT), ("active", LINE)],
                   indicatorforeground=[("selected", ACCENT_TEXT)])
 
     for name in ("TEntry", "TSpinbox", "TCombobox"):
@@ -102,7 +102,8 @@ def apply_theme(root: tk.Misc, family: str) -> None:
                         bordercolor=LINE, lightcolor=FIELD, darkcolor=FIELD, padding=(6, 4),
                         arrowcolor=FG)
         style.map(name, bordercolor=[("focus", ACCENT)], lightcolor=[("focus", ACCENT)],
-                  fieldbackground=[("readonly", FIELD)], foreground=[("readonly", FG)])
+                  fieldbackground=[("readonly", FIELD)],
+                  foreground=[("disabled", "#5c5c66"), ("readonly", FG)])
     root.option_add("*TCombobox*Listbox.background", FIELD)
     root.option_add("*TCombobox*Listbox.foreground", FG)
     root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
@@ -160,6 +161,32 @@ def _num(text: str) -> float:
     import re
     m = re.search(r"\d+(?:\.\d+)?", str(text))
     return float(m.group()) if m else 0.0
+
+
+class Tooltip:
+    """마우스를 올리면 작은 설명 상자를 보여 준다."""
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget, self.text, self.tip = widget, text, None
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<ButtonPress>", self.hide, add="+")
+
+    def show(self, _event=None) -> None:
+        if self.tip:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=self.text, background=FIELD, foreground=FG, relief="solid",
+                 borderwidth=1, wraplength=320, justify="left", padx=8, pady=5).pack()
+
+    def hide(self, _event=None) -> None:
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
 
 
 def _python() -> str:
@@ -318,8 +345,9 @@ class App:
         if self._guide_key() != "lecture" and any(v.get() for v in self.acct_vars.values()):
             for v in self.acct_vars.values():  # 코시 계정 디자인은 강의 영상용
                 v.set(False)
-            self._append("영상 종류를 바꿔서 코시 인스타 계정 선택을 풀었어요 "
-                         "(계정 가이드는 강의 영상용이에요).\n")
+            self._append("영상 종류를 바꿔서 코시 계정 디자인 선택을 풀었어요 "
+                         "(계정 디자인은 강의 영상용이에요).\n")
+        self._sync_shorts()
         self._append(f"영상 종류: {g['name']} (영상 설명·인물 소개는 [고급 설정]에서 고칠 수 있어요)\n")
 
     def _row(self, parent, label: str) -> ttk.Frame:
@@ -328,11 +356,39 @@ class App:
         ttk.Label(row, text=label, style="Card.TLabel", width=12).pack(side="left")
         return row
 
-    def _check(self, parent, text: str, value: bool) -> tk.BooleanVar:
+    def _check(self, parent, text: str, value: bool, tip: str = "") -> tk.BooleanVar:
         var = tk.BooleanVar(value=value)
-        ttk.Checkbutton(parent, text=text, variable=var, style="Card.TCheckbutton").pack(
-            anchor="w", pady=2)
+        cb = ttk.Checkbutton(parent, text=text, variable=var, style="Card.TCheckbutton")
+        cb.pack(anchor="w", pady=2)
+        var.widget = cb
+        if tip:
+            Tooltip(cb, tip)
         return var
+
+    def _sync_shorts(self, *_args) -> None:
+        """서로 관계있는 설정끼리 맞춘다: 계정을 고르면 숏폼 개수·디자인은 안 쓰이고,
+        계정 디자인은 강의 영상에만, 원본 자막 쓰기는 자막을 넣을 때만 쓰인다."""
+        if not hasattr(self, "shorts_note"):
+            return
+        lecture = self._guide_key() == "lecture"
+        for cb in self.acct_checks:
+            cb.state(["!disabled"] if lecture else ["disabled"])
+        picked = [n for n, v in self.acct_vars.items() if v.get()] if lecture else []
+        self.count_box.state(["disabled"] if picked else ["!disabled"])
+        self.style_box.state(["disabled"] if picked else ["!disabled"])
+        self.per_box.state(["!disabled"] if picked else ["disabled"])
+        self.flags["burned_subs"].widget.state(
+            ["!disabled"] if self.flags["subtitles"].get() else ["disabled"])
+        if picked:
+            per = int(_num(self.per_var.get())) or 3
+            text = (f"→ 코시 계정 {len(picked)}개 × {per}개 = 숏폼 {len(picked) * per}개를 "
+                    f"계정 디자인으로 만들어요 (숏폼 개수·디자인은 안 써요)")
+        else:
+            text = (f"→ 숏폼 {int(_num(self.count_var.get())) or 5}개를 "
+                    f"'{self.style_var.get()}' 디자인으로 만들어요")
+            if not lecture:
+                text += " (코시 계정 디자인은 강의 영상에서만 골라요)"
+        self.shorts_note.configure(text=text)
 
     def _build(self) -> None:
         outer = ttk.Frame(self.root, padding=(16, 12, 16, 14))
@@ -430,24 +486,33 @@ class App:
                    command=self._pick_videos).pack(side="left")
         ttk.Button(vb, text="빼기", command=self._remove_video).pack(side="left", padx=6)
 
-        af = self._card(left, "② 인스타 계정", "고르면 코시 가이드대로 만들어요")
+        af = self._card(left, "② 코시 계정 디자인", "선택 · 강의 영상 전용")
         af.outer.pack(fill="x", pady=(10, 0))
+        ttk.Label(af, style="Sub.Card.TLabel", wraplength=430, justify="left", text=(
+            "코시 육성프로그램 인스타 계정 10개는 계정마다 정해진 디자인(제목 위치·글꼴·색)과 "
+            "주제가 있어요. 계정을 고르면 그 계정 주제에 맞는 장면을 골라 그 디자인으로 만들어요. "
+            "안 고르면 오른쪽 ③ 설정의 '숏폼 개수'와 '디자인'으로 만들어요.")).pack(
+            anchor="w", pady=(0, 6))
         chosen = set(accounts.parse(c.get("accounts", "")))
         self.acct_vars: dict[int, tk.BooleanVar] = {}
+        self.acct_checks: list[ttk.Checkbutton] = []
         grid = ttk.Frame(af, style="Card.TFrame")
         grid.pack(fill="x")
         for k, (no, a) in enumerate(accounts.ACCOUNTS.items()):
             var = tk.BooleanVar(value=no in chosen)
-            ttk.Checkbutton(grid, text=f"{no}. {a.name}", variable=var,
-                            style="Card.TCheckbutton").grid(row=k // 2, column=k % 2, sticky="w",
-                                                            padx=(0, 16), pady=1)
+            cb = ttk.Checkbutton(grid, text=f"{no}. {a.name}", variable=var,
+                                 style="Card.TCheckbutton")
+            cb.grid(row=k // 2, column=k % 2, sticky="w", padx=(0, 16), pady=1)
+            Tooltip(cb, f"{a.handle} · {a.concept}")
             self.acct_vars[no] = var
+            self.acct_checks.append(cb)
         pf = ttk.Frame(af, style="Card.TFrame")
         pf.pack(fill="x", pady=(8, 0))
-        ttk.Label(pf, text="계정당", style="Card.TLabel").pack(side="left")
+        ttk.Label(pf, text="계정마다", style="Card.TLabel").pack(side="left")
         self.per_var = tk.StringVar(value=c.get("per_account", "3"))
-        ttk.Spinbox(pf, from_=1, to=10, textvariable=self.per_var, width=4).pack(side="left", padx=6)
-        ttk.Label(pf, text="개", style="Card.TLabel").pack(side="left")
+        self.per_box = ttk.Spinbox(pf, from_=1, to=10, textvariable=self.per_var, width=4)
+        self.per_box.pack(side="left", padx=6)
+        ttk.Label(pf, text="개씩", style="Card.TLabel").pack(side="left")
         ttk.Button(pf, text="글꼴 확인", command=self._check_fonts).pack(side="right")
 
         # 오른쪽: 설정
@@ -467,8 +532,8 @@ class App:
         box.bind("<<ComboboxSelected>>", self._on_guide)
         row = self._row(sf, "숏폼 개수")
         self.count_var = tk.StringVar(value=c["count"])
-        ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5).pack(side="left")
-        ttk.Label(row, text="계정 안 고를 때", style="Sub.Card.TLabel").pack(side="left", padx=8)
+        self.count_box = ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5)
+        self.count_box.pack(side="left")
         row = self._row(sf, "길이(초)")
         self.min_var = tk.StringVar(value=c["min_len"])
         self.max_var = tk.StringVar(value=c["max_len"])
@@ -478,18 +543,31 @@ class App:
         row = self._row(sf, "디자인")
         names = [STYLE_NAMES.get(k, k) for k in PRESETS]
         self.style_var = tk.StringVar(value=STYLE_NAMES.get(c["style"], c["style"]))
-        ttk.Combobox(row, textvariable=self.style_var, values=names, width=26).pack(
-            side="left", fill="x", expand=True)
+        self.style_box = ttk.Combobox(row, textvariable=self.style_var, values=names, width=26)
+        self.style_box.pack(side="left", fill="x", expand=True)
+        self.shorts_note = ttk.Label(sf, style="Sub.Card.TLabel", wraplength=330, justify="left")
+        self.shorts_note.pack(anchor="w", pady=(2, 0))
 
         self.flags = {}
-        ttk.Frame(sf, style="Card.TFrame", height=6).pack()
-        self.flags["focus"] = self._check(sf, "얼굴 따라가기", c["focus"] == "auto")
-        self.flags["burned_subs"] = self._check(sf, "원본에 자막 있으면 그대로 쓰기",
-                                                c["burned_subs"] in ("auto", "yes"))
-        self.flags["subtitles"] = self._check(sf, "자막 넣기", c["subtitles"].lower() != "no")
-        self.flags["thumbnail"] = self._check(sf, "썸네일 만들기", c["thumbnail"].lower() == "yes")
-        self.flags["retention"] = self._check(sf, "훅 자막·중간 한마디·진행 막대 (시청 지속)",
-                                              c.get("retention", "yes").lower() != "no")
+        ttk.Label(sf, text="켜고 끄기 (각각 따로, 마우스를 올리면 설명)",
+                  style="Sub.Card.TLabel").pack(anchor="w", pady=(10, 0))
+        self.flags["focus"] = self._check(
+            sf, "얼굴 따라가기", c["focus"] == "auto",
+            "가로 영상을 세로로 자를 때 말하는 사람 얼굴이 화면 가운데 오게 따라가요.")
+        self.flags["subtitles"] = self._check(
+            sf, "자막 넣기", c["subtitles"].lower() != "no",
+            "말하는 내용을 자막으로 넣어요. 끄면 자막 없이 만들어요.")
+        self.flags["burned_subs"] = self._check(
+            sf, "  └ 원본에 자막 있으면 그대로 쓰기", c["burned_subs"] in ("auto", "yes"),
+            "원본 영상에 이미 자막이 박혀 있으면 새 자막을 겹쳐 넣지 않고 원본 자막이 "
+            "보이게 화면을 잘라요. '자막 넣기'를 켰을 때만 쓰여요.")
+        self.flags["thumbnail"] = self._check(
+            sf, "썸네일 만들기", c["thumbnail"].lower() == "yes",
+            "숏폼마다 피드에 올릴 대표 사진(PNG)을 함께 만들어요.")
+        self.flags["retention"] = self._check(
+            sf, "훅 자막·중간 한마디·진행 막대 (시청 지속)", c.get("retention", "yes").lower() != "no",
+            "처음 2초 큰 글씨, 중간에 '근데 반전이…' 같은 한마디, 위쪽 진행 막대로 "
+            "끝까지 보게 만들어요.")
         row = self._row(sf, "배경음악")
         self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
                                                           BGM_SOURCES["auto"]))
@@ -528,6 +606,10 @@ class App:
                                                   c["fix_subtitles"].lower() == "yes")
         self.flags["review"] = self._check(adv, "만들기 전에 목록 보고 고르기",
                                            c["review"].lower() == "yes")
+        for var in [*self.acct_vars.values(), self.per_var, self.count_var, self.style_var,
+                    self.flags["subtitles"]]:
+            var.trace_add("write", self._sync_shorts)
+        self._sync_shorts()
 
     # ---------- 롱폼 탭 ----------
 
