@@ -520,7 +520,7 @@ class App:
         right.grid(row=0, column=1, sticky="nsew")
         sf = self._card(right, "③ 설정")
         sf.outer.pack(fill="x")
-        self.short_refs = self._ref_card(right)
+        self.short_refs = self._ref_card(left)
         self.short_refs.master.outer.pack(fill="x", pady=(10, 0))
         row = self._row(sf, "영상 종류")
         self.guide_list = guides.load()
