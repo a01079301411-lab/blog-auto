@@ -19,6 +19,9 @@ class Cue:
     start: float
     end: float
     text: str
+    who: str = "main"     # main: 주인공 / other: 묻는 사람·진행자 등 (노란 자막)
+    note: str = ""        # (고민) 같은 표정·행동 자막
+    image: str = ""       # 이 줄에 끼워 넣을 짤 파일 이름
 
 
 def words_in_range(words: list[Word], start: float, end: float) -> list[Word]:

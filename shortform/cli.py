@@ -26,6 +26,31 @@ def _hms(t: float) -> str:
     return f"{t // 3600}:{t % 3600 // 60:02}:{t % 60:02}" if t >= 3600 else f"{t // 60}:{t % 60:02}"
 
 
+FILLERS = {"음", "어", "으", "엄", "흠", "음음", "어어", "으음", "어음"}
+
+
+def _drop_fillers(keeps: list[media.Segment], words) -> list[media.Segment]:
+    """캡컷 '군말 삭제'처럼: '음', '어' 같은 군말만 있는 단어를 잘라낸다."""
+    cuts = []
+    for w in words:
+        if re.sub(r"[\s.,?!~…]", "", w.text) in FILLERS and w.end - w.start >= 0.12:
+            cuts.append((w.start + 0.02, w.end - 0.02))
+    if not cuts:
+        return keeps
+    out: list[media.Segment] = []
+    for s, e in keeps:
+        cur = s
+        for a, b in cuts:
+            if b <= cur or a >= e:
+                continue
+            if a - cur >= 0.15:
+                out.append((cur, a))
+            cur = max(cur, b)
+        if e - cur >= 0.15:
+            out.append((cur, e))
+    return out or keeps
+
+
 def _cut_ranges(args, path: str, start: float, end: float) -> list[media.Segment]:
     if args.no_silence_cut:
         return [(start, end)]
@@ -84,6 +109,11 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     keeps = _cut_ranges(args, src, start, end)
     if not keeps:
         raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
+    if getattr(args, "fillers", False) and transcript is not None:
+        before = len(keeps)
+        keeps = _drop_fillers(keeps, words_in_range(transcript.words, start, end))
+        if len(keeps) > before:
+            print(f"  군말(음·어) {len(keeps) - before}군데 잘라냄")
     kept = sum(e - s for s, e in keeps)
     print(f"  {_hms(end - start)} → {_hms(kept)} (무음 {_hms(end - start - kept)} 제거, "
           f"{len(keeps)}개 조각)")
@@ -116,14 +146,18 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
             print("  원본 자막이 있어요 → 새 자막은 넣지 않고, 원본 자막이 잘리지 않게 화면을 잡아요")
     own_subs = burned is None and args.burned_subs != "yes"
 
-    # 2) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식)
+    # 2) 자막: Claude로 오타 고치고 자연스럽게 끊기 (실패하면 기존 방식).
+    #    말한 사람(묻는 사람은 노란색), (고민) 같은 표정 자막, 끼워 넣을 짤도 같이 고른다
+    from . import inserts as _inserts
+    pics = _inserts.files() if getattr(args, "inserts", False) else {}
     cues = []
     if own_subs and words:
         cues = None
         if args.fix_subtitles:
-            print("  자막 다듬는 중 (오타 교정·줄 나누기)...")
+            print("  자막 다듬는 중 (오타 교정·말한 사람·표정 자막·짤 고르기)...")
             cues = fix_cues(words, max_chars=max_chars,
-                            context=" ".join(filter(None, [args.context, speaker])))
+                            context=" ".join(filter(None, [args.context, speaker])),
+                            images=list(pics) if pics else None)
         if cues is None:
             cues = build_cues(words, max_chars=max_chars)
 
@@ -171,6 +205,18 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
             bgm = tracks[args.clip_index % len(tracks)]  # 숏폼마다 돌아가며 사용
             print(f"  배경음악: {os.path.basename(bgm)}")
 
+    pick_from = cues
+    if pics and not cues and words and args.fix_subtitles:  # 원본 자막을 쓸 때도 짤은 고른다
+        print("  끼워 넣을 짤 고르는 중...")
+        pick_from = fix_cues(words, max_chars=max_chars, context=args.context or "",
+                             images=list(pics))
+    cut_ins = _inserts.timeline(pick_from or [], pics)
+    if cut_ins:
+        print(f"  짤 {len(cut_ins)}개 끼워 넣기: "
+              + ", ".join(os.path.basename(p) for p, _, _ in cut_ins))
+    if cues and any(c.who == "other" for c in cues):
+        print(f"  묻는 사람 자막 {sum(c.who == 'other' for c in cues)}줄은 노란색으로")
+
     subs = os.path.splitext(out)[0] + ".ass"
     vf = video_filter(style, focus, path=path, span=span, aspect=sw / sh if sh else 16 / 9,
                       keep_bottom=keep_bottom)
@@ -180,7 +226,9 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
                   keywords=h.keywords)
         _add_retention(args, subs, h, keeps, kept, style.font, style)
         media.render(src, keeps, out, video_filter=vf, srt=subs,
-                     bgm=bgm, bgm_volume=args.bgm_volume)
+                     bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
+                     insert_bottom=style.sub_bottom - round(style.sub_size * 2.6),
+                     voice_enhance=getattr(args, "voice_enhance", False))
     else:
         from . import draw, fonts
 
@@ -197,7 +245,9 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         _add_retention(args, subs, h, keeps, kept, _fonts.family(sub_font), style)
         try:
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
-                         font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume)
+                         font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
+                         inserts=cut_ins, insert_bottom=low_speaker_y(acct) - 70,
+                         voice_enhance=getattr(args, "voice_enhance", False))
         finally:
             os.remove(ov_path)
     print(f"  저장: {out}")
@@ -598,6 +648,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--retention", type=_yesno, default=True,
                    help="훅 자막, 중간 한마디, 진행 막대 넣기 yes/no")
     s.add_argument("--bgm-volume", type=float, default=0.15, help="배경음악 볼륨 0~1")
+    s.add_argument("--fillers", type=_yesno, default=True,
+                   help="'음', '어' 같은 군말 잘라내기 yes/no (기본 yes)")
+    s.add_argument("--voice-enhance", type=_yesno, default=True,
+                   help="목소리 또렷하게: 잡음 줄이고 소리 크기 맞추기 yes/no (기본 yes)")
+    s.add_argument("--inserts", type=_yesno, default=True,
+                   help="'짤' 폴더의 사진·짧은 영상을 자막에 맞춰 끼워 넣기 yes/no (기본 yes)")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
                    help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")

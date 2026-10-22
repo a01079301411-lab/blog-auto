@@ -263,6 +263,17 @@ def _title_text(style: Style, title: str) -> str:
     return r"\N".join(out)
 
 
+OTHER_COLOR = "#FFE14D"  # 묻는 사람·진행자 말 (주인공 말은 흰색)
+NOTE_COLOR = "#C8C8C8"   # (고민) 같은 표정 자막
+
+
+def _note(c: Cue, size: int) -> str:
+    """(고민) 같은 표정 자막: 자막 앞에 작은 회색 글자로."""
+    if not c.note:
+        return ""
+    return f"{{\\fs{round(size * 0.72)}\\c{_c(NOTE_COLOR)}}}{_esc(c.note)}{{\\r}} "
+
+
 def write_ass(
     path: str,
     style: Style,
@@ -303,6 +314,8 @@ def write_ass(
            H - s.sub_bottom + round(s.sub_size * 1.25) + 12, margin_r=150),
         st("Sub", s.font, s.sub_size, s.sub_color, s.sub_outline, 0, 2, H - s.sub_bottom,
            margin_r=150),
+        st("SubOther", s.font, s.sub_size, OTHER_COLOR, s.sub_outline, 0, 2, H - s.sub_bottom,
+           margin_r=150),
         st("Bottom", tfont, s.bottom_size, s.bottom_color, 0, 0, 5, 0),
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -320,8 +333,9 @@ def write_ass(
         lines.append(f"Dialogue: 1,{whole},Bottom,,0,0,0,,{pos}"
                      f"{_esc(s.bottom_format.format(bottom.strip()))}")
     for c in cues:
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Sub,,0,0,0,,"
-                     + _keywords(c.text, keywords or [], s.sub_highlight))
+        name = "SubOther" if c.who == "other" else "Sub"
+        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,"
+                     + _note(c, s.sub_size) + _keywords(c.text, keywords or [], s.sub_highlight))
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -347,11 +361,15 @@ def write_account_subs(path: str, acct, cues: list[Cue], *, font_path: str) -> N
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Sub,{fam},{t.size},{_c(t.color)},&H000000FF&,{_c(outline_c)},&H80000000&,"
         f"0,0,0,0,100,100,0,0,{border},{outline},0,2,{SUB_MARGIN_L},{SUB_MARGIN_R},{margin},1",
+        f"Style: SubOther,{fam},{t.size},{_c(OTHER_COLOR)},&H000000FF&,{_c(outline_c)},&H80000000&,"
+        f"0,0,0,0,100,100,0,0,{border},{outline},0,2,{SUB_MARGIN_L},{SUB_MARGIN_R},{margin},1",
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     for c in cues:
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Sub,,0,0,0,,{_esc(c.text)}")
+        name = "SubOther" if c.who == "other" else "Sub"
+        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},{name},,0,0,0,,"
+                     f"{_note(c, t.size)}{_esc(c.text)}")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 

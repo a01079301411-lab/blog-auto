@@ -9,10 +9,11 @@ PATH = os.path.join(ROOT, "settings.ini")
 
 DEFAULTS = {
     "guide": "lecture", "accounts": "", "per_account": "3",
-    "style": "green", "count": "10", "min_len": "20", "max_len": "60",
+    "style": "green", "count": "10", "min_len": "15", "max_len": "60",
     "context": "", "speaker": "", "focus": "auto", "model": "small", "font": "",
     "subtitles": "yes", "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
     "bgm_volume": "0.15", "bgm_source": "auto", "retention": "yes", "thumbnail": "yes", "upload": "no",
+    "fillers": "yes", "voice_enhance": "yes", "inserts": "yes",
 }
 
 
@@ -66,7 +67,9 @@ def to_argv(video: str, c: dict[str, str], out: str) -> list[str]:
             "--accounts", c["accounts"], "--per-account", c["per_account"],
             "--guide", c["guide"] or "lecture",
             "--bgm-source", c["bgm_source"] if c["bgm_source"] in ("auto", "folder", "none")
-            else "auto", "--retention", c["retention"] or "yes"]
+            else "auto", "--retention", c["retention"] or "yes",
+            "--fillers", c["fillers"] or "yes", "--voice-enhance", c["voice_enhance"] or "yes",
+            "--inserts", c["inserts"] or "yes"]
     for key in ("context", "speaker", "font"):
         if c.get(key, "").strip():
             argv += [f"--{key}", c[key].strip()]

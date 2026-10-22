@@ -65,6 +65,7 @@ Ending: stop right after the payoff, no outro, so the loop restarts and viewers 
 
 BUILTIN: dict[str, dict] = {
     "lecture": {
+        "length": "20-45",
         "name": "강의·인터뷰·팟캐스트",
         "context": "꼴통사장 권기준 대표의 사업 강의. 창업, 매출, 사장 마인드, 크리에이터로 돈 버는 법",
         "speaker": "권기준 / 꼴통사장 대표",
@@ -77,6 +78,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Long theory without an example; greetings; references to slides the viewer can't see.",
     },
     "vlog": {
+        "length": "15-35",
         "name": "브이로그·가족 일상",
         "context": ("'여친 있는 유부남' 채널. 여친은 딸 셋, 본처는 아내. 5인 가족 아빠의 딸 데이트, "
                     "아내와 데이트, 크로스핏 등 취미, 이사업체 사장 일상 브이로그"),
@@ -93,6 +95,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Anything exposing a child's school, address or something embarrassing for the child.",
     },
     "moving": {
+        "length": "15-40",
         "name": "현장·작업 과정 (이사·시공 등)",
         "context": "대구 이사업체 사장님의 현장 영상. 포장이사, 보관이사, 정리 과정과 현장 꿀팁",
         "speaker": "이사업체 사장님",
@@ -106,6 +109,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "A customer's face, address or private belongings in detail.",
     },
     "commerce": {
+        "length": "15-35",
         "name": "제품 소개·리뷰·광고",
         "context": "코시(COSY) 제품을 실제로 써 보는 영상. 유료광고 포함",
         "speaker": "",
@@ -119,6 +123,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Claims not shown in the footage (medical effects, 'best', 'No.1').",
     },
     "funny": {
+        "length": "10-30",
         "name": "웃긴 장면·예능·리액션",
         "context": "",
         "speaker": "",
@@ -130,6 +135,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Mocking someone who is not in on the joke.",
     },
     "story": {
+        "length": "25-55",
         "name": "인생 이야기·감동",
         "context": "",
         "speaker": "",
@@ -141,6 +147,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Cutting before the turn of the story.",
     },
     "howto": {
+        "length": "15-40",
         "name": "꿀팁·하우투·정보",
         "context": "",
         "speaker": "",
@@ -152,6 +159,7 @@ BUILTIN: dict[str, dict] = {
         "avoid": "Lists of many tips in one clip; vague tips without a concrete step.",
     },
     "custom": {
+        "length": "",
         "name": "직접 입력 (영상 설명대로)",
         "context": "",
         "speaker": "",
@@ -208,4 +216,8 @@ def brief(key: str | None) -> str:
         lines.append(f"Title style for this video type (Korean): {g['title']}")
     if g.get("avoid"):
         lines.append(f"Avoid: {g['avoid']}")
+    if g.get("length"):
+        lines.append(f"Best length for this type: about {g['length']} seconds (stay inside the "
+                     "allowed range). Prefer the shortest clip that still holds the whole hook -> "
+                     "payoff chain; cut setup that the viewer does not need.")
     return "\n".join(lines)

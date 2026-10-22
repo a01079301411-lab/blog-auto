@@ -29,11 +29,32 @@ Rewrite it as subtitle lines, in the order spoken:
   sounds (음, 어).
 - Cover the whole transcript from start to end.
 - Do not add sentence-final periods. Keep ? and ! where the speaker clearly asks or
-  exclaims."""
+  exclaims.
+
+For every line also give:
+- who: "main" if the main person of the clip says it (the interviewee, the speaker the
+  video is about), "other" if someone else does (an interviewer, host, off-camera voice,
+  friend). Questions asked to the main person usually come from "other". If only one
+  person talks, every line is "main".
+- note: a short reaction or action note shown with the line, in parentheses, such as
+  "(고민)", "(당황)", "(웃음)", "(정적)", "(한숨)", only when the words clearly imply it
+  (a hesitant answer, laughing, a sudden silence). At most one note every 5 lines;
+  otherwise "".
+- image: if <images> are listed, the file name of one image that fits this exact line as
+  a funny or clarifying cut-in (a surprised meme when someone is shocked, a photo of the
+  person or thing being talked about), else "". At most one image every 4 lines, only
+  where it clearly adds, never the same image twice in a row. Judge an image only by its
+  file name."""
 
 SCHEMA = {
     "type": "object",
-    "properties": {"lines": {"type": "array", "items": {"type": "string"}}},
+    "properties": {"lines": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"text": {"type": "string"}, "who": {"type": "string", "enum": ["main", "other"]},
+                       "note": {"type": "string"}, "image": {"type": "string"}},
+        "required": ["text", "who", "note", "image"],
+        "additionalProperties": False,
+    }}},
     "required": ["lines"],
     "additionalProperties": False,
 }
@@ -47,12 +68,17 @@ def _norm(text: str) -> str:
 
 
 def fix_cues(words: list[Word], *, max_chars: int = 14, context: str = "",
-             client=None) -> list[Cue] | None:
-    """words(숏폼 타임라인 기준)로 다듬은 자막 줄을 만든다. 실패하면 None."""
+             images: list[str] | None = None, client=None) -> list[Cue] | None:
+    """words(숏폼 타임라인 기준)로 다듬은 자막 줄을 만든다. 실패하면 None.
+
+    줄마다 말한 사람(main/other), 표정 자막(note), 끼워 넣을 짤(image, images 중 하나)도 받는다.
+    """
     if not words:
         return []
     transcript = " ".join(w.text.strip() for w in words)
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
+    if images:
+        about += "<images>\n" + "\n".join(images) + "\n</images>\n\n"
     try:
         if client is None:
             import anthropic
@@ -79,12 +105,23 @@ def fix_cues(words: list[Word], *, max_chars: int = 14, context: str = "",
         return None
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:
-        lines = [str(x) for x in json.loads(text)["lines"]]
+        items = [x if isinstance(x, dict) else {"text": str(x)} for x in json.loads(text)["lines"]]
     except (ValueError, KeyError, TypeError):
         return None
-    cues = align(lines, words)
+    items = [x for x in items if _norm(str(x.get("text", "")))]
+    cues = align([str(x["text"]) for x in items], words)
     if cues is None:
         print("  (고친 자막이 원래 말과 너무 달라서 원래 자막을 써요)")
+        return None
+    allowed = set(images or [])
+    for c, x in zip(cues, items):
+        c.who = "other" if x.get("who") == "other" else "main"
+        note = str(x.get("note", "")).strip()
+        c.note = f"({note.strip('()')})" if note.strip("() ") else ""
+        c.image = x.get("image", "") if x.get("image", "") in allowed else ""
+    if all(c.who == "other" for c in cues):  # 전부 다른 사람일 리는 없다
+        for c in cues:
+            c.who = "main"
     return cues
 
 

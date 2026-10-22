@@ -568,6 +568,21 @@ class App:
             sf, "훅 자막·중간 한마디·진행 막대 (시청 지속)", c.get("retention", "yes").lower() != "no",
             "처음 2초 큰 글씨, 중간에 '근데 반전이…' 같은 한마디, 위쪽 진행 막대로 "
             "끝까지 보게 만들어요.")
+        self.flags["fillers"] = self._check(
+            sf, "군말(음·어) 자르기", c.get("fillers", "yes").lower() != "no",
+            "캡컷 '군말 삭제'처럼, '음', '어'만 있는 부분을 잘라서 말이 빨라져요.")
+        self.flags["voice_enhance"] = self._check(
+            sf, "목소리 또렷하게", c.get("voice_enhance", "yes").lower() != "no",
+            "캡컷 '음성 향상'처럼, 웅웅거림과 잡음을 줄이고 소리 크기를 숏폼 기준에 맞춰요.")
+        ins = ttk.Frame(sf, style="Card.TFrame")
+        ins.pack(fill="x")
+        self.flags["inserts"] = self._check(
+            ins, "짤·사진 끼워 넣기", c.get("inserts", "yes").lower() != "no",
+            "'짤' 폴더에 넣어 둔 사진·짧은 영상 중에서 AI가 자막에 맞는 걸 골라 1~2초 띄워요. "
+            "AI는 파일 이름만 보고 고르니 이름을 내용대로 지어 주세요. 폴더가 비어 있으면 안 넣어요.")
+        self.flags["inserts"].widget.pack_configure(side="left")
+        ttk.Button(ins, text="🖼 짤 폴더", style="Link.TButton",
+                   command=self._open_inserts).pack(side="left", padx=6)
         row = self._row(sf, "배경음악")
         self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
                                                           BGM_SOURCES["auto"]))
@@ -604,8 +619,10 @@ class App:
         ttk.Scale(row, from_=0, to=0.5, variable=self.bgm_var, length=120).pack(side="left")
         ttk.Button(row, text="폴더", command=lambda: _open_folder(os.path.join(ROOT, "bgm"))).pack(
             side="left", padx=8)
-        self.flags["fix_subtitles"] = self._check(adv, "자막 오타 교정 (Claude)",
-                                                  c["fix_subtitles"].lower() == "yes")
+        self.flags["fix_subtitles"] = self._check(
+            adv, "AI 자막 다듬기", c["fix_subtitles"].lower() == "yes",
+            "AI가 자막 오타를 고치고, 묻는 사람 말은 노란색으로, (고민) 같은 표정 자막을 넣고, "
+            "끼워 넣을 짤을 골라요. 끄면 이 기능들이 모두 빠져요.")
         self.flags["review"] = self._check(adv, "만들기 전에 목록 보고 고르기",
                                            c["review"].lower() == "yes")
         for var in [*self.acct_vars.values(), self.per_var, self.count_var, self.style_var,
@@ -871,6 +888,8 @@ class App:
             "burned_subs": "auto" if self.flags["burned_subs"].get() else "no",
             "thumbnail": yes("thumbnail"), "subtitles": yes("subtitles"),
             "retention": yes("retention"), "bgm_source": _bgm_key(self.bgm_src.get()),
+            "fillers": yes("fillers"), "voice_enhance": yes("voice_enhance"),
+            "inserts": yes("inserts"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
@@ -1079,6 +1098,16 @@ class App:
                             "따라 해요. (3개 이상 쌓이면 반영)\n\n유튜브 쇼츠 링크를 적어 두면 조회수는 "
                             "프로그램이 알아서 가져와요 (유튜브 연결이 되어 있을 때).")
         _open_folder(path)
+
+    def _open_inserts(self) -> None:
+        from . import inserts
+        folder = inserts.ensure_folder()
+        n = len(inserts.files())
+        messagebox.showinfo("짤 폴더", f"지금 {n}개가 들어 있어요.\n\n사진(png·jpg)이나 짧은 영상(mp4·gif)을 "
+                            "넣어 두면 AI가 자막에 맞춰 1~2초 띄워요.\n\nAI는 그림을 보지 않고 파일 "
+                            "이름만 보고 골라요. 예: '놀람_눈 커지는 고양이.png', '아내와 남편 사진.jpg'\n\n"
+                            "저작권 문제가 없도록 직접 찍었거나 써도 되는 것만 넣어 주세요.")
+        _open_folder(folder)
 
     def _open_hits(self) -> None:
         guides.hit_titles()  # 파일이 없으면 만든다

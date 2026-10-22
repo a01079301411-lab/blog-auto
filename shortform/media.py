@@ -170,6 +170,20 @@ def subtitle_style(font: str | None) -> str:
     return ",".join(style)
 
 
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+VIDEO_EXTS = (".mp4", ".mov", ".webm", ".gif")
+
+
+def voice_chain() -> str:
+    """캡컷 '음성 향상'처럼: 웅웅거리는 저음을 걷어내고, 잡음을 조금 줄이고, 소리 크기를
+    숏폼 기준(-14 LUFS)에 맞춘다."""
+    chain = ["highpass=f=70"]
+    if has_filter("afftdn"):
+        chain.append("afftdn=nr=10:nf=-30")
+    chain += ["loudnorm=I=-14:TP=-1.5:LRA=11", "aresample=48000"]
+    return ",".join(chain)
+
+
 def render(
     src: str,
     segments: list[Segment],
@@ -185,6 +199,9 @@ def render(
     sfx_volume: float = 0.6,
     overlay: str | None = None,
     font_files: list[str] | None = None,
+    inserts: list[tuple[str, float, float]] | None = None,
+    insert_bottom: int = 1250,
+    voice_enhance: bool = False,
 ) -> None:
     """src에서 segments 구간만 이어붙여 out으로 렌더링한다.
 
@@ -202,7 +219,8 @@ def render(
         parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
         parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
         labels.append(f"[v{i}][a{i}]")
-    parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[vc][a]")
+    parts.append(f"{''.join(labels)}concat=n={len(segments)}:v=1:a=1[vc][a0]")
+    parts.append(f"[a0]{voice_chain() if voice_enhance else 'anull'}[a]")
     parts.append(f"[vc]{hdr_to_sdr(src)}null[v]")  # 아이폰 HDR 영상은 색을 일반 영상에 맞춘다
     parts.append(video_filter or "[v]null[vl]")
 
@@ -245,6 +263,28 @@ def render(
             parts.append("[vo]null[vl2]")
         else:
             parts.append("[vl]null[vl2]")
+        # 짤·사진 끼워 넣기: 자막 바로 위 가운데에 잠깐 띄운다 (자막은 그 위에 그려진다)
+        cur = "[vl2]"
+        for k, (path, t0, t1) in enumerate(inserts or []):
+            idx, n_inputs = n_inputs, n_inputs + 1
+            still = os.path.splitext(path)[1].lower() in IMAGE_EXTS
+            if still:
+                inputs += ["-loop", "1", "-t", f"{t1 + 0.5:.3f}", "-i", os.path.abspath(path)]
+                src_v = f"[{idx}:v]"
+            else:  # 짧은 영상·움짤: 소리 없이 그 시각부터 재생
+                inputs += ["-t", f"{t1 - t0 + 0.5:.3f}", "-i", os.path.abspath(path)]
+                src_v = f"[{idx}:v]setpts=PTS-STARTPTS+{t0:.3f}/TB,"
+            parts.append(f"{src_v}scale=w=600:h=440:force_original_aspect_ratio=decrease,"
+                         f"format=rgba[im{k}]")
+            nxt = f"[vi{k}]"
+            parts.append(f"{cur}[im{k}]overlay=x=(W-w)/2:y={insert_bottom}-h:"
+                         f"enable='between(t,{t0:.3f},{t1:.3f})':"
+                         f"eof_action={'repeat' if still else 'pass'}{nxt}")
+            cur = nxt
+        if cur != "[vl2]":
+            parts.append(f"{cur}null[vl3]")
+        else:
+            parts.append("[vl2]null[vl3]")
         fontsdir = ""
         if font_files:  # 자막 글꼴을 작업 폴더에 모아 libass가 이름으로 찾게 한다
             os.makedirs(os.path.join(work, "fonts"), exist_ok=True)
@@ -256,12 +296,12 @@ def render(
             # 까다로우므로, 영문 이름으로 복사해 두고 그 폴더에서 FFmpeg을 실행한다
             ext = os.path.splitext(srt)[1]
             shutil.copyfile(srt, os.path.join(work, "subs" + ext))
-            sub = f"[vl2]subtitles=filename=subs{ext}{fontsdir}"
+            sub = f"[vl3]subtitles=filename=subs{ext}{fontsdir}"
             if ext != ".ass":  # ASS는 파일 안에 스타일이 있다
                 sub += f":force_style='{subtitle_style(font)}'"
             parts.append(sub + "[vout]")
         else:
-            parts.append("[vl2]null[vout]")
+            parts.append("[vl3]null[vout]")
 
         script = os.path.join(work, "filter.txt")
         with open(script, "w", encoding="utf-8") as f:
