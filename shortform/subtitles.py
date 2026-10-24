@@ -1,7 +1,6 @@
 """단어 타임스탬프 → 자막 cue 생성, 컷 편집에 맞춘 시간 재계산, SRT 저장."""
 from __future__ import annotations
 
-from bisect import bisect_right
 from dataclasses import dataclass, field
 
 from .media import Segment
@@ -32,23 +31,20 @@ def words_in_range(words: list[Word], start: float, end: float) -> list[Word]:
 def remap(words: list[Word], keeps: list[Segment]) -> list[Word]:
     """원본 시간의 단어를 컷 편집 후 타임라인 시간으로 옮긴다.
 
-    잘려나간 구간에 있는 단어는 버린다.
+    잘려나간 구간에 있는 단어는 버린다. keeps는 보여 줄 순서대로이며, 여러 장면을 이어 붙여
+    시간 순서가 아닐 수도 있다.
     """
-    starts = [s for s, _ in keeps]
     offsets = [0.0]
     for s, e in keeps:
         offsets.append(offsets[-1] + e - s)
 
     out: list[Word] = []
-    for w in words:
-        i = bisect_right(starts, (w.start + w.end) / 2) - 1
-        if i < 0:
-            continue
-        s, e = keeps[i]
-        if (w.start + w.end) / 2 > e:
-            continue  # 잘려나간 구간
-        out.append(Word(offsets[i] + max(w.start, s) - s,
-                        offsets[i] + min(w.end, e) - s, w.text))
+    for i, (s, e) in enumerate(keeps):
+        for w in words:
+            mid = (w.start + w.end) / 2
+            if s <= mid <= e:
+                out.append(Word(offsets[i] + max(w.start, s) - s,
+                                offsets[i] + min(w.end, e) - s, w.text))
     return out
 
 

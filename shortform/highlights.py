@@ -29,7 +29,16 @@ A good clip:
 
 Use only timestamps that appear in the transcript: start each clip at the start of a
 line and end it at the end of a line. The transcript comes from speech recognition, so
-infer the intended words when a line is slightly garbled.
+infer the intended words when a line is slightly garbled. When <frames> are given, they
+show what is on screen at those times; footage with little speech (sports, workouts,
+action) is judged mainly by the frames, and any time may be used.
+
+parts: the pieces of the source played in this order to make the clip. Normally one
+piece equal to start-end. Only when the <video_type> guide says montage is allowed, a
+clip may join 2-6 pieces from anywhere in the footage (e.g. the most dramatic moment
+first as the hook, then the setup, the action and the ending); each piece at least 2
+seconds, pieces never overlap, and the total of the pieces is the clip length. Then
+start is the earliest and end the latest time used.
 
 For each clip also write, in the transcript's language:
 - title_options: 4 different hook titles for the clip, each built on a different hook
@@ -84,6 +93,10 @@ SCHEMA = {
                 "properties": {
                     "start": {"type": "number", "description": "seconds"},
                     "end": {"type": "number", "description": "seconds"},
+                    "parts": {"type": "array", "items": {
+                        "type": "object",
+                        "properties": {"start": {"type": "number"}, "end": {"type": "number"}},
+                        "required": ["start", "end"], "additionalProperties": False}},
                     "title_options": {"type": "array", "items": {"type": "string"}},
                     "title": {"type": "string", "description": "hook headline, {accent}"},
                     "label": {"type": "string"},
@@ -101,7 +114,7 @@ SCHEMA = {
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
-                "required": ["start", "end", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
+                "required": ["start", "end", "parts", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
                              "hook_text", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
@@ -132,6 +145,16 @@ class Highlight:
     rehook_at: float = 0.0  # 원본 영상 기준 몇 초에 띄울지 (0이면 없음)
     bgm_mood: str = ""   # 배경음악 분위기 (bright, calm, tension, funny)
     title_options: list[str] = field(default_factory=list)  # AI가 쓴 제목 후보들
+    parts: list[list[float]] = field(default_factory=list)  # 여러 장면을 이어 붙일 때 [시작, 끝]들
+
+    def pieces(self) -> list[tuple[float, float]]:
+        """숏폼에 들어갈 원본 구간들 (보여 줄 순서대로)."""
+        if len(self.parts) > 1:
+            return [(float(a), float(b)) for a, b in self.parts]
+        return [(self.start, self.end)]
+
+    def length(self) -> float:
+        return sum(b - a for a, b in self.pieces())
 
 
 def split_lines(words, *, max_chars: int = 45, gap: float = 0.5) -> list[Sentence]:
@@ -220,14 +243,37 @@ def _account_brief(acct) -> str:
     return "\n".join(lines)
 
 
+def _frame_blocks(frames: list[tuple[float, str]] | None) -> list[dict]:
+    """장면 사진들 (말이 적은 운동·액션 영상도 AI가 화면을 보고 고르게)."""
+    if not frames:
+        return []
+    out: list[dict] = [{"type": "text", "text": "<frames> (what is on screen at each time)"}]
+    for t, data in frames:
+        out.append({"type": "text", "text": f"{t:.1f}s:"})
+        out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                "data": data}})
+    out.append({"type": "text", "text": "</frames>"})
+    return out
+
+
+def _source_time(h_parts: list[tuple[float, float]], t: float) -> float:
+    """숏폼 안에서 t초 → 원본 시간 (여러 장면을 이어 붙였을 때)."""
+    for a, b in h_parts:
+        if t <= b - a:
+            return a + t
+        t -= b - a
+    return h_parts[-1][1]
+
+
 def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, max_len: float,
                 context: str, account=None, exclude: list[tuple[float, float]] | None = None,
-                ref_blocks: list[dict] | None = None, guide: str = "") -> list[Highlight]:
+                ref_blocks: list[dict] | None = None, guide: str = "",
+                frames: list[tuple[float, str]] | None = None) -> list[Highlight]:
     about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
     if guide:
         about += f"<video_type>\n{guide}\n</video_type>\n\n"
     # 레퍼런스와 대본은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
-    content = list(ref_blocks or []) + [{"type": "text",
+    content = list(ref_blocks or []) + _frame_blocks(frames) + [{"type": "text",
                 "text": f"{about}<transcript>\n{format_transcript(sentences)}\n</transcript>",
                 "cache_control": {"type": "ephemeral"}}]
     ask = ""
@@ -260,7 +306,22 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
     if response.stop_reason == "max_tokens":
         raise RuntimeError("응답이 너무 길어 잘렸습니다. --count를 줄여 보세요.")
     text = next(b.text for b in response.content if b.type == "text")
-    return [Highlight(float(h["start"]), float(h["end"]), clean_title(h["title"]),
+    out = []
+    for h in json.loads(text)["highlights"]:
+        parts = [(float(p["start"]), float(p["end"])) for p in h.get("parts", [])
+                 if float(p["end"]) - float(p["start"]) >= 1.0]
+        hl = _make(h, account)
+        if len(parts) > 1:
+            hl.parts = [list(p) for p in parts]
+            hl.start, hl.end = min(a for a, _ in parts), max(b for _, b in parts)
+            rt = float(h.get("rehook_time", 0) or 0)
+            hl.rehook_at = _source_time(parts, rt) if rt > 0 else 0.0
+        out.append(hl)
+    return out
+
+
+def _make(h: dict, account) -> Highlight:
+    return (Highlight(float(h["start"]), float(h["end"]), clean_title(h["title"]),
                       h["reason"], int(h["score"]), h["keywords"], h["caption"],
                       h["label"], h["speaker"], h["bottom"], h.get("sub_title", ""),
                       account.no if account is not None else 0,
@@ -269,8 +330,7 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
                       float(h["start"]) + float(h.get("rehook_time", 0) or 0)
                       if float(h.get("rehook_time", 0) or 0) > 0 else 0.0,
                       h.get("bgm_mood", ""),
-                      [clean_title(t) for t in h.get("title_options", []) if t.strip()])
-            for h in json.loads(text)["highlights"]]
+                      [clean_title(t) for t in h.get("title_options", []) if t.strip()]))
 
 
 VERIFY_PROMPT = """\
@@ -386,7 +446,7 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
         h = candidates[r["id"]]
         scores = [r["hook"], r["payoff"], r["standalone"], r["fit"]]
         h.score = round(sum(scores) / len(scores))
-        if r["end"] > r["start"]:
+        if r["end"] > r["start"] and len(h.parts) < 2:  # 이어 붙인 숏폼은 장면 구성을 그대로 둔다
             h.start, h.end = float(r["start"]), float(r["end"])
         if r["title"].strip():
             h.title = clean_title(r["title"])
@@ -410,8 +470,13 @@ def pick_highlights(
     words=None,
     ref_blocks: list[dict] | None = None,
     guide: str = "",
+    frames: list[tuple[float, str]] | None = None,
+    check: bool = True,
 ) -> list[Highlight]:
-    """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다."""
+    """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다.
+
+    frames: 장면 사진 (말이 적은 영상용). check=False면 2)를 건너뛴다 (운동처럼 화면이 중요한 영상).
+    """
     import anthropic
 
     client = anthropic.Anthropic()
@@ -424,25 +489,27 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         want = want_total if len(windows) == 1 else max(4, want_total // len(windows) + 2)
         candidates += _ask_claude(client, window, want, min_len, max_len, context, account,
-                                  exclude, ref_blocks, guide)
+                                  exclude, ref_blocks, guide, frames)
     if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
-        candidates = [h for h in candidates
-                      if not any(h.start < b and a < h.end for a, b in exclude)]
-    print(f"  후보 {len(candidates)}개를 다시 꼼꼼히 검증하는 중...")
-    try:
-        picked = verify(client, candidates, lines, min_len=min_len, max_len=max_len,
-                        context=context, account=account, guide=guide)
-    except Exception as e:  # 검증이 실패해도 1단계 결과로 계속
-        print(f"  (검증 단계 건너뜀: {type(e).__name__}: {str(e)[:100]})")
+        candidates = [h for h in candidates if not _overlaps(h, exclude)]
+    if not check:
         picked = sorted(candidates, key=lambda h: -h.score)
+    else:
+        print(f"  후보 {len(candidates)}개를 다시 꼼꼼히 검증하는 중...")
+        try:
+            picked = verify(client, candidates, lines, min_len=min_len, max_len=max_len,
+                            context=context, account=account, guide=guide)
+        except Exception as e:  # 검증이 실패해도 1단계 결과로 계속
+            print(f"  (검증 단계 건너뜀: {type(e).__name__}: {str(e)[:100]})")
+            picked = sorted(candidates, key=lambda h: -h.score)
     if exclude:
-        picked = [h for h in picked if not any(h.start < b and a < h.end for a, b in exclude)]
+        picked = [h for h in picked if not _overlaps(h, exclude)]
     result = clean(picked, lines, count=count, min_len=min_len, max_len=max_len)
     if len(result) < count:
         # 검증 기준에 못 미쳐도 빈손으로 끝내지 않는다: 남은 후보 중 점수 높은 것으로 채운다
         rest = sorted((h for h in candidates if h not in picked), key=lambda h: -h.score)
         if exclude:
-            rest = [h for h in rest if not any(h.start < b and a < h.end for a, b in exclude)]
+            rest = [h for h in rest if not _overlaps(h, exclude)]
         more = clean(result + rest, lines, count=count, min_len=min_len, max_len=max_len)
         if len(more) > len(result):
             print(f"  확실한 하이라이트가 {len(result)}개라, 검증 기준엔 조금 못 미치지만 가장 나은 "
@@ -453,6 +520,11 @@ def pick_highlights(
     return result
 
 
+def _overlaps(h: Highlight, used) -> bool:
+    """h의 장면 중 하나라도 used 구간들과 겹치는지."""
+    return any(a < d and c < b for a, b in h.pieces() for c, d in used)
+
+
 def clean(
     highlights: list[Highlight],
     sentences: list[Sentence],
@@ -461,9 +533,10 @@ def clean(
     min_len: float,
     max_len: float,
 ) -> list[Highlight]:
-    """문장 경계에 맞추고, 길이를 보정하고, 겹치는 구간을 제거한다."""
-    if not sentences:
-        return []
+    """문장 경계에 맞추고, 길이를 보정하고, 겹치는 구간을 제거한다.
+
+    말이 없는 영상(문장이 없음)이나 여러 장면을 이어 붙인 숏폼은 AI가 고른 시간을 그대로 쓴다.
+    """
     starts = sorted(s.start for s in sentences)
     ends = sorted(s.end for s in sentences)
 
@@ -473,15 +546,34 @@ def clean(
 
     out: list[Highlight] = []
     for h in highlights:
-        # 가장 가까운 문장 시작/끝으로 맞춘다
-        h.start = nearest(starts, h.start)
-        h.end = nearest(ends, h.end)
-        if h.end - h.start > max_len:  # 너무 길면 max_len 안의 마지막 문장 끝에서 자른다
-            i = bisect_right(ends, h.start + max_len) - 1
-            h.end = ends[i] if i >= 0 and ends[i] > h.start else h.start + max_len
-        if h.end - h.start < min_len * 0.5:
+        if len(h.parts) > 1:
+            parts = [(a, b) for a, b in h.pieces() if b > a]  # 보여 줄 순서는 그대로
+            kept, total = [], 0.0
+            for a, b in parts:  # 너무 길면 뒤쪽 장면부터 줄인다
+                if total + (b - a) > max_len:
+                    b = a + max(max_len - total, 0)
+                if b - a >= 1.0 and not any(a < d and c < b for c, d in kept):
+                    kept.append((a, b))
+                    total += b - a
+            if not kept:
+                continue
+            h.parts = [list(p) for p in kept]
+            h.start, h.end = min(a for a, _ in kept), max(b for _, b in kept)
+        elif starts:
+            # 가까운 문장 시작/끝으로 맞춘다 (말이 없는 곳이라 문장이 멀면 AI가 고른 시간 그대로)
+            a, b = nearest(starts, h.start), nearest(ends, h.end)
+            if abs(a - h.start) <= 1.5:
+                h.start = a
+            if abs(b - h.end) <= 1.5 and b > h.start:
+                h.end = b
+            if h.end - h.start > max_len:  # 너무 길면 max_len 안의 마지막 문장 끝에서 자른다
+                i = bisect_right(ends, h.start + max_len) - 1
+                h.end = ends[i] if i >= 0 and ends[i] > h.start else h.start + max_len
+        elif h.end - h.start > max_len:
+            h.end = h.start + max_len
+        if h.length() < min_len * 0.5:
             continue
-        if any(h.start < o.end and o.start < h.end for o in out):
+        if _overlaps(h, [p for o in out for p in o.pieces()]):
             continue
         out.append(h)
         if len(out) == count:

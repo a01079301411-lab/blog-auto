@@ -231,4 +231,4 @@ def mood_for(guide: str = "", hint: str = "") -> str:
             return key
     return {"vlog": "bright", "lecture": "tension", "moving": "bright",
             "commerce": "bright", "funny": "funny", "story": "calm",
-            "howto": "bright"}.get(guide, "bright")
+            "howto": "bright", "workout": "tension"}.get(guide, "bright")

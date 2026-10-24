@@ -280,8 +280,9 @@ def render(
     """
     if not segments:
         raise ValueError("남길 구간이 없습니다.")
-    base = max(0.0, segments[0][0] - 1.0)
-    end = segments[-1][1] + 1.0
+    # 여러 장면을 이어 붙이면 시간 순서가 아닐 수 있어서 가장 이른·늦은 시간으로 범위를 잡는다
+    base = max(0.0, min(s for s, _ in segments) - 1.0)
+    end = max(e for _, e in segments) + 1.0
 
     parts, labels = [], []
     for i, (s, e) in enumerate(segments):
@@ -428,3 +429,54 @@ def render_long(
          "-f", "concat", "-safe", "0", "-i", listing,
          "-c", "copy", "-movflags", "+faststart", out])
     shutil.rmtree(parts_dir, ignore_errors=True)
+
+
+def merge_videos(inputs: list[str], out: str) -> list[tuple[str, float, float]]:
+    """여러 영상을 하나로 이어 붙인다 (전체에서 숏폼 몇 개만 고를 때). 이미 같은 영상이 있으면 그대로.
+
+    크기·초당 프레임은 첫 영상에 맞춘다. 돌려주는 것: (원본 파일, 합친 영상에서 시작, 끝)들.
+    """
+    spans, t = [], 0.0
+    for p in inputs:
+        d = duration(p)
+        spans.append((p, t, t + d))
+        t += d
+    stamp = out + ".json"
+    sig = [[os.path.abspath(p), os.path.getmtime(p)] for p in inputs]
+    try:
+        with open(stamp, encoding="utf-8") as f:
+            if json.load(f) == sig and os.path.exists(out):
+                return spans
+    except (OSError, ValueError):
+        pass
+    w, h = display_size(inputs[0])
+    w, h = w - w % 2, h - h % 2
+    fps = round(fps_value(inputs[0])) or 30
+    args, parts, labels = [], [], []
+    for i, p in enumerate(inputs):
+        args += ["-i", os.path.abspath(p)]
+    n = len(inputs)
+    for i, p in enumerate(inputs):
+        parts.append(f"[{i}:v]{hdr_to_sdr(p)}scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                     f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p[v{i}]")
+        if has_audio(p):
+            parts.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo[a{i}]")
+        else:
+            args += ["-f", "lavfi", "-t", f"{duration(p):.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+            parts.append(f"[{n}:a]anull[a{i}]")
+            n += 1
+        labels.append(f"[v{i}][a{i}]")
+    parts.append(f"{''.join(labels)}concat=n={len(inputs)}:v=1:a=1[v][a]")
+    tmp = out + ".tmp.mp4"
+    with tempfile.TemporaryDirectory() as work:
+        with open(os.path.join(work, "filter.txt"), "w", encoding="utf-8") as f:
+            f.write(";\n".join(parts))
+        run_progress(t, ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args,
+                         *filter_script_args("filter.txt"), "-map", "[v]", "-map", "[a]",
+                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "15",
+                         "-pix_fmt", "yuv420p", *COLOR_TAGS, "-c:a", "aac", "-b:a", "192k",
+                         os.path.abspath(tmp)], cwd=work)
+    os.replace(tmp, out)
+    with open(stamp, "w", encoding="utf-8") as f:
+        json.dump(sig, f)
+    return spans

@@ -158,6 +158,36 @@ BUILTIN: dict[str, dict] = {
         "title": ("결과·실수 중심. 예: 이거 하나로\\n{30분} 아낍니다; 다들 {거꾸로}\\n하고 있어요"),
         "avoid": "Lists of many tips in one clip; vague tips without a concrete step.",
     },
+    "workout": {
+        "length": "50-60",
+        "name": "운동·크로스핏 (카드 와드 등)",
+        "context": ("크로스핏 박스에서 하는 포커 카드 와드. 일반 와드가 아니라 포커 카드를 뒤집어서 "
+                    "나온 숫자에 맞는 동작을 그 횟수만큼 하는 운동. 내가 준 영상 전체를 다 잘라서 "
+                    "훅을 주고 끝까지 보게 만드는 50~60초 숏폼, 영상 전체에서 딱 3개만."),
+        "speaker": "",
+        "focus": (
+            "Workout / CrossFit footage (here: a poker-card WOD where each flipped card's number "
+            "decides the movement and the reps). Montage is allowed and expected: build each "
+            "clip from 3-6 parts taken from anywhere in ALL the footage, judged mainly by the "
+            "frames. Structure that keeps people watching: (1) hook in the first 2 seconds: "
+            "the most intense moment, a card flip with a scary number, someone collapsing, or "
+            "the finish, shown first; (2) explain the rule in one quick beat (a card flip and "
+            "the movement it means); (3) escalating action: different movements, rising "
+            "fatigue, faces and reactions, cheering, the count; (4) end on the payoff: the last "
+            "card, the finish, lying on the floor, a funny or proud line, then stop. Each of "
+            "the clips must use different moments (no reused parts) and a different angle on "
+            "the story, e.g. 'the rule and the worst card', 'one person's struggle to the "
+            "finish', 'funniest reactions'. Use speech lines when they are good (counting, "
+            "jokes, reactions), but never pick a clip only because someone talks. Best hooks: "
+            "1, 10, 3, 4."),
+        "title": ("숫자·반전·고통이 보이게. 예: 카드 한 장에\\n{버피 13개}; 포커로 운동하면\\n"
+                  "{생기는 일}; 에이스 뜨면\\n{지옥 시작}"),
+        "avoid": "Long stretches of the same movement; waiting or resting; setup talk with nothing happening.",
+        "frames": True,       # 말보다 화면이 중요: 장면 사진을 AI에게 보여 준다
+        "check": False,       # 말 기준 검증은 건너뛴다 (화면으로 골랐으니까)
+        "silence_cut": False,  # 숨소리·동작 소리를 무음으로 잘라내지 않는다
+        "settings": {"count": "3", "min_len": "50", "max_len": "60", "merge": "yes"},
+    },
     "custom": {
         "length": "",
         "name": "직접 입력 (영상 설명대로)",

@@ -81,16 +81,22 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
 
     acct(코시 계정)가 있으면 그 계정 가이드의 글꼴·색·배치로 만든다.
     """
-    keeps = _cut_ranges(args, src, start, end)
+    # 여러 장면을 이어 붙이는 숏폼이면 장면마다 무음을 자르고 보여 줄 순서대로 잇는다
+    pieces = highlight.pieces() if highlight is not None else [(start, end)]
+    keeps = [k for a, b in pieces for k in _cut_ranges(args, src, a, b)]
     if not keeps:
         raise RuntimeError("남길 구간이 없습니다. --noise 값을 낮춰 보세요 (예: -45).")
+    if len(pieces) > 1:
+        print(f"  장면 {len(pieces)}개 이어 붙이기: "
+              + ", ".join(f"{_hms(a)}~{_hms(b)}" for a, b in pieces))
     if getattr(args, "fillers", False) and transcript is not None:
         before = len(keeps)
         keeps = drop_fillers(keeps, words_in_range(transcript.words, start, end))
         if len(keeps) > before:
             print(f"  군말(음·어) {len(keeps) - before}군데 잘라냄")
     kept = sum(e - s for s, e in keeps)
-    print(f"  {_hms(end - start)} → {_hms(kept)} (무음 {_hms(end - start - kept)} 제거, "
+    span = sum(b - a for a, b in pieces)
+    print(f"  {_hms(span)} → {_hms(kept)} (무음 {_hms(max(span - kept, 0))} 제거, "
           f"{len(keeps)}개 조각)")
     words = remap(words_in_range(transcript.words, start, end), keeps) if transcript else []
 
@@ -151,7 +157,11 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     if args.focus == "auto" and fill:
         print("  얼굴 위치 찾는 중...")
         try:
-            samples = face.detect(src, start, end)
+            for a, b in pieces:
+                found = face.detect(src, a, b)
+                if samples and found:  # 장면이 바뀌는 곳은 화면 이동 없이 바로 끊는다
+                    found[0] = face.Sample(found[0].t, found[0].faces, True)
+                samples += found
         except Exception as e:  # 얼굴 인식이 안 되면 가운데로
             print(f"  (얼굴 따라가기 건너뜀: {e})")
         mapped = [face.Sample(ot, s.faces, s.cut) for s in samples
@@ -325,6 +335,34 @@ def _save_picks(path: str, count, highlights: list[Highlight]) -> None:
                   f, ensure_ascii=False, indent=1)
 
 
+def _frames_for_ai(args, total: float, transcript) -> list[tuple[float, str]] | None:
+    """말이 적은 영상(운동·액션)이거나 가이드가 원하면 장면 사진을 뽑아 AI에게 보여 준다."""
+    import base64
+    import tempfile
+
+    g = guides.get(args.guide)
+    words = len(transcript.words) if transcript else 0
+    sparse = total > 0 and words / (total / 60) < 40  # 1분에 40단어도 안 되면 말이 적은 영상
+    if not (g.get("frames") or sparse) or total <= 0:
+        return None
+    count = int(min(90, max(12, total / 4)))
+    print(f"[장면 보기] 말보다 화면이 중요한 영상이라 장면 {count}장을 AI에게 보여 줘요...")
+    shots = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for k in range(count):
+            t = total * (k + 0.5) / count
+            out = os.path.join(tmp, f"f{k}.jpg")
+            try:
+                media.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{t:.2f}",
+                           "-i", args.input, "-frames:v", "1",
+                           "-vf", f"{media.hdr_to_sdr(args.input)}scale=320:-2", "-q:v", "7", out])
+                with open(out, "rb") as f:
+                    shots.append((t, base64.b64encode(f.read()).decode()))
+            except (RuntimeError, OSError):
+                continue
+    return shots or None
+
+
 def _guide_text(args) -> str:
     """영상 종류 가이드 + 지난 숏폼 성과 (있으면)."""
     text = guides.brief(args.guide)
@@ -346,7 +384,8 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
                              context=args.context or "", account=acct,
                              exclude=[(h.start, h.end) for h in picked],
                              words=transcript.words, ref_blocks=args.ref_blocks,
-                             guide=_guide_text(args))
+                             guide=_guide_text(args), frames=getattr(args, "frames", None),
+                             check=guides.get(args.guide).get("check", True))
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -359,6 +398,8 @@ def cmd_shorts(args) -> None:
     from .accounts import parse as parse_accounts
 
     accts = parse_accounts(args.accounts or "")
+    if guides.get(args.guide).get("silence_cut") is False:
+        args.no_silence_cut = True  # 운동처럼 숨소리·동작 소리만 있는 영상은 무음으로 자르지 않는다
     style = load_style(args.style, font=args.font)
     os.makedirs(args.output, exist_ok=True)
     total = media.duration(args.input)
@@ -372,8 +413,11 @@ def cmd_shorts(args) -> None:
 
     picks_path = os.path.join(args.output, "highlights.json")
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
-    key = (f"v5:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
-           else f"v5:{args.count}")
+    key = (f"v6:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v6:{args.count}")
+    key += f":len:{args.min_len:g}-{args.max_len:g}"
+    if args.context:  # 영상 설명(지시)이 바뀌면 다시 고른다
+        key += ":ctx:" + hashlib.md5(args.context.encode()).hexdigest()[:8]
     if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
         key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
@@ -401,6 +445,7 @@ def cmd_shorts(args) -> None:
         args.lessons = performance.lessons(args.guide)
         if args.lessons:
             print("[성과 학습] 지난 숏폼 성과를 반영해서 골라요.")
+        args.frames = _frames_for_ai(args, total, transcript)
         if accts:
             highlights = _pick_for_accounts(args, transcript, accts)
         else:
@@ -408,7 +453,8 @@ def cmd_shorts(args) -> None:
             highlights = pick_highlights(transcript.sentences, count=args.count,
                                          min_len=args.min_len, max_len=args.max_len,
                                          context=args.context or "", words=transcript.words,
-                                         ref_blocks=args.ref_blocks,
+                                         ref_blocks=args.ref_blocks, frames=args.frames,
+                                         check=guides.get(args.guide).get("check", True),
                                          guide=_guide_text(args))
         _save_picks(picks_path, key, highlights)
     if not highlights:
@@ -459,7 +505,7 @@ def cmd_shorts(args) -> None:
         made.append((out, h))
         from . import music
         performance.record(os.path.abspath(out), title=h.title, hook=h.hook,
-                           seconds=h.end - h.start, guide=args.guide,
+                           seconds=h.length(), guide=args.guide,
                            account=f"{acct.no}. {acct.name}" if acct else "",
                            mood=music.mood_for(args.guide, h.bgm_mood))
         progress.report(1.0, f"숏폼 {n}/{len(numbered)}")
@@ -513,8 +559,21 @@ def cmd_auto(args) -> None:
     print(f"[시작] 숏폼 준비 중... (v{__version__})", flush=True)
     if os.path.abspath(args.settings) == os.path.abspath(SETTINGS):
         tidy_settings()  # 예전 업데이트가 흐트러뜨린 설정 파일 모양 정리
-    out = settings.output_dir(args.input)
-    argv = settings.to_argv(args.input, settings.load(args.settings), out)
+    video = args.inputs[0]
+    out = settings.output_dir(video)
+    if len(args.inputs) > 1:
+        # 여러 영상을 하나로 합쳐서, 영상마다가 아니라 전체에서 숏폼 개수만큼만 만든다
+        out = os.path.join(os.path.dirname(os.path.abspath(video)), "숏폼_영상합침")
+        os.makedirs(out, exist_ok=True)
+        video = os.path.join(out, "_합친영상.mp4")
+        print(f"[영상 합치기] 영상 {len(args.inputs)}개를 하나로 이어 붙이는 중 "
+              "(전체에서 고르려고요. 한 번 합치면 다시 쓰지 않아요)...", flush=True)
+        from . import progress
+        progress.set_range(0.0, 0.1)
+        spans = media.merge_videos(args.inputs, video)
+        for k, (p, a, b) in enumerate(spans, 1):
+            print(f"  영상{k} {os.path.basename(p)}: 합친 영상 {_hms(a)} ~ {_hms(b)}")
+    argv = settings.to_argv(video, settings.load(args.settings), out)
     for r in args.ref:
         argv += ["--ref", r]
     shorts_args = build_parser().parse_args(argv)
@@ -659,7 +718,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--burn", metavar="OUT.mp4", help="자막을 영상에 입혀서 저장")
     s.set_defaults(func=cmd_subtitle)
     s = sub.add_parser("auto", help="settings.ini 설정으로 숏폼 만들기 (run.bat이 사용)")
-    s.add_argument("input")
+    s.add_argument("inputs", nargs="+",
+                   help="영상. 여러 개면 하나로 합쳐서 전체에서 숏폼 개수만큼만 만든다")
     s.add_argument("--ref", action="append", default=[], help="레퍼런스 (링크·파일·설명)")
     s.add_argument("--settings", default=SETTINGS)
     s.set_defaults(func=cmd_auto)

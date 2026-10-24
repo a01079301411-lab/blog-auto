@@ -14,7 +14,7 @@ DEFAULTS = {
     "subtitles": "yes", "review": "no", "review_wait": "3", "fix_subtitles": "yes", "burned_subs": "auto",
     "bgm_volume": "0.15", "bgm_source": "auto", "retention": "yes", "thumbnail": "yes", "upload": "no",
     "fillers": "yes", "voice_enhance": "yes", "inserts": "yes",
-    "karaoke": "no", "sub_pop": "yes", "auto_color": "yes",
+    "karaoke": "no", "sub_pop": "yes", "auto_color": "yes", "merge": "no",
 }
 
 

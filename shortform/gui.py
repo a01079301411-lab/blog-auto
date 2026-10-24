@@ -231,6 +231,11 @@ class Tooltip:
 
 
 TEMPLATES = os.path.join(ROOT, "템플릿.json")
+SETTING_NAMES = {"count": "숏폼 개수", "min_len": "최소 길이(초)", "max_len": "최대 길이(초)",
+                 "merge": "영상 합쳐서 고르기", "retention": "훅 자막·진행 막대",
+                 "burned_subs": "원본 자막 그대로", "sub_pop": "자막 튀어나오기",
+                 "karaoke": "단어마다 색 채우기", "fillers": "군말 자르기"}
+SETTING_VALUES = {"yes": "켬", "no": "끔", "auto": "켬"}
 
 
 def _load_templates() -> dict[str, dict[str, str]]:
@@ -404,6 +409,11 @@ class App:
             self.context.delete("1.0", "end")
             self.context.insert("1.0", g.get("context", ""))
         self.speaker_var.set(g.get("speaker", ""))
+        if g.get("settings"):  # 이 영상 종류에 맞는 개수·길이 등을 함께 맞춘다
+            self._apply_values(g["settings"])
+            self._append("이 영상 종류에 맞게 설정도 바꿨어요: "
+                         + ", ".join(SETTING_NAMES.get(k, k) + " " + SETTING_VALUES.get(v, v)
+                                     for k, v in g["settings"].items()) + "\n")
         if self._guide_key() != "lecture" and any(v.get() for v in self.acct_vars.values()):
             for v in self.acct_vars.values():  # 코시 계정 디자인은 강의 영상용
                 v.set(False)
@@ -442,15 +452,20 @@ class App:
         for key in ("burned_subs", "sub_pop", "karaoke"):
             self.flags[key].widget.state(
                 ["!disabled"] if self.flags["subtitles"].get() else ["disabled"])
+        n_videos = len(self.videos.get(0, "end")) if hasattr(self, "videos") else 0
         if picked:
             per = int(_num(self.per_var.get())) or 3
             text = (f"→ 코시 계정 {len(picked)}개 × {per}개 = 숏폼 {len(picked) * per}개를 "
                     f"계정 디자인으로 만들어요 (숏폼 개수·디자인은 안 써요)")
         else:
-            text = (f"→ 숏폼 {int(_num(self.count_var.get())) or 5}개를 "
-                    f"'{self.style_var.get()}' 디자인으로 만들어요")
-            if not lecture:
-                text += " (코시 계정 디자인은 강의 영상에서만 골라요)"
+            n = int(_num(self.count_var.get())) or 5
+            if n_videos > 1 and self.merge_var.get():
+                where = f"영상 {n_videos}개를 합쳐서 전체에서 숏폼 {n}개를"
+            elif n_videos > 1:
+                where = f"영상 {n_videos}개 × {n}개 = 숏폼 {n_videos * n}개를"
+            else:
+                where = f"숏폼 {n}개를"
+            text = f"→ {where} '{self.style_var.get()}' 디자인으로 만들어요"
         self.shorts_note.configure(text=text)
 
     def _build(self) -> None:
@@ -611,6 +626,12 @@ class App:
         self.count_var = tk.StringVar(value=c["count"])
         self.count_box = ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5)
         self.count_box.pack(side="left")
+        self.merge_var = tk.BooleanVar(value=c.get("merge", "no").lower() == "yes")
+        mc = ttk.Checkbutton(row, text="영상 합쳐서 전체에서",
+                             variable=self.merge_var, style="Card.TCheckbutton")
+        mc.pack(side="left", padx=(10, 0))
+        Tooltip(mc, "끄면 영상마다 이 개수씩 만들어요 (영상 4개 × 3개 = 12개). 켜면 넣은 영상을 "
+                    "모두 하나로 합쳐서 전체에서 딱 이 개수만 만들어요 (4개 영상 → 3개).")
         row = self._row(sf, "길이(초)")
         self.min_var = tk.StringVar(value=c["min_len"])
         self.max_var = tk.StringVar(value=c["max_len"])
@@ -719,7 +740,7 @@ class App:
         self.flags["review"] = self._check(adv, "만들기 전에 목록 보고 고르기",
                                            c["review"].lower() == "yes")
         for var in [*self.acct_vars.values(), self.per_var, self.count_var, self.style_var,
-                    self.flags["subtitles"]]:
+                    self.flags["subtitles"], self.merge_var]:
             var.trace_add("write", self._sync_shorts)
         self._sync_shorts()
 
@@ -969,6 +990,7 @@ class App:
         path = os.path.abspath(path)
         if path not in self.videos.get(0, "end"):
             self.videos.insert("end", path)
+            self._sync_shorts()
 
     def _pick_videos(self) -> None:
         for p in filedialog.askopenfilenames(title="영상 고르기", filetypes=VIDEO_TYPES):
@@ -977,6 +999,7 @@ class App:
     def _remove_video(self) -> None:
         for i in reversed(self.videos.curselection()):
             self.videos.delete(i)
+        self._sync_shorts()
 
     # ---------- 설정 ----------
 
@@ -1002,6 +1025,7 @@ class App:
             "fillers": yes("fillers"), "voice_enhance": yes("voice_enhance"),
             "inserts": yes("inserts"), "karaoke": yes("karaoke"), "sub_pop": yes("sub_pop"),
             "auto_color": yes("auto_color"),
+            "merge": "yes" if self.merge_var.get() else "no",
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
@@ -1013,9 +1037,10 @@ class App:
         g = self.guide_list.get(v.get("guide", ""))
         if g:
             self.guide_var.set(g["name"])
-        chosen = set(accounts.parse(v.get("accounts", "")))
-        for n, var in self.acct_vars.items():
-            var.set(n in chosen)
+        if "accounts" in v:
+            chosen = set(accounts.parse(v["accounts"]))
+            for n, var in self.acct_vars.items():
+                var.set(n in chosen)
         for key, var in (("per_account", self.per_var), ("count", self.count_var),
                          ("min_len", self.min_var), ("max_len", self.max_var),
                          ("speaker", self.speaker_var)):
@@ -1023,6 +1048,8 @@ class App:
                 var.set(v[key])
         if "style" in v:
             self.style_var.set(STYLE_NAMES.get(v["style"], v["style"]))
+        if "merge" in v:
+            self.merge_var.set(v["merge"] == "yes")
         if "context" in v:
             self.context.delete("1.0", "end")
             self.context.insert("1.0", v["context"])
@@ -1140,6 +1167,8 @@ class App:
             self._append(f"(설정 저장 실패: {e})\n")
         self.stopping = False
         self._set_running(True)
+        if values.get("merge") == "yes" and len(videos) > 1:
+            videos = [videos]  # 여러 영상을 한 번에: 합쳐서 전체에서 개수만큼
         threading.Thread(target=self._run_all, args=(videos,), daemon=True).start()
 
     def _run_all(self, videos: list[str]) -> None:
@@ -1149,14 +1178,18 @@ class App:
         for n, video in enumerate(videos, 1):
             if self.stopping:
                 break
-            self.queue.put(("status", f"[{n}/{len(videos)}] {os.path.basename(video)}"))
+            group = video if isinstance(video, list) else [video]  # 합치기면 영상 목록
+            first = group[0]
+            label = os.path.basename(first) + (f" 외 {len(group) - 1}개 (합쳐서)" if len(group) > 1 else "")
+            self.queue.put(("status", f"[{n}/{len(videos)}] {label}"))
             self.queue.put(("batch", n - 1, len(videos)))
-            self.queue.put(("log", f"\n===== {video} =====\n", False))
-            self.last_output = settings.output_dir(video)
+            self.queue.put(("log", f"\n===== {label} =====\n", False))
+            self.last_output = (os.path.join(os.path.dirname(os.path.abspath(first)), "숏폼_영상합침")
+                                if len(group) > 1 else settings.output_dir(first))
             kwargs = {"creationflags": NO_WINDOW} if sys.platform == "win32" else \
                 {"start_new_session": True}
             self.proc = subprocess.Popen(
-                [_python(), "-m", "shortform", "auto", video,
+                [_python(), "-m", "shortform", "auto", *group,
                  *[a for r in self.short_refs.get(0, "end") for a in ("--ref", r)]],
                 cwd=ROOT, env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
