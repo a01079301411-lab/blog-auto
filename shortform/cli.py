@@ -315,7 +315,8 @@ def _load_picks(path: str, count) -> list[Highlight] | None:
         return None
     if data.get("count") != count:
         return None  # 개수 설정이 바뀌었으면 새로 고른다
-    return [Highlight(**h) for h in data["highlights"]]
+    picks = [Highlight(**h) for h in data["highlights"]]
+    return picks or None  # 지난번에 못 찾았으면 다시 찾는다
 
 
 def _save_picks(path: str, count, highlights: list[Highlight]) -> None:
@@ -411,7 +412,8 @@ def cmd_shorts(args) -> None:
                                          guide=_guide_text(args))
         _save_picks(picks_path, key, highlights)
     if not highlights:
-        sys.exit("하이라이트를 찾지 못했습니다.")
+        sys.exit("하이라이트를 찾지 못했어요. 길이(초) 범위를 넓히거나(예: 15~60) "
+                 "[고급 설정]의 영상 설명을 적어 주면 찾기 쉬워져요.")
 
     numbered = list(enumerate(highlights, 1))
     if args.review:

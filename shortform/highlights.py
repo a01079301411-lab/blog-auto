@@ -439,7 +439,17 @@ def pick_highlights(
         picked = [h for h in picked if not any(h.start < b and a < h.end for a, b in exclude)]
     result = clean(picked, lines, count=count, min_len=min_len, max_len=max_len)
     if len(result) < count:
-        print(f"  확실한 하이라이트가 {len(result)}개뿐이라 {len(result)}개만 만들어요.")
+        # 검증 기준에 못 미쳐도 빈손으로 끝내지 않는다: 남은 후보 중 점수 높은 것으로 채운다
+        rest = sorted((h for h in candidates if h not in picked), key=lambda h: -h.score)
+        if exclude:
+            rest = [h for h in rest if not any(h.start < b and a < h.end for a, b in exclude)]
+        more = clean(result + rest, lines, count=count, min_len=min_len, max_len=max_len)
+        if len(more) > len(result):
+            print(f"  확실한 하이라이트가 {len(result)}개라, 검증 기준엔 조금 못 미치지만 가장 나은 "
+                  f"구간 {len(more) - len(result)}개를 더해 {len(more)}개를 만들어요.")
+            result = more
+        else:
+            print(f"  확실한 하이라이트가 {len(result)}개뿐이라 {len(result)}개만 만들어요.")
     return result
 
 

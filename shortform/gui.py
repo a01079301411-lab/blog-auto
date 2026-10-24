@@ -1198,6 +1198,12 @@ class App:
                     line, sep, buf = buf[:i], "\n", buf[i + 2:]  # Windows 줄바꿈: 덮어쓰기 아님
                 else:
                     line, sep, buf = buf[:i], buf[i], buf[i + 1:]
+                # 진행률 표시가 \r로 덮어쓰는 줄 뒤에 붙어 올 수도 있어서 줄 중간에서도 찾는다
+                k = line.find("@@PROGRESS@@ ")
+                if k > 0:
+                    if line[:k].strip():
+                        self.queue.put(("log", line[:k], True))
+                    line = line[k:]
                 if line.startswith("@@REVIEW@@ "):
                     self.queue.put(("review", line[len("@@REVIEW@@ "):].strip()))
                     continue
