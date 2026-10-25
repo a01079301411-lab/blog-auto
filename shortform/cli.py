@@ -403,6 +403,10 @@ def cmd_shorts(args) -> None:
     style = load_style(args.style, font=args.font)
     os.makedirs(args.output, exist_ok=True)
     total = media.duration(args.input)
+    if total < args.min_len:  # 영상이 숏폼 최소 길이보다 짧으면 영상 길이에 맞춘다
+        print(f"[길이] 영상이 {_hms(total)}라 숏폼 길이 {args.min_len:g}~{args.max_len:g}초를 "
+              f"만들 수 없어서, 이 영상은 {max(5.0, total * 0.6):.0f}~{total:.0f}초로 맞춰요.")
+        args.min_len, args.max_len = max(5.0, total * 0.6), max(total, 6.0)
     vertical = media.is_vertical(args.input)
     from . import performance, progress
 
@@ -456,7 +460,13 @@ def cmd_shorts(args) -> None:
                                          ref_blocks=args.ref_blocks, frames=args.frames,
                                          check=guides.get(args.guide).get("check", True),
                                          guide=_guide_text(args))
-        _save_picks(picks_path, key, highlights)
+        if not highlights and transcript is not None and not accts:
+            # 그래도 하나도 못 고르면 빈손으로 끝내지 않는다: 영상 앞부분을 숏폼 하나로
+            end = min(total, args.max_len)
+            print(f"  고를 만한 구간을 못 찾아서, 영상 처음 {_hms(end)}를 숏폼 1개로 만들어요.")
+            highlights = [Highlight(0.0, end, "")]
+        if highlights and highlights[0].title:
+            _save_picks(picks_path, key, highlights)
     if not highlights:
         sys.exit("하이라이트를 찾지 못했어요. 길이(초) 범위를 넓히거나(예: 15~60) "
                  "[고급 설정]의 영상 설명을 적어 주면 찾기 쉬워져요.")

@@ -1175,6 +1175,7 @@ class App:
         env = {**os.environ, "SHORTFORM_GUI": "1", "PYTHONUNBUFFERED": "1",
                "PYTHONIOENCODING": "utf-8"}
         code = 0
+        failed: list[str] = []
         for n, video in enumerate(videos, 1):
             if self.stopping:
                 break
@@ -1195,9 +1196,15 @@ class App:
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                 **kwargs)
             self._pump(self.proc)
-            code = self.proc.wait()
-            if code and not self.stopping:
-                break
+            rc = self.proc.wait()
+            if rc and not self.stopping:  # 한 영상이 실패해도 나머지 영상은 계속 만든다
+                code = rc
+                failed.append(label)
+                if n < len(videos):
+                    self.queue.put(("log", f"\n(이 영상은 실패했어요. 다음 영상으로 넘어가요: {label})\n",
+                                    False))
+        if failed and len(videos) > 1:
+            self.queue.put(("log", f"\n실패한 영상 {len(failed)}개: " + ", ".join(failed) + "\n", False))
         self.queue.put(("done", code))
 
     def _pump(self, proc: subprocess.Popen) -> None:
