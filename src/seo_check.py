@@ -18,6 +18,7 @@ import random
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -45,8 +46,12 @@ MAX_TRIES = 7  # 같은 글은 이 횟수까지만 누락 확인 (그 뒤엔 누
 
 # ── 네이버 검색 ──
 
+LAST = {}  # 마지막으로 연 화면 (막혔는지 볼 때 쓴다)
+
+
 def _html(page, url):
     page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    LAST["page"] = page
     page.wait_for_timeout(1500)
     for _ in range(3):  # 블로그 검색은 아래로 내리면 더 나온다
         page.mouse.wheel(0, 4000)
@@ -73,7 +78,24 @@ def _my_rank(html):
 
 
 def _blocked(html):
-    return "자동입력 방지" in html or "captcha" in html.lower()
+    """네이버가 자동 검색을 막은 화면인지. 보이는 글자와 주소로 판단한다.
+    (검색 화면 코드 안에는 평소에도 captcha라는 글자가 있어서 코드로는 판단하지 않는다)"""
+    page = LAST.get("page")
+    try:
+        text = page.inner_text("body") if page else ""
+        url = page.url if page else ""
+    except Exception:
+        text, url = "", ""
+    blocked = ("자동입력 방지" in text or "보안 확인" in text or "비정상적인" in text
+               or "captcha" in url.lower() or "nid.naver.com" in url)
+    if blocked and page:
+        shot = OUTPUT_DIR.parent / "logs" / f"{datetime.now():%Y-%m-%d_%H%M%S}_search_blocked.png"
+        try:
+            page.screenshot(path=str(shot))
+            log.info("막힌 화면: %s", shot)
+        except Exception:
+            pass
+    return blocked
 
 
 # ── 상태 기록 ──
@@ -160,8 +182,9 @@ def check_place(page):
 # ── 키워드 검색량 (네이버 검색광고 API, 선택) ──
 
 def _ad_keys():
-    keys = (os.getenv("NAVER_AD_CUSTOMER_ID", ""), os.getenv("NAVER_AD_API_KEY", ""), os.getenv("NAVER_AD_SECRET", ""))
-    return keys if all(k.strip() for k in keys) else None
+    keys = tuple(os.getenv(k, "").strip().strip('"').strip("'")
+                 for k in ("NAVER_AD_CUSTOMER_ID", "NAVER_AD_API_KEY", "NAVER_AD_SECRET"))
+    return keys if all(keys) else None
 
 
 def _ad_request(keys, hints):
@@ -174,8 +197,12 @@ def _ad_request(keys, hints):
         f"https://api.searchad.naver.com{uri}?{query}",
         headers={"X-Timestamp": stamp, "X-API-KEY": api_key, "X-Customer": customer, "X-Signature": sign},
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.loads(response.read().decode())["keywordList"]
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode())["keywordList"]
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        raise RuntimeError(f"{e.code} {detail}") from None
 
 
 def _count(value):
@@ -247,6 +274,7 @@ def run(full=True):
         message.append("순위: " + (", ".join(ranked[:5]) if ranked else "확인한 키워드에서 아직 안 보여요"))
         report += ["", f"## 3. 플레이스 ({COMPANY_NAME} 검색)", ""]
         report += [f"- {k}: {'예' if v else '아니요'}" for k, v in place.items()]
+        report.append("- 참고: 플레이스에 0507 같은 안심번호를 쓰면 회사 전화번호가 안 보여도 정상이에요.")
         message.append("플레이스: " + ", ".join(f"{k} {'O' if v else 'X'}" for k, v in place.items()))
 
         volumes = keyword_volumes()
