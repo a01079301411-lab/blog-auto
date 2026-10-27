@@ -8,6 +8,7 @@ logs/
 photos/
 data/history.json
 data/links_cache.json
+data/seo_status.json
 backup/
 .update_state.json
 *.새버전

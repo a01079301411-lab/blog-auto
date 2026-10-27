@@ -342,6 +342,14 @@ def main():
         stop("크롬을 열거나 닫다가 문제가 생겼어요. 다시 실행하면 이 글이 블로그에 있는지 먼저 확인하고, "
              "없을 때만 다시 올립니다.")
 
+    if args.schedule:
+        # 자동 실행 끝에 지난 글들이 검색에 나오는지 확인한다. 월요일에는 순위, 플레이스, 검색량까지.
+        try:
+            import seo_check
+            seo_check.run(full=datetime.now().weekday() == 0)
+        except Exception as e:  # 확인이 안 돼도 글 발행에는 영향 없다
+            log.warning("검색 성과 확인을 못 했어요: %s", e)
+
 
 if __name__ == "__main__":
     main()

@@ -24,7 +24,7 @@ ZIP_URL = (
 STATE_FILE = ROOT / ".update_state.json"  # 지난번 업데이트로 받은 파일들의 지문
 NEVER_TOUCH = {
     ".env", "browser_profile", "output", "logs", "photos", "backup", ".update_state.json",
-    "data/history.json", "data/links_cache.json",
+    "data/history.json", "data/links_cache.json", "data/seo_status.json",
 }
 USER_EDITABLE = ("data/", "prompts/", "samples/")  # 사장님이 직접 고칠 수 있는 파일
 
