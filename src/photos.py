@@ -68,7 +68,7 @@ def _folder_info(folder):
 # 폴더 작업종류 이름이 어느 서비스 묶음인지 알아보는 말들 (topics.md 섹션 이름 맨 앞 단어와 같다)
 SERVICE_WORDS = {
     "보관이사": ["보관", "창고"],
-    "포장이사": ["포장", "가정", "일반이사", "원룸", "아파트", "반포장"],
+    "포장이사": ["포장", "가정", "일반이사", "원룸", "아파트", "반포장", "소형", "용달", "오피스텔", "장거리"],
     "기업이사": ["사무실", "관공서", "공공기관", "청사", "기관", "기업", "학원", "병원", "학교", "회사"],
     "이전설치": ["이전설치", "침대", "에어컨", "가구", "헹거", "행거", "분해", "조립"],
 }
@@ -153,6 +153,7 @@ def pick(topic):
     for name in SHARED_SECTORS:  # 종류별 폴더가 없으면 만들어 둔다 (사장님이 사진만 넣으면 되게)
         (shared / name).mkdir(exist_ok=True)
     topic_group = topic["section"].split(" ")[0] if topic.get("section") else None
+    topic_group = {"장거리이사": "포장이사"}.get(topic_group, topic_group)  # 장거리 이사는 포장이사 사진을 쓴다
     used = _used_photo_names()
 
     def fresh(files):

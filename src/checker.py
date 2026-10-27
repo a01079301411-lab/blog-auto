@@ -134,6 +134,8 @@ def check(post, topic, photo_set=None, related=None):
     regions, phrases = load_forbidden()
     full = title + "\n" + plain
     found = [p for p in phrases if p in full]
+    if topic.get("section", "").startswith("장거리"):  # 장거리 이사 글은 다른 지역명을 쓴다 (출발이나 도착이 대구)
+        regions = []
     found += [r for r in regions if re.search(re.escape(r) + f"(?![가-힣])|{re.escape(r)}(?=[{PARTICLES}])", full)]
     if found:
         fails.append("쓰면 안 되는 표현이 있어요: " + ", ".join(sorted(set(found))))
