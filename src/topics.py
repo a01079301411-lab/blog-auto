@@ -16,6 +16,7 @@ TITLE_TYPES = ["자아 자극형", "손실 경고형", "호기심 가림형", "�
 HOOK_TYPES = ["현장 장면형", "질문형", "숫자 제시형", "흔한 오해 지적형", "결론 먼저형", "고객 목소리형"]
 VARIANTS = [1, 2, 3, 4]
 RECENT_DAYS = 30
+KEYWORD_GAP_DAYS = 5  # 같은 메인 키워드는 이 기간 안에 다시 쓰지 않는다 (다른 키워드가 있으면)
 
 
 def load_topics(path=DATA_DIR / "topics.md"):
@@ -68,6 +69,9 @@ def pick(forced=None):
         # 지금 계절과 안 맞는 주제(10월의 '장마철 보관이사' 같은)는 고르지 않는다
         topics = [t for t in topics if season.topic_in_season(t)] or topics
         fresh = [t for t in topics if t["topic"] not in recent]
+        # 같은 메인 키워드가 며칠 연달아 나오지 않게 (다른 키워드가 남아 있으면 그쪽부터)
+        recent_kw = {r.get("keyword") for r in history.within_days(records, KEYWORD_GAP_DAYS)}
+        fresh = [t for t in fresh if t["keyword"] not in recent_kw] or fresh
         if not fresh:
             # 전부 최근에 썼으면 가장 오래전에 쓴 주제부터
             last_used = {r.get("topic"): r["date"] for r in records}

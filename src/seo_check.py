@@ -42,6 +42,7 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 CHECK_DAYS = 30  # 최근 이 기간에 올린 글만 확인한다
 MAX_TRIES = 7  # 같은 글은 이 횟수까지만 누락 확인 (그 뒤엔 누락으로 본다)
+MAX_CHECKS_PER_RUN = 5  # 한 번 실행할 때 제목 검색은 이만큼만 (네이버가 막지 않게)
 
 
 # ── 네이버 검색 ──
@@ -56,7 +57,7 @@ def _html(page, url):
     for _ in range(3):  # 블로그 검색은 아래로 내리면 더 나온다
         page.mouse.wheel(0, 4000)
         page.wait_for_timeout(700)
-    time.sleep(random.uniform(2, 4))  # 사람처럼 천천히 (너무 빠르면 네이버가 막을 수 있다)
+    time.sleep(random.uniform(4, 8))  # 사람처럼 천천히 (너무 빠르면 네이버가 막을 수 있다)
     return page.content()
 
 
@@ -126,12 +127,13 @@ def _recent_posts():
 
 def check_indexing(page, status):
     """하루 이상 지난 글 중 아직 검색에서 확인 못 한 글을 제목으로 검색한다."""
-    rows = []
+    rows, checks = [], 0
     for post in _recent_posts():
         title = post["title"]
         state = status.setdefault(title, {"tries": 0, "found": False})
         if not state["found"] and datetime.now() - post["_when"] >= timedelta(hours=20) \
-                and state["tries"] < MAX_TRIES:
+                and state["tries"] < MAX_TRIES and checks < MAX_CHECKS_PER_RUN:
+            checks += 1
             html = _html(page, BLOG_SEARCH.format(q=urllib.parse.quote(title)))
             if _blocked(html):
                 log.info("네이버가 자동 검색을 잠깐 막았어요. 다음에 다시 확인합니다.")
