@@ -181,6 +181,7 @@ def finish(topic, photo_set, post, blocks, result, note=""):
         "opening": formatter.opening(blocks),
         "result": result["result"], "url": result["url"],
         "photo_folder": photo_set["folder"].name if photo_set else "",
+        "facts": post.get("used_facts", []),
         "photos": re.findall(r"\[사진:\s*([^\]]+?)\s*\]", post["body"]),
     })
     try:

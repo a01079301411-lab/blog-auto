@@ -64,7 +64,12 @@ def recent_posts_text(limit=10):
     records = history.load()[-limit:]
     if not records:
         return "(아직 없음)"
-    return "\n".join(f"- 제목: {r['title']} / 첫 문장: {r.get('opening', '')}" for r in reversed(records))
+    lines = [f"- 제목: {r['title']} / 첫 문장: {r.get('opening', '')}" for r in reversed(records)]
+    facts = [f for r in records[-3:] for f in r.get("facts", [])]
+    if facts:
+        lines.append("최근 3개 글에서 이미 쓴 회사 팩트 (이번 주제에 꼭 필요한 게 아니면 다른 팩트를 쓴다): "
+                     + " / ".join(dict.fromkeys(facts)))
+    return "\n".join(lines)
 
 
 # 발행 전 검토에서 자주 걸린 것들. 프롬프트 파일을 사장님이 고쳐 써도 항상 지키게 여기에 둔다.
