@@ -103,6 +103,27 @@ def _images(folder):
     return sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTS)
 
 
+MEMO_NAMES = ("메모.txt", "현장메모.txt", "memo.txt")  # 현장 폴더 안 사장님 메모 (있으면 후기형으로 쓴다)
+
+
+def _memo(folder):
+    for name in MEMO_NAMES:
+        path = folder / name
+        if path.exists():
+            for enc in ("utf-8-sig", "cp949"):  # 메모장 저장 방식이 달라도 읽게
+                try:
+                    return path.read_text(encoding=enc).strip()
+                except UnicodeDecodeError:
+                    continue
+    return ""
+
+
+def _used_photo_names():
+    """지금까지 발행한 글에 들어간 사진 이름. 같은 사진을 여러 글에 다시 쓰면 중복 이미지로 보일 수 있다."""
+    import history
+    return {name for r in history.load() for name in r.get("photos", [])}
+
+
 def pick(topic):
     """주제에 맞는 안 쓴 현장 폴더를 고른다.
     없으면 '공용' 폴더에서 몇 장을 고른다. 그것도 없으면 None (아무 사진이나 넣지 않음)."""
@@ -119,7 +140,10 @@ def pick(topic):
             continue
         files = _images(folder)
         if files:  # 몇 장까지 쓸지는 add_descriptions 가 쓸 수 있는 사진만 세어서 정한다
-            return {**info, "files": files}
+            memo = _memo(folder)
+            if memo:
+                log.info("현장 메모가 있어서 현장 후기 글로 씁니다.")
+            return {**info, "files": files, "memo": memo}
 
     names = ", ".join(f.name for f in folders) or "없음"
     log.info("이번 주제(%s)에 맞는 현장 사진 폴더가 없어요. 지금 있는 폴더: %s", topic["topic"], names)
@@ -129,13 +153,22 @@ def pick(topic):
     for name in SHARED_SECTORS:  # 종류별 폴더가 없으면 만들어 둔다 (사장님이 사진만 넣으면 되게)
         (shared / name).mkdir(exist_ok=True)
     topic_group = topic["section"].split(" ")[0] if topic.get("section") else None
+    used = _used_photo_names()
+
+    def fresh(files):
+        """이미 다른 글에 쓴 공용 사진은 빼고 고른다."""
+        new = [f for f in files if f.name not in used]
+        if files and not new:
+            log.info("이 공용 폴더 사진은 모두 한 번씩 썼어요. 새 사진을 넣어 주세요.")
+        return new
+
     for sector in sorted(f for f in shared.iterdir() if f.is_dir()):
-        files = _images(sector)
+        files = fresh(_images(sector))
         if files and _group(sector.name) == topic_group:
             log.info("공용/%s 폴더(%s장)에서 최대 %s장을 골라 씁니다.", sector.name, len(files), SHARED_COUNT)
             return {"folder": sector, "region": "", "kind": sector.name,
                     "files": random.sample(files, len(files)), "shared": True}  # 매번 순서를 섞는다
-    files = _images(shared)
+    files = fresh(_images(shared))
     if files:
         log.info("공용 안에 이 주제 종류 폴더 사진이 없어서, 공용 폴더(%s장)에서 최대 %s장을 골라 씁니다.",
                  len(files), SHARED_COUNT)
@@ -228,6 +261,9 @@ def describe(photo_set):
         f"- {p.name}" + (f": {descriptions[p.name]}" if p.name in descriptions else "")
         for p in photo_set["files"]
     ]
+    if photo_set.get("memo"):
+        lines += ["", "현장 기록 (사장님이 직접 적은 실제 작업 내용. 사실이다. 이 내용을 글의 중심으로 쓴다)",
+                  photo_set["memo"]]
     return "\n".join(lines)
 
 
