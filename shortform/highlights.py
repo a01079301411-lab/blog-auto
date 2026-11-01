@@ -52,6 +52,16 @@ For each clip also write, in the transcript's language:
   braces; they are shown in an accent color. The first line sets up, the last line is
   the punch, e.g. "사장님 속터지는\\n{진상 직원}의 한마디" or "망하는 사장님의\\n{치명적 실수}".
   Make people stop scrolling, but do not promise anything the clip does not deliver.
+- thumb_text: the text on the thumbnail (cover image), which decides whether people tap
+  or stop. 1-2 lines separated by "\\n", each line at most 8 characters, the 1-2 key words
+  in {curly braces}. It names the most clickable, visible thing in the clip: a strong
+  emotion, a stake, a number or a surprising outcome ("{경찰} 부를 뻔", "아내 {정색}",
+  "버피 {100개}"). Raising the degree a little is fine ("역대급", "폭주"), but every fact it
+  states must really happen in the clip: no invented events, people or numbers. Not a
+  topic label and not the same words as the title.
+- thumb_time: seconds from the clip start of the best thumbnail moment: the biggest,
+  clearest face with the strongest expression (a laugh, shock, struggle), matching
+  thumb_text. 0 if unsure.
 - label: a short teaser shown in a small badge above the title, at most 10 characters,
   e.g. "당신만 몰랐던..".
 - speaker: who is talking, as "name / role" (e.g. "권기준 / 꼴통사장 대표"), using the
@@ -108,6 +118,8 @@ SCHEMA = {
                     "caption": {"type": "string", "description": "upload description + hashtags"},
                     "reason": {"type": "string", "description": "why this works as a short"},
                     "hook_text": {"type": "string"},
+                    "thumb_text": {"type": "string"},
+                    "thumb_time": {"type": "number"},
                     "rehook_text": {"type": "string"},
                     "rehook_time": {"type": "number"},
                     "bgm_mood": {"type": "string", "enum": ["bright", "calm", "tension", "funny"]},
@@ -115,7 +127,7 @@ SCHEMA = {
                               "description": "1-10, how well it would perform as a short"},
                 },
                 "required": ["start", "end", "parts", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
-                             "hook_text", "rehook_text", "rehook_time", "bgm_mood",
+                             "hook_text", "thumb_text", "thumb_time", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
             },
@@ -146,6 +158,8 @@ class Highlight:
     bgm_mood: str = ""   # 배경음악 분위기 (bright, calm, tension, funny)
     title_options: list[str] = field(default_factory=list)  # AI가 쓴 제목 후보들
     parts: list[list[float]] = field(default_factory=list)  # 여러 장면을 이어 붙일 때 [시작, 끝]들
+    thumb_text: str = ""    # 썸네일 글자 ({강조})
+    thumb_at: float = 0.0   # 썸네일로 쓸 순간 (원본 시간, 0이면 자동)
 
     def pieces(self) -> list[tuple[float, float]]:
         """숏폼에 들어갈 원본 구간들 (보여 줄 순서대로)."""
@@ -311,6 +325,10 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
         parts = [(float(p["start"]), float(p["end"])) for p in h.get("parts", [])
                  if float(p["end"]) - float(p["start"]) >= 1.0]
         hl = _make(h, account)
+        hl.thumb_text = clean_title(h.get("thumb_text", "") or "")
+        tt = float(h.get("thumb_time", 0) or 0)
+        if tt > 0:
+            hl.thumb_at = _source_time(parts, tt) if len(parts) > 1 else hl.start + tt
         if len(parts) > 1:
             hl.parts = [list(p) for p in parts]
             hl.start, hl.end = min(a for a, _ in parts), max(b for _, b in parts)

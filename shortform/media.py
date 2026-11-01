@@ -272,6 +272,8 @@ def render(
     insert_bottom: int = 1250,
     voice_enhance: bool = False,
     color: str = "",
+    cover: str | None = None,
+    cover_dur: float = 0.0,
 ) -> None:
     """src에서 segments 구간만 이어붙여 out으로 렌더링한다.
 
@@ -355,9 +357,18 @@ def render(
             sub = f"[vl3]subtitles=filename=subs{ext}{fontsdir}"
             if ext != ".ass":  # ASS는 파일 안에 스타일이 있다
                 sub += f":force_style='{subtitle_style(font)}'"
-            parts.append(sub + "[vout]")
+            parts.append(sub + "[vsub]")
         else:
-            parts.append("[vl3]null[vout]")
+            parts.append("[vl3]null[vsub]")
+        if cover and cover_dur > 0:  # 영상 첫 화면: 썸네일을 잠깐 (플랫폼이 첫 화면을 표지로 쓸 때)
+            idx, n_inputs = n_inputs, n_inputs + 1
+            inputs += ["-loop", "1", "-t", f"{cover_dur + 0.5:.3f}", "-i", os.path.abspath(cover)]
+            parts.append(f"[{idx}:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+                         f"crop=1080:1920,format=rgba[cov]")
+            parts.append(f"[vsub][cov]overlay=0:0:enable='between(t,0,{cover_dur:.3f})':"
+                         f"eof_action=pass[vout]")
+        else:
+            parts.append("[vsub]null[vout]")
 
         script = os.path.join(work, "filter.txt")
         with open(script, "w", encoding="utf-8") as f:

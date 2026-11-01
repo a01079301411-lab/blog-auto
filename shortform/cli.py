@@ -211,6 +211,35 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     subs = os.path.splitext(out)[0] + ".ass"
     vf = video_filter(style, focus, path=path, span=span, aspect=sw / sh if sh else 16 / 9,
                       keep_bottom=keep_bottom)
+
+    # 4) 썸네일(표지): 영상보다 먼저 만들어서 영상 첫 화면에도 쓴다
+    cover = base_png = None
+    if args.thumbnail and acct is not None:
+        cover = _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus,
+                                   frame_args=dict(span=span, aspect=sw / sh if sh else 16 / 9,
+                                                   keep_bottom=keep_bottom), center=path)
+    elif args.thumbnail:
+        from . import thumbs
+        # 후보: 얼굴이 잡힌 순간들 (없으면 숏폼 전체에서 고르게), 숏폼에 실제로 들어간 장면만
+        inside = lambda t: _to_output_time(t, keeps) is not None
+        times = [x.t for x in samples if x.faces and inside(x.t)]
+        if len(times) < 6:
+            times += [a + (b - a) * k / 4 for a, b in keeps for k in range(5) if b - a > 0.3]
+        prefer = h.thumb_at if h.thumb_at and inside(h.thumb_at) else None
+        cover = os.path.splitext(out)[0] + "_썸네일.jpg"
+        base_png = os.path.splitext(out)[0] + ".cover_base.png" if getattr(args, "capcut", False) else None
+        try:
+            t = thumbs.make(src, cover, text=h.thumb_text or h.title, times=times, prefer=prefer,
+                            base_png=base_png)
+            if t is None:
+                cover = None
+            else:
+                print(f"  썸네일: {os.path.basename(cover)} ({_hms(t)} 장면, 글자: "
+                      f"{re.sub(r'[{}]', '', h.thumb_text or h.title).replace(chr(10), ' ')})")
+        except Exception as e:  # 썸네일이 안 돼도 영상은 만든다
+            print(f"  (썸네일 만들기 실패: {type(e).__name__}: {e})")
+            cover = None
+    cover_dur = 0.4 if cover and getattr(args, "cover_intro", False) else 0.0
     if acct is None:
         write_ass(subs, style, cues, duration=kept, title=h.title, label=h.label,
                   speaker=speaker if (cues or burned is None) else "", bottom=h.bottom,
@@ -219,7 +248,8 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         media.render(src, keeps, out, video_filter=vf, srt=subs,
                      bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
                      insert_bottom=style.sub_bottom - round(style.sub_size * 2.6),
-                     voice_enhance=getattr(args, "voice_enhance", False), color=color)
+                     voice_enhance=getattr(args, "voice_enhance", False), color=color,
+                     cover=cover if cover_dur else None, cover_dur=cover_dur)
     else:
         from . import draw, fonts
 
@@ -238,34 +268,58 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
                          font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
                          inserts=cut_ins, insert_bottom=low_speaker_y(acct) - 70,
-                         voice_enhance=getattr(args, "voice_enhance", False), color=color)
+                         voice_enhance=getattr(args, "voice_enhance", False), color=color,
+                         cover=cover if cover_dur else None, cover_dur=cover_dur)
         finally:
             os.remove(ov_path)
     print(f"  저장: {out}")
+    if cover_dur:
+        print(f"  영상 첫 화면 {cover_dur:g}초는 썸네일 (플랫폼이 첫 화면을 표지로 쓸 때 대비)")
 
-    # 4) 썸네일: 얼굴이 가장 크게 잡힌 장면 + 제목
-    if args.thumbnail and acct is not None:
-        _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus,
-                           frame_args=dict(span=span, aspect=sw / sh if sh else 16 / 9,
-                                           keep_bottom=keep_bottom), center=path)
-    elif args.thumbnail:
-        t = face.best_frame_time(samples) or (keeps[0][0] + min(1.0, kept / 2))
-        x = next((s.x for s in samples if s.t >= t and s.x is not None), None)
-        thumb_ass = os.path.splitext(out)[0] + ".thumb.ass"
-        write_ass(thumb_ass, style, [], duration=1, title=h.title, label=h.label)
-        tvf = video_filter(style, focus, path=[(0.0, x)] if x is not None else None)
-        thumb = os.path.splitext(out)[0] + ".jpg"
-        try:
-            media.snapshot(src, t, thumb, video_filter=tvf, ass=thumb_ass)
-            print(f"  썸네일: {thumb}")
-        except RuntimeError as e:
-            print(f"  (썸네일 만들기 실패: {e})")
-        finally:
-            os.remove(thumb_ass)
+    # 5) 캡컷 프로젝트: 글자 없는 영상 + 모든 글자를 캡컷 텍스트로 (캡컷에서 고칠 수 있게)
+    if getattr(args, "capcut", False):
+        _export_capcut(args, src, keeps, kept, out, h, cues, speaker, style, acct, vf, bgm,
+                       cut_ins, color, cover, base_png)
+
+
+def _export_capcut(args, src, keeps, kept, out, h, cues, speaker, style, acct, vf, bgm, cut_ins,
+                   color, cover, base_png) -> None:
+    """글자 없는 영상을 따로 뽑고, 모든 글자를 캡컷 텍스트로 올린 캡컷 초안을 만든다."""
+    from . import capcut
+
+    folder = os.path.join(os.path.dirname(os.path.abspath(out)), "캡컷_소스")
+    os.makedirs(folder, exist_ok=True)
+    clean = os.path.join(folder, os.path.basename(out))
+    print("  캡컷 프로젝트 만드는 중 (글자 없는 영상 + 캡컷에서 고칠 수 있는 글자)...")
+    try:
+        media.render(src, keeps, clean, video_filter=vf,
+                     voice_enhance=getattr(args, "voice_enhance", False), color=color)
+        rehook_at = _to_output_time(h.rehook_at, keeps) if h.rehook_at else 0.0
+        retention = getattr(args, "retention", True)
+        if acct is not None:
+            from .accounts import BOTTOM_Y, low_speaker_y
+            title_y, sub_y, bottom_y = acct.video.title_y - 60, 1400, BOTTOM_Y
+        else:
+            title_y = (style.title_top + style.title_size if style.title_top
+                       else 1920 - style.title_bottom - style.title_size)
+            sub_y, bottom_y = style.sub_bottom - style.sub_size * 0.6, style.bottom_y
+        cover_dur = 0.4 if cover and getattr(args, "cover_intro", False) else 0.0
+        path = capcut.export(
+            os.path.splitext(os.path.basename(out))[0], os.path.join(folder, "캡컷_프로젝트"),
+            video=clean, total=min(kept, media.duration(clean) - 0.01), cues=cues or [], title=h.title, title_y=title_y,
+            hook=h.hook if retention else "", rehook=h.rehook if retention else "",
+            rehook_at=rehook_at or 0.0, speaker=speaker or "", bottom=h.bottom, sub_y=sub_y,
+            bottom_y=bottom_y,
+            bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
+            cover=base_png or (cover if acct is not None else None),
+            cover_text=(h.thumb_text or h.title) if base_png else "", cover_dur=cover_dur)
+        print(f"  캡컷 프로젝트: {path}")
+    except Exception as e:  # 캡컷 내보내기가 안 돼도 완성 영상은 이미 있다
+        print(f"  (캡컷 프로젝트 만들기 실패: {type(e).__name__}: {e})")
 
 
 def _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus, frame_args=None,
-                       center=None) -> None:
+                       center=None) -> str | None:
     """계정 가이드의 썸네일(N-1)을 PNG 1080x1920으로 만든다."""
     from PIL import Image
 
@@ -287,6 +341,7 @@ def _account_thumbnail(src, out, acct, h, samples, keeps, kept, focus, frame_arg
         with Image.open(frame) as im:
             draw.thumbnail(acct, im, title=h.title, sub_title=h.sub_title).save(thumb)
         print(f"  썸네일: {thumb}")
+        return thumb
     except (RuntimeError, OSError) as e:
         print(f"  (썸네일 만들기 실패: {e})")
     finally:
@@ -712,6 +767,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="자막이 나올 때 살짝 튀어나오기 yes/no (기본 yes)")
     s.add_argument("--auto-color", type=_yesno, default=True,
                    help="자동 색 보정: 어두우면 밝게, 흐리면 선명하게 yes/no (기본 yes)")
+    s.add_argument("--capcut", type=_yesno, default=True,
+                   help="캡컷 프로젝트도 만들기: 모든 글자를 캡컷에서 고칠 수 있게 yes/no (기본 yes)")
+    s.add_argument("--cover-intro", type=_yesno, default=True,
+                   help="영상 첫 화면 0.4초를 썸네일로 yes/no (기본 yes)")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
                    help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")
@@ -775,6 +834,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="'짤' 폴더의 사진·짧은 영상을 자막에 맞춰 끼워 넣기 yes/no")
     s.add_argument("--auto-color", type=_yesno, default=True,
                    help="자동 색 보정: 어두우면 밝게, 흐리면 선명하게 yes/no")
+    s.add_argument("--capcut", type=_yesno, default=True,
+                   help="캡컷 프로젝트도 만들기: 자막·챕터 제목을 캡컷에서 고칠 수 있게 yes/no")
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)

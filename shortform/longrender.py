@@ -342,6 +342,32 @@ def finish(body: str, out: str, *, ass: str | None, font_path: str | None, bgm: 
         os.replace(tmp, out)
 
 
+def _export_capcut(body, out_dir, name, total, cues, chapters, bgm, args, cut_ins) -> None:
+    """글자 없는 롱폼 + 자막·챕터 제목을 캡컷 텍스트로 올린 캡컷 초안 (캡컷에서 글자 수정 가능)."""
+    from . import capcut
+
+    folder = os.path.join(out_dir, "캡컷_소스")
+    os.makedirs(folder, exist_ok=True)
+    clean = os.path.join(folder, f"{name}_글자없음.mp4")
+    os.replace(body, clean)
+    music = None
+    if bgm:
+        music = os.path.join(folder, os.path.basename(bgm))
+        shutil.copyfile(bgm, music)
+    cards = [("챕터 제목", title, t + 0.2, min(t + 3.5, total), 9, H * 0.12)
+             for k, (t, title) in enumerate(chapters) if k and title.strip()] \
+        if args.chapter_titles else []
+    try:
+        path = capcut.export(name, os.path.join(folder, "캡컷_프로젝트"), video=clean,
+                             total=min(total, media.duration(clean) - 0.01),
+                             cues=cues, sub_y=H * 0.86, bgm=music, bgm_volume=args.bgm_volume,
+                             inserts=cut_ins, insert_bottom=H * 0.78, size=(W, H),
+                             extra_texts=cards)
+        print(f"  캡컷 프로젝트: {path}")
+    except Exception as e:  # 캡컷 내보내기가 안 돼도 완성 영상은 이미 있다
+        print(f"  (캡컷 프로젝트 만들기 실패: {type(e).__name__}: {e})")
+
+
 # ---------- 함께 만드는 파일 ----------
 
 def youtube_chapters(chapters: list[tuple[float, str]], total: float) -> list[tuple[float, str]]:
@@ -547,7 +573,10 @@ def render(edl: Edl, transcripts, out_dir: str, work: str, args) -> str:
     finish(body, out, ass=ass, font_path=font_path, bgm=bgm, bgm_volume=args.bgm_volume,
            chapters=chapters, total=total, inserts=cut_ins,
            voice_enhance=getattr(args, "voice_enhance", False))
-    os.remove(body)
+    if getattr(args, "capcut", False):
+        _export_capcut(body, out_dir, name, total, cues, chapters, bgm, args, cut_ins)
+    else:
+        os.remove(body)
 
     durations = [media.duration(c) for c in edl.clips]
     with open(os.path.join(out_dir, "유튜브_업로드.txt"), "w", encoding="utf-8") as f:

@@ -15,6 +15,7 @@ DEFAULTS = {
     "bgm_volume": "0.15", "bgm_source": "auto", "retention": "yes", "thumbnail": "yes", "upload": "no",
     "fillers": "yes", "voice_enhance": "yes", "inserts": "yes",
     "karaoke": "no", "sub_pop": "yes", "auto_color": "yes", "merge": "no",
+    "capcut": "yes", "cover_intro": "yes",
 }
 
 
@@ -25,7 +26,7 @@ LONG_DEFAULTS = {
     "long_fix_subtitles": "yes", "long_chapter_titles": "yes", "long_bgm_volume": "0.10",
     "long_thumbnail": "yes", "long_model": "small", "long_font": "", "long_resolution": "auto", "long_bgm_source": "auto",
     "long_fillers": "yes", "long_voice_enhance": "yes", "long_inserts": "yes",
-    "long_auto_color": "yes",
+    "long_auto_color": "yes", "long_capcut": "yes",
 }
 
 
@@ -74,7 +75,8 @@ def to_argv(video: str, c: dict[str, str], out: str) -> list[str]:
             "--fillers", c["fillers"] or "yes", "--voice-enhance", c["voice_enhance"] or "yes",
             "--inserts", c["inserts"] or "yes",
             "--karaoke", c["karaoke"] or "no", "--sub-pop", c["sub_pop"] or "yes",
-            "--auto-color", c["auto_color"] or "yes"]
+            "--auto-color", c["auto_color"] or "yes",
+            "--capcut", c["capcut"] or "yes", "--cover-intro", c["cover_intro"] or "yes"]
     for key in ("context", "speaker", "font"):
         if c.get(key, "").strip():
             argv += [f"--{key}", c[key].strip()]
@@ -110,7 +112,8 @@ def long_argv(inputs: list[str], c: dict[str, str], *, plan: str | None = None,
             "--fillers", c["long_fillers"] or "yes",
             "--voice-enhance", c["long_voice_enhance"] or "yes",
             "--inserts", c["long_inserts"] or "yes",
-            "--auto-color", c["long_auto_color"] or "yes"]
+            "--auto-color", c["long_auto_color"] or "yes",
+            "--capcut", c["long_capcut"] or "yes"]
     if plan:
         argv += ["--plan", plan]
     if c.get("long_context", "").strip():

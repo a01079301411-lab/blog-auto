@@ -6,3 +6,4 @@ google-auth-oauthlib>=1.0
 pillow>=10.0
 fonttools>=4.40
 olefile>=0.46
+pycapcut==0.0.4

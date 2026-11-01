@@ -449,6 +449,8 @@ class App:
         self.count_box.state(["disabled"] if picked else ["!disabled"])
         self.style_box.state(["disabled"] if picked else ["!disabled"])
         self.per_box.state(["!disabled"] if picked else ["disabled"])
+        self.flags["cover_intro"].widget.state(
+            ["!disabled"] if self.flags["thumbnail"].get() else ["disabled"])
         for key in ("burned_subs", "sub_pop", "karaoke"):
             self.flags[key].widget.state(
                 ["!disabled"] if self.flags["subtitles"].get() else ["disabled"])
@@ -676,7 +678,12 @@ class App:
             "젊은 층 숏폼에서 많이 써요. 켜면 강조 단어 색 대신 이 효과가 들어가요.")
         self.flags["thumbnail"] = self._check(
             cl, "썸네일 만들기", c["thumbnail"].lower() == "yes",
-            "숏폼마다 피드에 올릴 대표 사진(PNG)을 함께 만들어요.")
+            "숏폼마다 표지 사진을 만들어요. 얼굴이 크고 표정이 살아 있는 장면을 골라 확대·보정하고, "
+            "AI가 쓴 짧고 센 문구를 크게 올려요 (영상에 실제로 있는 장면과 내용만).")
+        self.flags["cover_intro"] = self._check(
+            cl, "  └ 영상 첫 화면도 썸네일로", on("cover_intro"),
+            "영상 맨 앞 0.4초에 썸네일을 넣어요. 유튜브 쇼츠처럼 첫 화면을 표지로 쓰거나, "
+            "피드에서 첫 화면이 먼저 보일 때도 썸네일이 보여요.")
         self.flags["retention"] = self._check(
             cl, "훅 자막·진행 막대", on("retention"),
             "처음 2초 큰 글씨, 중간에 '근데 반전이…' 같은 한마디, 위쪽 진행 막대로 "
@@ -697,6 +704,11 @@ class App:
             "AI는 파일 이름만 보고 고르니 이름을 내용대로 지어 주세요. 폴더가 비어 있으면 안 넣어요.")
         ttk.Button(cr, text="🖼 짤 폴더 열기", style="Link.TButton",
                    command=self._open_inserts).pack(anchor="w", padx=(22, 0))
+        self.flags["capcut"] = self._check(
+            cr, "캡컷 프로젝트도 만들기", on("capcut"),
+            "글자 없는 영상 위에 제목·훅·자막·인물 소개·썸네일 글자를 캡컷 텍스트로 올린 "
+            "캡컷 프로젝트를 만들어요. 캡컷 PC를 열면 홈 화면에 바로 보이고, 모든 글자를 "
+            "캡컷에서 고칠 수 있어요. (영상을 한 번 더 뽑아서 조금 더 걸려요)")
         row = self._row(sf, "배경음악")
         self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
                                                           BGM_SOURCES["auto"]))
@@ -740,7 +752,7 @@ class App:
         self.flags["review"] = self._check(adv, "만들기 전에 목록 보고 고르기",
                                            c["review"].lower() == "yes")
         for var in [*self.acct_vars.values(), self.per_var, self.count_var, self.style_var,
-                    self.flags["subtitles"], self.merge_var]:
+                    self.flags["subtitles"], self.merge_var, self.flags["thumbnail"]]:
             var.trace_add("write", self._sync_shorts)
         self._sync_shorts()
 
@@ -816,6 +828,10 @@ class App:
         self.long_flags["long_voice_enhance"] = self._check(
             sf, "목소리 또렷하게", c.get("long_voice_enhance", "yes").lower() != "no",
             "캡컷 '음성 향상'처럼, 웅웅거림과 잡음을 줄이고 소리 크기를 유튜브 기준에 맞춰요.")
+        self.long_flags["long_capcut"] = self._check(
+            sf, "캡컷 프로젝트도 만들기", c.get("long_capcut", "yes").lower() != "no",
+            "글자 없는 롱폼 위에 자막·챕터 제목을 캡컷 텍스트로 올린 캡컷 프로젝트를 만들어요. "
+            "캡컷 PC 홈 화면에 바로 보이고 모든 글자를 고칠 수 있어요.")
         self.long_flags["long_auto_color"] = self._check(
             sf, "자동 색 보정", c.get("long_auto_color", "yes").lower() != "no",
             "캡컷 '자동 조정'처럼, 촬영본마다 어두우면 밝게, 뿌연 영상은 선명하게 맞춰요.")
@@ -1026,6 +1042,7 @@ class App:
             "inserts": yes("inserts"), "karaoke": yes("karaoke"), "sub_pop": yes("sub_pop"),
             "auto_color": yes("auto_color"),
             "merge": "yes" if self.merge_var.get() else "no",
+            "capcut": yes("capcut"), "cover_intro": yes("cover_intro"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
