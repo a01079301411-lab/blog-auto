@@ -9,6 +9,7 @@ photos/
 data/history.json
 data/links_cache.json
 data/seo_status.json
+data/manager_notes.md
 backup/
 .update_state.json
 *.새버전
