@@ -31,6 +31,9 @@ ELEMENT_LIMIT = 250
 DANGER = re.compile(r"삭제|탈퇴|초기화|해지|영구|비공개|모두 지우|지우기|취소하기|복구 불가")
 # 아예 건드리지 않는 화면
 FORBIDDEN = re.compile(r"비밀번호|회원\s*탈퇴|결제|본인\s*확인|보안\s*설정|2단계 인증|개인정보")
+# 아직 확인서가 안 나와서 글에 쓰면 안 되는 말 (나오면 여기서 빼고 company_facts.md에 넣는다)
+NOT_YET = ["장애인기업"]
+SAME_ACTION_LIMIT = 3  # 같은 조작을 이만큼 되풀이하면 멈추라고 알려 준다
 
 TOOLS = [
     {"name": "open_page", "description": "주소로 이동한다.",
@@ -56,6 +59,15 @@ TOOLS = [
     {"name": "upload_file", "description": "번호의 파일 올리기 칸에 사장님 컴퓨터의 파일을 올린다. 경로는 사장님께 받은 것만 쓴다.",
      "input_schema": {"type": "object", "properties": {
          "id": {"type": "integer"}, "path": {"type": "string"}}, "required": ["id", "path"]}},
+    {"name": "write_post", "description": (
+        "블로그 글을 새로 쓴다. 글쓰기 화면을 직접 누르지 말고 반드시 이 도구를 쓴다. "
+        "자동 글쓰기 프로그램과 같은 방법으로 제목, 인용구, 본문(가운데 정렬, 굵은 소제목, 전화 링크), 태그, 카테고리를 넣는다. "
+        "body는 문단 사이 빈 줄, 소제목은 '## '로 시작하는 줄. 기본은 임시저장이고, 사장님이 발행하라고 했을 때만 publish를 true로 한다."),
+     "input_schema": {"type": "object", "properties": {
+         "title": {"type": "string"}, "quote": {"type": "string"}, "body": {"type": "string"},
+         "tags": {"type": "array", "items": {"type": "string"}}, "category": {"type": "string"},
+         "publish": {"type": "boolean"}},
+         "required": ["title", "body"]}},
     {"name": "ask_owner", "description": "사장님께 묻는다. 되돌리기 어려운 변경 전 확인, 정보가 모자랄 때, 여러 방법 중 고를 때.",
      "input_schema": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}},
     {"name": "finish", "description": "지시를 끝냈거나 더 할 수 없을 때. 한 일과 결과, 못 한 것을 쉬운 말로 보고한다.",
@@ -80,9 +92,15 @@ SYSTEM = """\
 3. 설정을 바꾼 뒤에는 저장(확인, 적용) 버튼까지 누르고, 바뀐 것이 화면에 반영됐는지 다시 확인한다.
 4. 통계를 물으면 통계 화면의 숫자를 그대로 읽어 표처럼 정리해 보고한다. 숫자를 지어내지 않는다.
 5. 소개글, 공지글처럼 글을 새로 써야 하면 아래 회사 정보만 써서 초안을 만들고, 넣기 전에 ask_owner로 초안을 보여 주고 확인받는다.
+6. **블로그 글을 새로 쓸 때는 글쓰기 화면을 직접 누르지 않고 write_post 도구를 쓴다.** 글쓰기 화면은 복잡해서 직접 누르면 실패한다.
+7. 이미 올린 글의 본문을 고치는 일은 아직 못 한다. 시키면 "새 글로 써서 임시저장해 드릴까요, 아니면 직접 고치시겠어요?"라고 묻는다.
+8. 같은 버튼을 3번 눌러도 안 되면 다른 방법을 찾거나, 멈추고 보고한다.
 
 꼭 지킬 것
 - 사장님이 시킨 것만 한다. 시키지 않은 설정은 바꾸지 않는다.
+- 시험 삼아 "test" 같은 글자를 입력하지 않는다. 실제 블로그에 남는다.
+- 회사 이름은 회사 정보에 적힌 그대로 쓴다. 영어 이름을 한글로 읽어 새 이름을 만들지 않는다.
+- 아직 확인서가 안 나온 것({not_yet})은 글에 쓰지 않는다. 사장님이 넣으라고 해도 "확인서가 나오면 넣을게요"라고 답한다.
 - 삭제, 비공개 전환, 초기화, 카테고리나 글 지우기처럼 되돌리기 어려운 일은 하기 전에 ask_owner로 확인받는다.
 - 비밀번호, 회원 탈퇴, 결제, 본인 확인, 보안 설정, 개인정보 화면은 절대 건드리지 않는다. 시키면 사장님이 직접 하시라고 보고한다.
 - 로그인 화면이 나오면 멈추고 1_네이버로그인.bat 으로 다시 로그인하시라고 보고한다.
@@ -197,6 +215,9 @@ class Browser:
         return f"'{label}' 누름. 지금 주소: {self.page.url}{self._extra()}"
 
     def type_text(self, element_id, text, clear=False):
+        blocked = [w for w in NOT_YET if w in text]
+        if blocked:
+            return f"'{', '.join(blocked)}'는 아직 확인서가 안 나와서 쓰면 안 돼요. 빼고 다시 넣으세요."
         target = self._locator(element_id)
         editable = target.evaluate("e => e.isContentEditable")
         if editable:
@@ -232,6 +253,24 @@ class Browser:
         self._locator(element_id).set_input_files(path)
         self._settle()
         return f"파일 올림: {path}{self._extra()}"
+
+    def write_post(self, title, body, quote="", tags=None, category="", publish=False):
+        import formatter
+        import publisher
+
+        blocked = [w for w in NOT_YET if w in title + quote + body]
+        if blocked:
+            return f"'{', '.join(blocked)}'는 아직 확인서가 안 나와서 쓰면 안 돼요. 빼고 다시 쓰세요."
+        how = "바로 발행" if publish else "임시저장"
+        preview = "\n".join(body.splitlines()[:8])
+        if not confirm(f"이 글을 {how}할까요?\n제목: {title}\n인용구: {quote}\n카테고리: {category or '기본'}\n"
+                       f"본문 앞부분:\n{preview}\n..."):
+            return "사장님이 글 넣기를 취소했어요. 고칠 점을 ask_owner로 여쭤보세요."
+        result = publisher.post(self.page, title, formatter.format_body(body), tags or [],
+                                publish=publish, category=category, quote=quote)
+        done = "발행" if result["result"] == "published" else "임시저장"
+        warn = (" 주의: " + " / ".join(result["warnings"])) if result["warnings"] else ""
+        return f"{done} 끝. 주소: {result['url']}{warn}"
 
     def screenshot(self):
         return base64.standard_b64encode(self.page.screenshot(type="jpeg", quality=60)).decode()
@@ -281,6 +320,7 @@ def run_instruction(client, system, browser, instruction, memory):
              + (f"이번 창에서 앞서 한 일:\n{history}\n\n" if history else "")
              + f"사장님 지시: {instruction}")
     messages = [{"role": "user", "content": first}]
+    recent = []  # 최근 조작 (같은 걸 되풀이하는지 본다)
     for step in range(MAX_STEPS):
         with client.messages.stream(
             model=MODEL, max_tokens=16000,
@@ -297,6 +337,10 @@ def run_instruction(client, system, browser, instruction, memory):
             if call.name == "finish":
                 return call.input.get("report", "끝났어요.")
             content = _run_tool(browser, call)
+            if call.name in ("click", "type_text", "press_key"):
+                recent.append((call.name, json.dumps(call.input, ensure_ascii=False)))
+                if recent[-SAME_ACTION_LIMIT:].count(recent[-1]) >= SAME_ACTION_LIMIT and isinstance(content, str):
+                    content += "\n(같은 조작을 3번 했어요. 이 방법은 안 되는 것 같아요. 다른 방법을 찾거나 finish로 보고하세요.)"
             log.info("  %s %s", call.name, json.dumps(call.input, ensure_ascii=False)[:120])
             results.append({"type": "tool_result", "tool_use_id": call.id, "content": content})
         messages.append({"role": "user", "content": results})
@@ -327,6 +371,9 @@ def _run_tool(browser, call):
             return browser.scroll(args["direction"])
         if call.name == "upload_file":
             return browser.upload_file(int(args["id"]), args["path"])
+        if call.name == "write_post":
+            return browser.write_post(args["title"], args["body"], args.get("quote", ""), args.get("tags"),
+                                      args.get("category", ""), bool(args.get("publish")))
         return f"모르는 도구예요: {call.name}"
     except Exception as e:
         return f"실패: {e.__class__.__name__}: {str(e)[:300]}"
@@ -334,7 +381,7 @@ def _run_tool(browser, call):
 
 def build_system():
     facts = (DATA_DIR / "company_facts.md").read_text(encoding="utf-8").replace("{{전화번호}}", COMPANY_PHONE)
-    return SYSTEM.format(blog_id=BLOG_ID, phone=COMPANY_PHONE, facts=facts)
+    return SYSTEM.format(blog_id=BLOG_ID, phone=COMPANY_PHONE, facts=facts, not_yet=", ".join(NOT_YET))
 
 
 def main():
