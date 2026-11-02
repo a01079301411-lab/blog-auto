@@ -178,6 +178,9 @@ def check(post, topic, photo_set=None, related=None):
         if similar(title, record.get("title", "")) >= SIMILAR_TITLE:
             fails.append(FIX + f"최근 글 제목과 너무 비슷해요: {record['title']}")
             break
+    repeat = _title_frame_problem(title, [r.get("title", "") for r in history.load()[-TITLE_FRAME_RECENT:]])
+    if repeat:
+        fails.append(FIX + repeat)
     for record in history.load()[-10:]:
         if record.get("opening") and similar(first, record["opening"]) >= SIMILAR_OPENING:
             fails.append(FIX + f"최근 글과 첫 문장이 너무 비슷해요: {record['opening']}")
@@ -267,6 +270,32 @@ def _fact_repeat_problems(lines, topic=None):
 
 NEAR_SAME = 0.8
 NEAR_MIN_CHARS = 15
+
+
+TITLE_FRAME_RECENT = 7  # 최근 이만큼의 제목과 끝말, 첫말이 겹치면 다시 쓴다
+# 제목 맨 앞에 오면 틀처럼 반복되기 쉬운 말
+HOOK_STARTS = ("아직도", "혹시", "지금", "왜", "이거", "모르면", "절대", "당신", "그냥", "진짜")
+
+
+def _title_words(title):
+    return re.sub(r"[^\w\s]", " ", title.replace("'", " ").replace('"', " ")).split()
+
+
+def _title_frame_problem(title, recent):
+    """'~하면 손해 봅니다', '아직도 ~하세요?'처럼 같은 틀의 제목이 이어지지 않게 한다."""
+    words = _title_words(title)
+    if len(words) < 3:
+        return ""
+    tail, head = " ".join(words[-2:]), words[0]
+    for old in recent:
+        old_words = _title_words(old)
+        if len(old_words) < 3:
+            continue
+        if " ".join(old_words[-2:]) == tail:
+            return f"제목 끝말 '{tail}'이 최근 글 제목과 같아요: {old}. 끝맺는 말을 다르게 바꾸세요."
+        if head in HOOK_STARTS and old_words[0] == head:
+            return f"제목 첫말 '{head}'이 최근 글 제목과 같아요: {old}. 다른 틀로 시작하세요."
+    return ""
 
 
 def _near_duplicate_problems(lines):

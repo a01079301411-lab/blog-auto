@@ -91,6 +91,10 @@ TOOLS = [
     {"name": "upload_file", "description": "번호의 파일 올리기 칸에 사장님 컴퓨터의 파일을 올린다. 경로는 사장님께 받은 것만.",
      "input_schema": {"type": "object", "properties": {
          "id": {"type": "integer"}, "path": {"type": "string"}}, "required": ["id", "path"]}},
+    {"name": "make_title_image", "description": (
+        "사장님 사진을 대문(타이틀) 사진으로 다듬는다: 밝기, 색, 선명도 보정 후 966x400으로 세 위치를 잘라 같은 폴더에 저장. "
+        "결과 사진을 보고 가장 좋은 것을 골라 사장님께 확인받은 뒤 upload_file로 올린다. path는 사장님이 준 경로(확장자 없어도 됨)."),
+     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     # ── 손: 글 ──
     {"name": "edit_post", "description": (
         "이미 올린 글을 고친다. 글쓰기 화면을 직접 누르지 말고 이 도구를 쓴다. "
@@ -492,6 +496,28 @@ def blog_data(kind):
     return "모르는 자료예요."
 
 
+def make_title_image(path):
+    """대문 사진을 만들고, 비서가 눈으로 고를 수 있게 작은 사진으로 돌려준다."""
+    import io
+
+    import banner
+    from PIL import Image
+
+    say("대문 사진 다듬는 중")
+    made = banner.make(path)
+    content = [{"type": "text", "text": "만든 사진 (첫 번째는 보정만 한 원본, 나머지는 966x400 대문용):\n"
+                                        + "\n".join(str(m) for m in made)}]
+    for file in made:
+        image = Image.open(file)
+        image.thumbnail((800, 800))
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=70)
+        content.append({"type": "text", "text": f"{file.name}:"})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                    "data": base64.standard_b64encode(buffer.getvalue()).decode()}})
+    return content
+
+
 def run_search_check():
     import seo_check
     say("네이버 검색으로 성과 확인 중 (몇 분 걸려요)")
@@ -543,6 +569,8 @@ def run_tool(browser, call):
         if call.name == "screenshot":
             return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                  "data": browser.screenshot()}}]
+        if call.name == "make_title_image":
+            return make_title_image(args["path"])
         if call.name == "ask_owner":
             return ask(args["question"]) or "(사장님이 답을 비워 두셨어요)"
         if call.name == "read_page":
