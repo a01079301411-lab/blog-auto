@@ -349,6 +349,41 @@ CARET_AT_END_JS = """
 """
 
 
+# 커서가 지금 몇 번째 부품의 어디에 있는지 (기록용)
+CARET_INFO_JS = """
+() => {
+  const sel = window.getSelection();
+  const all = [...document.querySelectorAll('.se-component')].filter(
+      c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
+  if (!sel || !sel.anchorNode) return {total: all.length, index: -1, where: 'no selection'};
+  const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+  const here = node && node.closest('.se-component');
+  const top = here && (all.includes(here) ? here : all.find(c => c.contains(here)));
+  return {total: all.length, index: top ? all.indexOf(top) : -1,
+          kind: top ? top.className.replace(/\\s+/g, ' ').slice(0, 60) : '',
+          caption: !!(node && node.closest('.se-caption')), title: !!(node && node.closest('.se-documentTitle')),
+          tag: node ? node.tagName + '.' + (node.className || '').toString().slice(0, 40) : ''};
+}
+"""
+
+
+def caret_info(editor):
+    try:
+        return editor.evaluate(CARET_INFO_JS)
+    except Exception as e:
+        return {"error": str(e)[:80]}
+
+
+def describe_layout(editor):
+    """기록용: 본문 부품 순서를 한 줄로."""
+    parts = layout(editor) or []
+    out = []
+    for i, p in enumerate(parts):
+        text = " ".join(p["text"].split())[:18]
+        out.append(f"{i}:{p['kind']}{'(목록)' if p['list'] else ''}" + (f" '{text}'" if text else ""))
+    return " | ".join(out)
+
+
 def layout(editor):
     """본문 부품 목록. 못 읽으면 None."""
     try:
@@ -395,8 +430,9 @@ def go_to_end(page, editor):
 def ensure_end(page, editor):
     """커서가 글 맨 끝에 있지 않으면 맨 끝으로 옮긴다. (확인을 못 하면 그대로 둔다)"""
     if caret_at_end(editor) is False:
-        log.info("커서가 글 맨 끝이 아니라서 옮겨요.")
+        log.info("커서가 글 맨 끝이 아니라서 옮겨요. 커서: %s", caret_info(editor))
         go_to_end(page, editor)
+        log.debug("옮긴 뒤 커서: %s", caret_info(editor))
 
 
 def bold_is_on(editor):
@@ -597,9 +633,10 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
     failed_photos, failed_phone_links = [], []
     for i, block in enumerate(blocks):
         kind = block["type"]
-        after_object = i and blocks[i - 1]["type"] in ("photo", "link")
-        if kind == "photo" or (kind in ("line", "heading") and after_object):
-            ensure_end(page, editor)  # 사진, 링크 앞뒤에서 커서가 엉뚱한 곳에 있으면 순서가 뒤바뀐다
+        if kind in ("photo", "line", "heading", "link"):
+            # 글은 항상 맨 끝에 이어 쓴다. 커서가 인용구, 사진 설명 칸, 위쪽 글 칸에 가 있으면
+            # 글이 엉뚱한 곳에 들어가고 사진끼리 붙어 버린다.
+            ensure_end(page, editor)
         if kind == "blank":
             if i and blocks[i - 1]["type"] in ("photo", "link"):
                 continue  # 사진, 링크 아래에는 이미 새 줄이 있다
@@ -630,7 +667,8 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
 
 
 def _plain_lower(text):
-    return _plain(text).lower()
+    """비교용 글자: 띄어쓰기, 따옴표(에디터가 둥근 따옴표로 바꾸기도 한다)를 빼고 소문자로."""
+    return re.sub(r"[\"'“”‘’]", "", _plain(text)).lower()
 
 
 def check_layout(editor, blocks, quote="", failed_photos=()):
@@ -728,10 +766,12 @@ def write_checked(page, editor, title, blocks, photo_paths, captions, quote, war
             break
         log.info("글 모양 문제 (%s번째): %s / 화면: %s", attempt + 1, " / ".join(problems),
                  screenshot(page, "bad_layout"))
+        log.info("본문 부품 순서: %s", describe_layout(editor))
         log.info("글쓰기 화면을 새로 열어 처음부터 다시 입력해요.")
         editor = open_writer(page, title)
     if problems:
         log.info("다시 입력해도 글 모양 문제: %s / 화면: %s", " / ".join(problems), screenshot(page, "bad_layout2"))
+        log.info("본문 부품 순서: %s", describe_layout(editor))
     return editor, failed, failed_phone_links, problems
 
 
