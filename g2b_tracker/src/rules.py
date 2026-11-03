@@ -96,6 +96,9 @@ def normalize(item):
 
 def region_of(rec, rules):
     head = " ".join([rec["수요기관"], rec["공고기관"], rec["제목"]])
+    # 수요기관이 다른 시·도면 무조건 제외 (조달청 대구지청이 대신 낸 서울·대전 공고 등)
+    if _hits(rec["수요기관"], rules.get("타지역", [])) and not _hits(rec["수요기관"], ["대구", "경북", "경상북도"]):
+        return ""
     if _hits(head, rules["근교지역"]):
         return "대구근교"
     if _hits(head, rules["대구경북지역"]):
@@ -120,7 +123,7 @@ def score(rec, rules):
 
     if excl and not direct and not watch:
         return 0, []
-    if _hits(title, rules.get("강제제외", [])) and not _hits(title, ["이사", "이전", "집기", "문서"]):
+    if _hits(title, rules.get("강제제외", [])) and not _hits(title, ["이사", "집기", "문서", "청사 이전", "사무실 이전"]):
         return 0, []
     if not (direct or move or pre or watch):
         return 0, []
@@ -191,8 +194,9 @@ def _project_key(rec, rules):
     """같은 기관의 같은 사업(공종만 다른 공고, 재공고)은 하나로 묶는다."""
     t = re.sub(r"\(.*?\)|\[.*?\]", "", rec["제목"])
     t = re.sub(r"(" + "|".join(rules.get("부대공종", []) + ["건축"]) + r")\s*공사", "", t)
-    t = re.sub(r"(재공고|긴급|공사|용역|\s|\d{4}년?)", "", t)
-    return rec["출처"] + "|" + (rec["수요기관"] or rec["공고기관"]) + "|" + t[:16]
+    t = re.sub(r"(입찰\s*공고|수의계약\s*안내공고|안내공고|재공고|긴급|공사|용역|\s|\d{4}년?)", "", t)
+    stage = "award" if rec["출처"].startswith("낙찰") else "notice"  # 발주계획·사전규격·입찰공고는 한 사업으로
+    return stage + "|" + (rec["수요기관"] or rec["공고기관"]) + "|" + t[:16]
 
 
 def evaluate(items, rules):
@@ -224,7 +228,8 @@ def evaluate(items, rules):
         g.append(rec)
     merged = []
     for g in groups.values():
-        g.sort(key=lambda r: (r["등급"] == "마감", -r["점수"]))
+        stage_rank = {"입찰공고": 0, "사전규격": 1, "발주계획": 2}
+        g.sort(key=lambda r: (r["등급"] == "마감", -r["점수"], stage_rank.get(r["출처"], 3)))
         top = g[0]
         if len(g) > 1:
             top["이유"] += f" · 같은 사업 {len(g)}건"
