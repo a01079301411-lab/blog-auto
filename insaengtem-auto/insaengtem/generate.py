@@ -278,6 +278,25 @@ def _references(limit: int = 8) -> list[dict]:
     return json.loads(p.read_text(encoding="utf-8")).get("references", [])[:limit]
 
 
+PRICE_PER_M = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-sonnet-5": (2.0, 10.0),
+               "claude-haiku-5-5": (0.10, 0.50)}
+
+
+def _log_usage(key: str, resp) -> None:
+    """Claude API 사용량을 data/state/llm_usage.jsonl 에 기록 (콘솔 요금과 대조용)."""
+    from datetime import datetime
+    from .config import STATE
+    u = resp.usage
+    model = getattr(resp, "model", settings()["llm"]["model"])
+    pin, pout = PRICE_PER_M.get(model, (0, 0))
+    cost = (u.input_tokens * pin + u.output_tokens * pout) / 1e6
+    STATE.mkdir(parents=True, exist_ok=True)
+    with open(STATE / "llm_usage.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"at": f"{datetime.now():%Y-%m-%d %H:%M:%S}", "product": key, "model": model,
+                             "input": u.input_tokens, "output": u.output_tokens, "usd": round(cost, 4)}) + "\n")
+    print(f"[llm] {key} 입력 {u.input_tokens:,} · 출력 {u.output_tokens:,} 토큰 ≈ ${cost:.3f}")
+
+
 def llm_creative(key: str, facts: dict, u: UspResult, base: dict, feedback: str = "") -> dict | None:
     client = _client()
     if client is None:
@@ -307,6 +326,7 @@ def llm_creative(key: str, facts: dict, u: UspResult, base: dict, feedback: str 
     except (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.APIStatusError) as e:
         print(f"[llm] 호출 실패 → 템플릿 사용: {e}")
         return None
+    _log_usage(key, resp)
     if resp.stop_reason in ("refusal", "max_tokens"):
         print(f"[llm] stop_reason={resp.stop_reason} → 템플릿 사용")
         return None
