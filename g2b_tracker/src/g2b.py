@@ -27,6 +27,8 @@ OPS = {
     "plan": "getOrderPlanSttusList{k}",
     "award": "getScsbidListSttus{k}",
     "award_search": "getScsbidListSttus{k}PPSSrch",
+    "contract": "getCntrctInfoList{k}",
+    "contract_search": "getCntrctInfoList{k}PPSSrch",
 }
 
 ROWS = 500          # 한 번에 받는 건수
@@ -90,13 +92,14 @@ def call(base_key, op, params, page=1):
     raise ApiError(f"연결 실패: {last}")
 
 
-def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_days=WINDOW_DAYS):
+def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_days=WINDOW_DAYS,
+                date_keys=("inqryBgnDt", "inqryEndDt")):
     """start~end 기간을 잘라서 전부 받아 온다. 행마다 _src(출처), _op 를 붙인다."""
     out = []
     cur = start
     while cur < end:
         nxt = min(cur + timedelta(days=window_days), end)
-        params = {"inqryDiv": 1, "inqryBgnDt": _fmt(cur, with_time), "inqryEndDt": _fmt(nxt, with_time)}
+        params = {"inqryDiv": 1, date_keys[0]: _fmt(cur, with_time), date_keys[1]: _fmt(nxt, with_time)}
         params.update(extra or {})
         page = 1
         while True:
@@ -106,7 +109,7 @@ def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_day
             out.extend(items)
             if page * ROWS >= total or not items or page >= MAX_PAGES:
                 if page >= MAX_PAGES and page * ROWS < total:
-                    log.warning("%s %s~%s: %d건 중 일부만 받음 (한도)", op, params["inqryBgnDt"], params["inqryEndDt"], total)
+                    log.warning("%s %s: %d건 중 일부만 받음 (한도)", op, params[date_keys[0]], total)
                 break
             page += 1
         cur = nxt
@@ -194,6 +197,61 @@ def collect_awards(months, keywords):
     return rows, errors
 
 
+# 계약정보서비스는 날짜 파라미터 이름이 다른 서비스와 다를 수 있어서 두 방식을 시험해 보고 기억한다
+CONTRACT_STYLES = [(("inqryBgnDate", "inqryEndDate"), False), (("inqryBgnDt", "inqryEndDt"), True)]
+
+
+def _contract_style():
+    import json
+    from config import DATA
+    st = DATA / "state.json"
+    try:
+        state = json.loads(st.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    if "contract_style" in state:
+        return CONTRACT_STYLES[state["contract_style"]]
+    end = datetime.now()
+    last = None
+    for i, (keys, with_time) in enumerate(CONTRACT_STYLES):
+        params = {"inqryDiv": 1, keys[0]: _fmt(end - timedelta(days=1), with_time), keys[1]: _fmt(end, with_time)}
+        try:
+            call("contract", OPS["contract"].format(k="Servc"), params)
+            state["contract_style"] = i
+            st.write_text(json.dumps(state), encoding="utf-8")
+            return keys, with_time
+        except ApiError as e:
+            last = e
+    raise ApiError(f"계약정보서비스 조회 실패: {last}")
+
+
+def collect_contracts(start, end, keywords=None):
+    """계약 체결 내역 (수의계약 포함). keywords 가 있으면 계약명 검색, 없으면 기간 전체."""
+    keys, with_time = _contract_style()
+    rows, errors = [], []
+    for kind in ("용역", "물품"):
+        if keywords:
+            op = OPS["contract_search"].format(k=KINDS[kind])
+            jobs = [({"cntrctNm": kw}, kw) for kw in keywords]
+        else:
+            op = OPS["contract"].format(k=KINDS[kind])
+            jobs = [({}, "")]
+        for extra, kw in jobs:
+            try:
+                got = fetch_range("contract", op, start, end, extra=extra, with_time=with_time,
+                                  window_days=30 if keywords else 7, date_keys=keys)
+                for it in got:
+                    it["_kind"], it["_kw"] = kind, kw
+                rows += got
+                log.info("계약 %s %s %d건", kind, kw, len(got))
+            except ApiError as e:
+                errors.append(f"{op} {kw}: {e}")
+                log.warning("%s %s 실패: %s", op, kw, e)
+                if "LIMITED" in str(e).upper():
+                    return rows, errors
+    return rows, errors
+
+
 def check():
     """서비스별로 1건씩 불러서 활용신청·키가 정상인지 확인."""
     end = datetime.now()
@@ -208,6 +266,11 @@ def check():
          {"orderBgnYm": end.strftime("%Y%m"), "orderEndYm": end.strftime("%Y%m")}),
     ]
     results = []
+    try:
+        keys, _ = _contract_style()
+        results.append(("계약정보서비스", True, f"정상 (날짜 방식 {keys[0]})", []))
+    except ApiError as e:
+        results.append(("계약정보서비스", False, str(e), []))
     for name, src, op, extra in tests:
         params = {"inqryDiv": 1, "inqryBgnDt": _fmt(start), "inqryEndDt": _fmt(end), **extra}
         try:

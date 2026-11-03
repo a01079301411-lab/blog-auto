@@ -34,6 +34,7 @@ BASES = {
     "pre": os.getenv("PRE_BASE") or "https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService",
     "plan": os.getenv("PLAN_BASE") or "https://apis.data.go.kr/1230000/ao/OrderPlanSttusService",
     "award": os.getenv("AWARD_BASE") or "https://apis.data.go.kr/1230000/as/ScsbidInfoService",
+    "contract": os.getenv("CONTRACT_BASE") or "https://apis.data.go.kr/1230000/ao/CntrctInfoService",
 }
 
 for d in (OUTPUT, LOGS):

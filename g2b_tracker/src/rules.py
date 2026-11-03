@@ -15,18 +15,19 @@ from datetime import datetime
 
 from config import DATA
 
-SRC_NAME = {"bid": "입찰공고", "pre": "사전규격", "plan": "발주계획", "award": "낙찰(원도급사)"}
+SRC_NAME = {"bid": "입찰공고", "pre": "사전규격", "plan": "발주계획", "award": "낙찰(원도급사)", "contract": "계약"}
 
 TITLE = ("bidNtceNm", "prdctClsfcNoNm", "bizNm", "cntrctNm", "bsnsNm")
 ORG = ("dminsttNm", "rlDminsttNm", "orderInsttNm", "ntceInsttNm", "insttNm", "rlDminsttNm", "cntrctInsttNm")
 NOTICE_ORG = ("ntceInsttNm", "orderInsttNm")
-DATE = ("bidNtceDt", "rgstDt", "rcptDt", "nticeDt", "opengDt", "fnlSucsfDate", "rlOpengDt")
+DATE = ("cntrctCnclsDate", "cntrctDate", "bidNtceDt", "rgstDt", "rcptDt", "nticeDt", "opengDt", "fnlSucsfDate", "rlOpengDt")
 DEADLINE = ("bidClseDt", "opninRgstClseDt", "rcptClseDt")
-AMOUNT = ("presmptPrce", "asignBdgtAmt", "bdgtAmt", "sumOrderAmt", "orderAmt", "sucsfbidAmt", "cntrctAmt", "totCnstwkScle")
+AMOUNT = ("presmptPrce", "asignBdgtAmt", "bdgtAmt", "sumOrderAmt", "orderAmt", "sucsfbidAmt", "thtmCntrctAmt", "totCntrctAmt", "cntrctAmt", "totCnstwkScle")
 METHOD = ("cntrctCnclsMthdNm", "bidMethdNm", "prcrmntMethd", "cntrctMthdNm", "sucsfbidMthdNm")
-OFFICER = ("ntceInsttOfclNm", "ofclNm", "dminsttOfclNm", "exctvNm", "orderInsttOfclNm")
-PHONE = ("ntceInsttOfclTelNo", "ofclTelNo", "dminsttOfclTelNo", "orderInsttOfclTelNo", "telNo")
-EMAIL = ("ntceInsttOfclEmailAdrs", "ofclEmail", "emailAdrs")
+OFFICER = ("cntrctInsttOfclNm", "ntceInsttOfclNm", "ofclNm", "dminsttOfclNm", "exctvNm", "orderInsttOfclNm")
+PHONE = ("cntrctInsttOfclTelNo", "ntceInsttOfclTelNo", "ofclTelNo", "dminsttOfclTelNo", "orderInsttOfclTelNo", "telNo")
+EMAIL = ("cntrctInsttOfclEmailAdrs", "ntceInsttOfclEmailAdrs", "ofclEmail", "emailAdrs")
+DEPT = ("cntrctInsttChrgDeptNm", "cntrctInsttDeptNm", "ntceInsttOfclDeptNm", "dminsttChrgDeptNm", "chrgDeptNm", "deptNm")
 WINNER = ("bidwinnrNm", "sucsfbidCorpNm", "corpNm")
 WINNER_TEL = ("bidwinnrTelNo", "bidwinnrTelno")
 WINNER_CEO = ("bidwinnrCeoNm",)
@@ -80,6 +81,7 @@ def normalize(item):
         "금액": _amount(pick(item, AMOUNT) or 0),
         "계약방법": pick(item, METHOD),
         "담당자": pick(item, OFFICER),
+        "담당부서": pick(item, DEPT),
         "담당전화": pick(item, PHONE),
         "담당메일": pick(item, EMAIL),
         "낙찰업체": pick(item, WINNER),
@@ -87,7 +89,8 @@ def normalize(item):
         "낙찰업체대표": pick(item, WINNER_CEO),
         "번호": pick(item, ID) + (("-" + str(item.get("bidNtceOrd"))) if item.get("bidNtceOrd") else ""),
         "링크": pick(item, URL),
-        "낙찰금액": _amount(pick(item, ("sucsfbidAmt",)) or 0),
+        "낙찰금액": _amount(pick(item, ("sucsfbidAmt", "thtmCntrctAmt", "totCntrctAmt", "cntrctAmt")) or 0),
+        "계약업체": re.sub(r"[\[\]^0-9]+", " ", pick(item, ("corpList", "cntrctCorpNm")))[:60].strip(),
         "낙찰률": pick(item, ("sucsfbidRate",)),
         "참가업체수": pick(item, ("prtcptCnum",)),
         "공고번호": pick(item, ("bidNtceNo",)),

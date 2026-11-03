@@ -35,7 +35,7 @@ def _sheet(ws, rows, cols):
     ws.auto_filter.ref = ws.dimensions
 
 
-def write_daily(recs, errors, day):
+def write_daily(recs, errors, day, moves=()):
     wb = Workbook()
     ws = wb.active
     ws.title = "오늘의영업"
@@ -43,6 +43,8 @@ def write_daily(recs, errors, day):
     _sheet(ws, main, COLS)
     _sheet(wb.create_sheet("원도급사(낙찰)"), [r for r in recs if r["출처"].startswith("낙찰")], COLS)
     _sheet(wb.create_sheet("사전규격·발주계획"), [r for r in recs if r["출처"] in ("사전규격", "발주계획")], COLS)
+    mcols = ["공고일", "지역", "제목", "수요기관", "공고기관", "낙찰금액", "계약방법", "계약업체", "담당부서", "담당자", "담당전화", "담당메일", "번호"]
+    _sheet(wb.create_sheet("이사계약 체결(수의 포함)"), list(moves), mcols)
     _sheet(wb.create_sheet("마감(원도급사로)"), [r for r in recs if r["등급"] == "마감"], COLS)
     _sheet(wb.create_sheet("전체"), recs, COLS)
     if errors:
@@ -111,7 +113,7 @@ def write_history(recs, day):
     for r in recs:
         r["기관유형"] = org_type(r["수요기관"] or r["공고기관"])
         r["계약금액(기준)"] = r.get("낙찰금액") or r["금액"]
-        r["금액기준"] = "낙찰금액" if r.get("낙찰금액") else ("추정가격" if r["금액"] else "")
+        r["금액기준"] = ("계약금액" if r.get("출처") == "계약" else "낙찰금액") if r.get("낙찰금액") else ("추정가격" if r["금액"] else "")
     by = defaultdict(list)
     for r in recs:
         by[r["수요기관"] or r["공고기관"]].append(r)
@@ -122,12 +124,14 @@ def write_history(recs, day):
         phone = next((r["담당전화"] for r in rows if r["담당전화"]), "")
         officer = next((r["담당자"] for r in rows if r["담당자"]), "")
         amts = [r["계약금액(기준)"] for r in rows if r["계약금액(기준)"]]
-        winners = [r["낙찰업체"] for r in rows if r.get("낙찰업체")]
+        winners = [r.get("낙찰업체") or r.get("계약업체") for r in rows if r.get("낙찰업체") or r.get("계약업체")]
+        sole_n = sum(1 for r in rows if "수의" in (r.get("계약방법") or ""))
         summary.append({
             "기관": org, "기관유형": latest["기관유형"], "지역": latest["지역"], "건수": len(rows),
             "최근공고일": latest["공고일"][:10], "최근공고명": latest["제목"],
             "평균금액": _won(sum(amts) // len(amts)) if amts else "-", "최근금액": _won(latest["계약금액(기준)"]),
-            "최근낙찰업체": winners[0] if winners else "", "계약방법": latest["계약방법"],
+            "수의계약 건수": sole_n, "최근 수행업체": winners[0] if winners else "", "계약방법": latest["계약방법"],
+            "담당부서(최근)": next((r["담당부서"] for r in rows if r.get("담당부서")), ""),
             "담당자(최근)": officer, "담당전화(최근)": phone, "공고기관": latest["공고기관"], "영업메모": "",
         })
     summary.sort(key=lambda x: (x["지역"] != "대구근교", -x["건수"]))
@@ -139,8 +143,10 @@ def write_history(recs, day):
     # 금액대 분석
     vals = [r["계약금액(기준)"] for r in recs]
     real = [r["낙찰금액"] for r in recs if r.get("낙찰금액")]
-    rows = [{"구분": "전체 (낙찰금액 우선, 없으면 추정가격)", **_stats(vals)},
-            {"구분": "실제 낙찰금액만", **_stats(real)}]
+    sole = [r["낙찰금액"] for r in recs if r.get("낙찰금액") and "수의" in (r.get("계약방법") or "")]
+    rows = [{"구분": "전체 (계약·낙찰금액 우선, 없으면 추정가격)", **_stats(vals)},
+            {"구분": "실제 계약·낙찰금액만", **_stats(real)},
+            {"구분": "수의계약만", **_stats(sole)}]
     for t in sorted({r["기관유형"] for r in recs}):
         rows.append({"구분": f"기관유형: {t}", **_stats([r["계약금액(기준)"] for r in recs if r["기관유형"] == t])})
     for reg in ("대구근교", "경북", "대구경북(주소)"):
@@ -167,8 +173,9 @@ def write_history(recs, day):
     # 경쟁사 (이사 용역 낙찰업체)
     comp = defaultdict(lambda: {"건수": 0, "합계": 0, "기관": set(), "전화": ""})
     for r in recs:
-        if r.get("낙찰업체"):
-            c = comp[r["낙찰업체"]]
+        name = r.get("낙찰업체") or r.get("계약업체")
+        if name:
+            c = comp[name]
             c["건수"] += 1
             c["합계"] += r.get("낙찰금액") or 0
             c["기관"].add(r["수요기관"] or r["공고기관"])
@@ -178,8 +185,8 @@ def write_history(recs, day):
             for k, v in sorted(comp.items(), key=lambda kv: -kv[1]["건수"])]
     _sheet(wb.create_sheet("경쟁사(낙찰업체)"), crow, ["업체", "낙찰건수", "낙찰합계", "평균", "주요기관", "전화"])
 
-    raw_cols = ["지역", "기관유형", "공고일", "제목", "수요기관", "공고기관", "금액", "낙찰금액", "금액기준", "낙찰률", "참가업체수",
-                "낙찰업체", "계약방법", "담당자", "담당전화", "담당메일", "번호", "링크"]
+    raw_cols = ["출처", "지역", "기관유형", "공고일", "제목", "수요기관", "공고기관", "금액", "낙찰금액", "금액기준", "낙찰률", "참가업체수",
+                "낙찰업체", "계약업체", "계약방법", "담당부서", "담당자", "담당전화", "담당메일", "번호", "링크"]
     _sheet(wb.create_sheet("공고원본"), sorted(recs, key=lambda r: r["공고일"], reverse=True), raw_cols)
     path = OUTPUT / f"이사발주기관_{day}.xlsx"
     wb.save(path)

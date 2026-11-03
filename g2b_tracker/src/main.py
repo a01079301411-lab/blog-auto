@@ -45,14 +45,29 @@ def run_daily():
     print(f"나라장터 최근 {days}일치를 훑는 중... (처음엔 몇 분 걸려요)")
     items, errors = g2b.collect_daily(days)
     recs = R.evaluate(items, rules)
+    moves = []
+    try:
+        from datetime import datetime, timedelta
+        citems, cerr = g2b.collect_contracts(datetime.now() - timedelta(days=days), datetime.now())
+        errors += cerr
+        for it in citems:
+            c = R.normalize(it)
+            c["지역"] = c["_region"] = R.region_of(c, rules)
+            if c["_region"] and R.is_history_hit(c, rules):
+                c["출처"] = "계약"
+                moves.append(c)
+    except g2b.ApiError as e:
+        errors.append(f"계약정보: {e}")
     new_keys = {r["_key"] for r in recs if not (set(r.get("_dupkeys", [])) & seen)} - seen
     for r in recs:
         r["신규"] = "NEW" if r["_key"] in new_keys else ""
     day = R.today()
-    xlsx = report.write_daily(recs, errors, day)
+    xlsx = report.write_daily(recs, errors, day, moves)
     md = report.write_brief(recs, errors, day, new_keys)
     db = report.ensure_sales_db()
-    added, total = contacts.update(recs)
+    added, total = contacts.update([r for r in recs if r["등급"] != "마감"])
+    a2, total = contacts.update(moves, move_contract=True)
+    added += a2
     all_keys = {r["_key"] for r in recs} | {k for r in recs for k in r.get("_dupkeys", [])}
     SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
 
@@ -63,14 +78,23 @@ def run_daily():
         who = r["담당전화"] or r["낙찰업체전화"] or ""
         msg.append(f"\n■ {r['등급']} {r['점수']}점 [{r['출처']}] {r['제목']}\n  {r['수요기관'] or r['공고기관']}"
                    f"{' · 마감 ' + r['마감일'] if r['마감일'] else ''}{' · ☎ ' + who if who else ''}\n  → {r['다음행동']}")
+    new_moves = [m for m in moves if m["_key"] not in seen]
+    if new_moves:
+        msg.append(f"\n📋 이사·이전 계약 체결 {len(new_moves)}건 (다른 업체가 따감 → 다음엔 우리 차례):")
+        for m in new_moves[:5]:
+            amt = f"{round((m['낙찰금액'] or m['금액']) / 10000):,}만원" if (m['낙찰금액'] or m['금액']) else ""
+            msg.append(f"  · {m['수요기관'] or m['공고기관']} {m['제목'][:30]} {amt} {m['계약방법']}"
+                       f"{' ☎ ' + m['담당부서'] + ' ' + m['담당전화'] if m['담당전화'] else ''}")
+    seen |= {m["_key"] for m in moves}
     if errors:
         msg.append(f"\n⚠ 조회 실패 {len(errors)}건 → 1_연결점검.bat 실행")
     if first_run:
         msg.append("\n(첫 실행이라 최근 30일치 전체를 '새로 뜬 것'으로 셌어요. 내일부터는 진짜 새 공고만 와요.)")
+    SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
     notifier.notify("\n".join(msg))
     print("\n".join(msg))
     print(f"\n저장: {xlsx}\n      {md}" + (f"\n      {db} (영업DB 새로 만듦)" if db else ""))
-    print(f"      연락처 새로 {added}건 (누적 {total}건) → 영업DB '자동연락처' 시트")
+    print(f"      관공서 담당자 새로 {added}명 (누적 {total}명) → 영업DB '관공서담당자' 시트")
 
 
 def run_history(months):
@@ -80,6 +104,12 @@ def run_history(months):
     items, errors = g2b.collect_history(months, kws)
     awards, err2 = g2b.collect_awards(months, kws)
     errors += err2
+    from datetime import datetime, timedelta
+    try:
+        cons, err3 = g2b.collect_contracts(datetime.now() - timedelta(days=30 * months), datetime.now(), kws)
+    except g2b.ApiError as e:
+        cons, err3 = [], [f"계약정보: {e}"]
+    errors += err3
     recs = {}
     for it in items:
         rec = R.normalize(it)
@@ -102,10 +132,20 @@ def run_history(months):
         elif a["_region"] and R.is_history_hit(a, rules):
             a["출처"] = "낙찰(공고 못 찾음)"
             recs[a["_key"]] = a
+    ncon = 0
+    for it in cons:
+        c = R.normalize(it)
+        c["지역"] = c["_region"] = R.region_of(c, rules)
+        if c["_region"] and R.is_history_hit(c, rules):
+            c["출처"] = "계약"
+            recs[c["_key"]] = c
+            ncon += 1
     path, summary = report.write_history(list(recs.values()), R.today())
-    added, total = contacts.update(list(recs.values()))
+    added, total = contacts.update([r for r in recs.values() if r["출처"] != "계약"])
+    a2, total = contacts.update([r for r in recs.values() if r["출처"] == "계약"], move_contract=True)
+    added += a2
     print(f"\n이사·이전 공고 {len(recs)}건 (낙찰금액 붙은 것 {len(matched)}건), 기관 {len(summary)}곳 → {path}")
-    print(f"연락처 새로 {added}건 (누적 {total}건) → 영업DB '자동연락처' 시트")
+    print(f"관공서 담당자 새로 {added}명 (누적 {total}명) → 영업DB '관공서담당자' 시트")
     for s in summary[:15]:
         print(f"  {s['건수']:>2}건  {s['기관']}  (최근 {s['최근공고일']} {s['최근공고명'][:30]})")
     if errors:
