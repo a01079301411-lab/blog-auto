@@ -68,7 +68,9 @@ def cmd_check(a):
 
 def cmd_render(a):
     from .render import render_many
-    render_many(_keys(a.keys), a.variants.split(","), stills=a.stills, jobs=a.jobs)
+    from .config import settings
+    variants = a.variants.split(",") if a.variants else settings()["variants"]
+    render_many(_keys(a.keys), variants, stills=a.stills, jobs=a.jobs)
 
 
 def cmd_plan(a):
@@ -124,6 +126,22 @@ def cmd_simple(fn_path):
     return f
 
 
+def cmd_publish_now(a):
+    from .ops import publish_now
+    with db.connect() as con:
+        r = con.execute("SELECT * FROM posts WHERE id=?", (a.id,)).fetchone()
+        if not r:
+            raise SystemExit("해당 게시물 없음")
+        try:
+            res = publish_now(r)
+            db.set_status(con, r["id"], "published", remote_id=res.get("remote_id"), reply_remote_id=res.get("reply_remote_id"),
+                          permalink=res.get("permalink"), published_at=fmt_when(now()), error=None)
+            print(f"게시 완료 → {res.get('permalink')}")
+        except Exception as e:  # noqa: BLE001
+            db.set_status(con, r["id"], "failed", error=str(e)[:500])
+            raise SystemExit(f"게시 실패: {e}")
+
+
 def cmd_trends(a):
     from .trends import add_manual, run
     if a.action == "add":
@@ -165,7 +183,7 @@ def cmd_auto(a):
         print(f"[auto] trends 건너뜀: {e}")
     ns = argparse.Namespace(keys=[], no_llm=False, force_video_json=False)
     cmd_generate(ns)
-    cmd_render(argparse.Namespace(keys=[], variants="v1,v2,v3", stills=False, jobs=3))
+    cmd_render(argparse.Namespace(keys=[], variants="", stills=False, jobs=3))
     start = now().date() + timedelta(days=(7 - now().weekday()) % 7 or 7)
     cmd_plan(argparse.Namespace(start=start.isoformat(), days=7, keys=[], save=True))
     week = f"{start.isocalendar()[0]}-W{start.isocalendar()[1]:02d}"
@@ -185,7 +203,7 @@ def main(argv=None):
     p = sp.add_parser("generate", help="원고 생성(Claude→실패 시 템플릿)"); p.add_argument("keys", nargs="*")
     p.add_argument("--no-llm", action="store_true"); p.add_argument("--force-video-json", action="store_true", help="기존 제품 영상 JSON 도 덮어씀"); p.set_defaults(f=cmd_generate)
     p = sp.add_parser("check", help="검수"); p.add_argument("keys", nargs="*"); p.add_argument("--week1", action="store_true"); p.set_defaults(f=cmd_check)
-    p = sp.add_parser("render", help="영상 렌더"); p.add_argument("keys", nargs="*"); p.add_argument("--variants", default="v1,v2,v3")
+    p = sp.add_parser("render", help="영상 렌더"); p.add_argument("keys", nargs="*"); p.add_argument("--variants", default="", help="예: v1,v2 (기본: 설정의 전체 버전)")
     p.add_argument("--stills", action="store_true"); p.add_argument("--jobs", type=int, default=3); p.set_defaults(f=cmd_render)
     p = sp.add_parser("plan", help="주간 일정 생성"); p.add_argument("--start"); p.add_argument("--days", type=int, default=7)
     p.add_argument("keys", nargs="*"); p.add_argument("--save", action="store_true"); p.set_defaults(f=cmd_plan)
@@ -194,6 +212,9 @@ def main(argv=None):
     p = sp.add_parser("run-due", help="[API] 시각 된 승인 건 게시 (5분마다)"); p.add_argument("--dry", action="store_true"); p.set_defaults(f=cmd_run_due)
     p = sp.add_parser("schedule-web", help="[웹] 승인 묶음을 예약 기능으로 일괄 예약"); p.add_argument("--week", required=True)
     p.add_argument("--platform", choices=["threads", "instagram"], required=True); p.set_defaults(f=cmd_schedule_web)
+    p = sp.add_parser("publish-now", help="한 건 즉시 게시"); p.add_argument("id", type=int); p.set_defaults(f=cmd_publish_now)
+    sp.add_parser("refresh-token", help="스레드 장기 토큰 갱신").set_defaults(
+        f=lambda a: print(f"갱신 완료, 남은 {__import__('insaengtem.publish.meta_api', fromlist=['Threads']).Threads().refresh_token() // 86400}일"))
     sp.add_parser("sync", help="게시물 원격 ID 매칭").set_defaults(f=cmd_simple("ops.sync"))
     sp.add_parser("insights", help="성과 수집").set_defaults(f=cmd_simple("ops.insights"))
     sp.add_parser("inbox", help="새 답글·댓글").set_defaults(f=cmd_simple("ops.inbox"))

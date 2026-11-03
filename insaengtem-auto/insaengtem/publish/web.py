@@ -61,8 +61,17 @@ def login():
         ctx = _ctx(p)
         for url in ("https://www.threads.com/", "https://business.facebook.com/latest/home", "https://yo-go.co.kr/"):
             ctx.new_page().goto(url)
-        input("세 탭에서 로그인(2단계 인증 포함)을 마치고 Enter 를 누르세요… ")
-        ctx.close()
+        import sys
+        if sys.stdin and sys.stdin.isatty():
+            input("세 탭에서 로그인(2단계 인증 포함)을 마치고 Enter 를 누르세요… ")
+        else:  # 관리 프로그램에서 실행: 브라우저 창을 닫으면 끝
+            print("세 탭에서 로그인을 마친 뒤 브라우저 창을 닫으세요.", flush=True)
+            while ctx.pages:
+                ctx.pages[0].wait_for_timeout(1000)
+        try:
+            ctx.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ------------------------------------------------------------------ Threads

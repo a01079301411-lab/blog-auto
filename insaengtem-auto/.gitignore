@@ -11,3 +11,7 @@ data/state/*.db-journal
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 설치·실행 산출물
+.venv/
+logs/

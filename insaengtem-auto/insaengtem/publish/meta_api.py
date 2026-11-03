@@ -172,6 +172,16 @@ class Threads:
     def replies(self, media_id: str) -> list[dict]:
         return self._get(f"{media_id}/replies", fields="id,text,username,timestamp").get("data", [])
 
+    def refresh_token(self) -> int:
+        """장기 토큰(60일) 갱신 → .env 저장. 반환: 남은 초."""
+        from ..config import set_env_values
+        a = settings()["api"]
+        r = _check(requests.get(f"{a['threads_base']}/refresh_access_token",
+                                params={"grant_type": "th_refresh_token", "access_token": self.token}, timeout=60))
+        set_env_values({"THREADS_ACCESS_TOKEN": r["access_token"]})
+        self.token = r["access_token"]
+        return int(r.get("expires_in", 0))
+
     def keyword_search(self, q: str, limit: int = 50) -> list[dict]:
         """공개 게시물 키워드 검색(TOP). threads_keyword_search 권한 필요."""
         return self._get("keyword_search", q=q, search_type="TOP", limit=limit,

@@ -2,6 +2,8 @@
 
 COSY 오픈딜 제품 → 실측 → 단가 계산 → 원고(Claude) → 15초 릴스 6버전 렌더 → 검수 → **주 1회 사람 승인** → 인스타·스레드 게시 → 성과 수집 → 다음 주 반영.
 
+> **처음이면 → [docs/START_HERE.md](docs/START_HERE.md)** · Windows: `설치.bat` 더블클릭 → 바탕화면에 **'인생템연구소 자동발행'** 아이콘 생성 → 관리 화면(시작하기·다음 주 준비·일정·승인·성과·답글함·설정)
+
 - 설계 원본: [docs/DESIGN.md](docs/DESIGN.md) (11/3 Chrome 수동 운영 기록)
 - 검수 결과·지금 고칠 것: [docs/REVIEW_2026-11-03.md](docs/REVIEW_2026-11-03.md)
 - 트렌드 조사·반영 근거: [docs/TRENDS_2026-11.md](docs/TRENDS_2026-11.md)
@@ -55,7 +57,7 @@ python -m insaengtem login
 | 수시 | `python -m insaengtem dashboard` | `out/dashboard.html` 관리 화면 |
 | 일괄 | `python -m insaengtem auto` | 1~6을 한 번에(일요일 밤 예약 실행용). 승인만 사람이 |
 
-**Windows 작업 스케줄러**: `run-due` 5분마다 / `auto` 일요일 21:00 / `inbox` 매시 10분.
+**자동발행**: 관리 화면 [자동발행 켜기] → Windows 작업 스케줄러에 `run-due` 5분마다 / `inbox` 매시 / `weekly`(=auto + 스레드 토큰 갱신) 일요일 21:00 등록. 결과는 풍선 알림·`logs/`.
 
 ## 3. 자동 적용되는 규칙 (`config/settings.json`)
 

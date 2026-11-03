@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>인생템연구소 자동발행</title>
+<style>
+:root{--bg:#f6f3ee;--card:#fff;--fg:#211a14;--sub:#6e6257;--line:#e7dfd5;--acc:#ff6b1a;--ok:#1a8f4c;--bad:#d23b2a;--warn:#b86e00}
+@media (prefers-color-scheme:dark){:root{--bg:#15120f;--card:#211c17;--fg:#f1ebe4;--sub:#a99c8f;--line:#3a322a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0}header .logo{width:30px;height:30px;border-radius:8px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:800}
+header .sp{flex:1}header small{color:var(--sub)}
+nav{display:flex;gap:4px;overflow-x:auto;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+nav button{border:0;background:none;padding:8px 12px;border-radius:8px;color:var(--sub);font:inherit;cursor:pointer;white-space:nowrap}
+nav button.on{background:var(--acc);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:16px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 14px}
+.card h2{margin:0 0 10px;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.kpi b{display:block;font-size:24px}.kpi span{color:var(--sub);font-size:13px}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;border-radius:10px;font:inherit;cursor:pointer}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}.btn.d{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+.steps li{counter-increment:s;display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.steps li:before{content:counter(s);flex:none;width:28px;height:28px;border-radius:50%;background:var(--line);display:grid;place-items:center;font-weight:700}
+.steps li.ok:before{content:"✓";background:var(--ok);color:#fff}
+.steps .t{flex:1}.steps .t small{display:block;color:var(--sub)}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;white-space:nowrap}.scroll{overflow-x:auto}
+.tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;background:var(--line)}
+.tag.published{background:#d7f2e2;color:#145c33}.tag.failed,.tag.missed{background:#fbdcd8;color:#8a1d12}.tag.approved,.tag.scheduled_web{background:#ffe6d5;color:#8a3a00}
+pre{white-space:pre-wrap;margin:0;font-family:inherit;font-size:13.5px;line-height:1.5}
+#log{background:#14110e;color:#e9e2d9;border-radius:12px;padding:12px;height:220px;overflow:auto;font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:100%}
+label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
+.post{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.post img{width:120px;border-radius:8px}.post .noimg{width:120px;height:90px;border-radius:8px;background:var(--line);display:grid;place-items:center;color:var(--sub);font-size:12px}
+.issues{color:var(--bad);font-size:13px}.muted{color:var(--sub);font-size:13px}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
+.modal.on{display:flex}.modal .card{width:min(680px,100%);max-height:90vh;overflow:auto}
+@media (max-width:600px){header small{display:none}header h1{font-size:16px}.post{grid-template-columns:1fr}.post img,.post .noimg{width:100%}}
+</style>
+</head>
+<body>
+<header><div class="logo">인</div><h1>인생템연구소 자동발행</h1><span class="sp"></span><small id="clock"></small>
+<button class="btn" onclick="quitApp()" title="프로그램 끄기 (자동발행은 계속 동작)">종료</button></header>
+<nav id="nav"></nav>
+<main>
+
+<section id="start">
+  <div class="card"><h2>처음 설정 (한 번만)</h2>
+    <p class="muted">위에서부터 순서대로. 초록 체크가 되면 다음 단계로 넘어가세요.</p>
+    <ol class="steps" id="checklist"></ol>
+  </div>
+  <div class="card"><h2>제휴 링크 가져오기</h2>
+    <p class="muted">원본 zip 안의 <b>data/products/_catalog.json</b> 파일을 선택하세요. 링크(sl 토큰)는 이 PC의 secrets 폴더에만 저장됩니다.</p>
+    <input type="file" id="catfile" accept=".json"><div class="row" style="margin-top:8px"><button class="btn p" onclick="importLinks()">가져오기</button></div>
+  </div>
+  <div class="card"><h2>바로 실행</h2><div class="row">
+    <button class="btn" onclick="run(['login'])">크롬 로그인 (스레드·비즈니스 스위트·YOGO)</button>
+    <button class="btn p" onclick="setAuto(true)">자동발행 켜기</button>
+    <button class="btn" onclick="setAuto(false)">자동발행 끄기</button>
+  </div></div>
+</section>
+
+<section id="home">
+  <div class="grid" id="kpis"></div>
+  <div class="card" style="margin-top:14px"><h2>다음 게시</h2><div class="scroll"><table id="next"></table></div></div>
+  <div class="card"><h2>자동발행 상태</h2><div id="autost"></div></div>
+</section>
+
+<section id="week">
+  <div class="card"><h2>다음 주 준비 <span class="muted" id="wk"></span></h2>
+    <p class="muted">일요일 21시에 자동으로 1~5가 실행됩니다. 수동으로 하려면 순서대로 누르세요.</p>
+    <ol class="steps">
+      <li><div class="t">상품 다시 확인 <small>가격·옵션·배송비·품절 (품절 제품 자동 제외)</small></div><button class="btn" onclick="run(['scrape','--headless'])">실행</button></li>
+      <li><div class="t">요즘 잘 터진 게시물 분석 <small>최근 30일 상위 게시물 → 훅 패턴 가중치</small></div><button class="btn" onclick="run(['trends'])">실행</button></li>
+      <li><div class="t">원고 만들기 <small>영상 문구 · 인스타 캡션 · 스레드 본문/링크칸 · 공감글</small></div><button class="btn" onclick="run(['generate'])">실행</button></li>
+      <li><div class="t">영상 만들기 <small>제품당 6개 버전, 15초 (몇 분 걸림)</small></div><button class="btn" onclick="run(['render'])">실행</button></li>
+      <li><div class="t">다음 주 일정 만들기 <small>규칙 자동 적용</small></div><button class="btn" onclick="run(['plan','--save'])">실행</button></li>
+      <li><div class="t">검토 후 승인 <small>[일정·승인] 탭에서 확인 → 승인</small></div><button class="btn p" onclick="go('posts')">열기</button></li>
+    </ol>
+    <div class="row" style="margin-top:10px"><button class="btn p" onclick="run(['auto'])">1~5 한 번에</button>
+      <button class="btn" onclick="run(['check','--week1'])">전체 검수만</button></div>
+  </div>
+</section>
+
+<section id="posts">
+  <div class="card"><div class="row">
+    <select id="weeksel" style="width:auto" onchange="loadPosts()"></select>
+    <button class="btn p" onclick="approveWeek()">이 주 전체 승인</button>
+    <button class="btn" onclick="webSchedule('threads')">스레드 웹 예약 걸기</button>
+    <button class="btn" onclick="webSchedule('instagram')">인스타 웹 예약 걸기</button>
+    <span class="muted">API 모드는 승인만 하면 정시에 자동 게시</span></div>
+    <div id="postlist"></div></div>
+</section>
+
+<section id="perf">
+  <div class="card"><div class="row"><button class="btn p" onclick="run(['sync']).then(()=>run(['insights'])).then(()=>run(['weekly']))">성과 새로 받기</button>
+    <span class="muted">sync → insights → weekly</span></div></div>
+  <div class="card"><h2>이번 주 할 일 (자동 판단)</h2><ul id="actions"></ul></div>
+  <div class="card"><h2>게시물별 성과</h2><div class="scroll"><table id="mt"></table></div></div>
+</section>
+
+<section id="inbox">
+  <div class="card"><div class="row"><button class="btn p" onclick="run(['inbox']).then(loadInbox)">새 답글 확인</button>
+    <span class="muted">스레드는 게시 후 1시간 안에 답하면 노출에 유리</span></div>
+    <div id="inboxlist"></div></div>
+</section>
+
+<section id="settings">
+  <div class="card"><h2>API 키·토큰</h2><p class="muted">입력한 값은 이 PC의 .env 파일에만 저장됩니다. 비워두면 기존 값 유지.</p>
+    <div id="envform"></div><div class="row" style="margin-top:10px"><button class="btn p" onclick="saveEnv()">저장</button>
+    <button class="btn" onclick="run(['refresh-token'])">스레드 토큰 갱신</button></div></div>
+  <div class="card"><h2>게시 방식</h2>
+    <label>인스타그램</label><select id="pm_ig"><option value="api">API (권장, PC 켜져 있어야 함)</option><option value="web">웹 예약 (비즈니스 스위트)</option></select>
+    <label>스레드</label><select id="pm_th"><option value="api">API (영상 공개주소 필요)</option><option value="web">웹 예약 (threads.com)</option></select>
+    <label>인스타 하루 게시 수</label><select id="ig_n"><option value="3">3개 (12:30·18:30·21:30)</option><option value="2">2개 (12:30·21:30)</option></select>
+    <div class="row" style="margin-top:10px"><button class="btn p" onclick="saveSettings()">저장</button></div></div>
+  <div class="card"><h2>제품·링크</h2><div class="scroll"><table id="linktbl"></table></div>
+    <label>제품 key</label><input id="lk" placeholder="예: egg"><label>제휴 링크 (sl= 포함)</label><input id="lu" placeholder="https://yo-go.co.kr/product/detail.html?product_no=...&sl=...">
+    <div class="row" style="margin-top:8px"><button class="btn" onclick="saveLink()">링크 저장</button></div></div>
+</section>
+
+<div class="card"><h2>작업 기록</h2><div id="log">대기 중</div></div>
+</main>
+
+<div class="modal" id="modal"><div class="card"><h2 id="mtitle">수정</h2>
+  <label>본문 (1번째 칸 / 인스타 캡션)</label><textarea id="mtext" rows="9"></textarea>
+  <div id="mreplybox"><label>2번째 칸 (링크 칸, {link} 는 게시 때 자동 치환)</label><textarea id="mreply" rows="3"></textarea></div>
+  <div class="issues" id="missues"></div>
+  <div class="row" style="margin-top:10px"><button class="btn p" onclick="savePost()">저장 + 검수</button><button class="btn" onclick="closeModal()">닫기</button></div>
+</div></div>
+
+<script>
+const TABS=[["start","시작하기"],["home","홈"],["week","다음 주 준비"],["posts","일정·승인"],["perf","성과"],["inbox","답글함"],["settings","설정"]];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const api=(p,b)=>fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json","X-Insaengtem":"1"},body:JSON.stringify(b)}:{}).then(r=>r.json());
+let ST={},EDIT=null;
+$("#nav").innerHTML=TABS.map(([k,v])=>`<button data-k="${k}" onclick="go('${k}')">${v}</button>`).join("");
+function go(k){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==k));
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.k==k));
+  try{localStorage.setItem("tab",k)}catch(e){}
+  ({posts:loadPosts,perf:loadPerf,inbox:loadInbox,settings:loadSettings}[k]||(()=>{}))();}
+function log(t){const l=$("#log");l.textContent+=(l.textContent=="대기 중"?"":"\n")+t;l.scrollTop=1e9}
+async function run(args){
+  log(`▶ ${args.join(" ")}`);const {job,error}=await api("/api/run",{args});if(error){log("✖ "+error);return}
+  let seen=0;return new Promise(res=>{const t=setInterval(async()=>{const j=await api("/api/jobs/"+job);
+    j.lines.slice(seen).forEach(log);seen=j.lines.length;
+    if(j.done){clearInterval(t);log(j.code===0?"✔ 완료":"✖ 종료 코드 "+j.code);refresh();res(j)}},1000)})}
+async function refresh(){ST=await api("/api/status");$("#clock").textContent=ST.now;
+  $("#checklist").innerHTML=ST.checklist.map(c=>`<li class="${c.ok?"ok":""}"><div class="t">${esc(c.label)}<small>${esc(c.hint)}</small></div></li>`).join("");
+  const c=ST.counts;const k=[["오늘 게시",ST.today],["승인 대기",(c.draft||0)],["예약·승인됨",(c.approved||0)+(c.scheduled_web||0)],["게시 완료",(c.published||0)+(c.external||0)],["실패·놓침",(c.failed||0)+(c.missed||0)],["미응답 답글",ST.unanswered]];
+  $("#kpis").innerHTML=k.map(([a,b])=>`<div class="kpi"><span>${a}</span><b>${b}</b></div>`).join("");
+  $("#next").innerHTML="<tr><th>시간</th><th>플랫폼</th><th>제품</th><th>버전</th><th>상태</th></tr>"+ST.next.map(r=>`<tr><td>${r.when_kst}</td><td>${r.platform}</td><td>${esc(r.product||"공감글")}</td><td>${r.variant||""}</td><td><span class="tag ${r.status}">${r.status}</span></td></tr>`).join("");
+  const a=ST.autopublish;$("#autost").innerHTML=Object.values(a).some(v=>v===null)?'<span class="muted">Windows 에서만 동작</span>':
+   Object.entries(a).map(([n,on])=>`<div>${on?"🟢":"⚪"} ${n.replace("insaengtem_","")}</div>`).join("")+`<div class="row" style="margin-top:8px"><button class="btn p" onclick="setAuto(true)">켜기</button><button class="btn" onclick="setAuto(false)">끄기</button></div>`;
+  $("#wk").textContent=ST.next_week;
+  const ws=[...new Set([ST.next_week,...ST.weeks])];const cur=$("#weeksel").value;
+  $("#weeksel").innerHTML=ws.map(w=>`<option ${w==cur?"selected":""}>${w}</option>`).join("");}
+async function loadPosts(){const w=$("#weeksel").value;const rows=await api("/api/posts?week="+encodeURIComponent(w));
+  $("#postlist").innerHTML=rows.length?rows.map(r=>`<div class="post">${r.cover?`<img src="${r.cover}" alt="">`:`<div class="noimg">${r.kind=="text"?"공감글":"영상 없음"}</div>`}
+   <div><div class="row"><b>${r.when_kst}</b><span>${r.platform}</span><span>${esc(r.product||"")} ${r.variant||""}</span><span class="tag ${r.status}">${r.status}</span></div>
+   <pre>${esc(r.text)}</pre>${r.reply?`<pre class="muted">↳ ${esc(r.reply)}</pre>`:""}${r.error?`<div class="issues">${esc(r.error)}</div>`:""}
+   ${r.permalink?`<a href="${esc(r.permalink)}" target="_blank">게시물 열기</a>`:""}
+   <div class="row" style="margin-top:6px">${["published","publishing"].includes(r.status)?"":`<button class="btn" onclick='openEdit(${JSON.stringify(r).replace(/'/g,"&#39;")})'>수정</button>`}
+   ${r.status=="failed"||r.status=="missed"?`<button class="btn" onclick="act(${r.id},'retry')">다시 시도</button>`:""}
+   ${["draft","approved","failed"].includes(r.status)?`<button class="btn d" onclick="act(${r.id},'skip')">건너뛰기</button>`:""}
+   ${["approved","failed"].includes(r.status)?`<button class="btn" onclick="if(confirm('지금 바로 게시할까요?'))run(['publish-now','${r.id}']).then(loadPosts)">지금 게시</button>`:""}</div></div></div>`).join("")
+   :'<p class="muted">이 주 일정이 없습니다. [다음 주 준비] 탭에서 만드세요.</p>';}
+function openEdit(r){EDIT=r;$("#mtitle").textContent=`#${r.id} ${r.platform} ${r.when_kst}`;$("#mtext").value=r.text||"";$("#mreply").value=r.reply||"";
+  $("#mreplybox").style.display=r.platform=="threads"&&r.reply!==null?"":"none";$("#missues").textContent="";$("#modal").classList.add("on")}
+function closeModal(){$("#modal").classList.remove("on")}
+async function savePost(){const b={text:$("#mtext").value};if($("#mreplybox").style.display=="")b.reply=$("#mreply").value;
+  const r=await api("/api/posts/"+EDIT.id,b);$("#missues").innerHTML=r.error?esc(r.error):(r.issues.length?r.issues.map(esc).join("<br>"):'<span style="color:var(--ok)">검수 통과</span>');loadPosts()}
+async function act(id,a){await api("/api/posts/"+id,{action:a});loadPosts();refresh()}
+async function approveWeek(){const w=$("#weeksel").value;const j=await run(["approve","--week",w]);
+  if(j.lines.some(l=>l.includes("오류"))){alert("검수 오류가 있습니다. 작업 기록을 보고 [수정] 후 다시 승인하세요.");return}
+  if(confirm(`${w} 전체를 승인할까요? 승인하면 정해진 시간에 게시됩니다.`)){await run(["approve","--week",w,"--yes"]);loadPosts()}}
+async function webSchedule(p){if(!confirm(`승인된 ${p} 게시물을 웹 예약 기능으로 걸까요? 크롬 창이 열립니다.`))return;
+  await run(["schedule-web","--week",$("#weeksel").value,"--platform",p]);loadPosts()}
+async function loadPerf(){const m=await api("/api/metrics");
+  $("#actions").innerHTML=(m.weekly.actions||["아직 데이터 없음 — [성과 새로 받기]"]).map(a=>`<li>${esc(a)}</li>`).join("");
+  const c=["when_kst","platform","product","variant","views","reach","likes","saves","shares","replies","profile_visits","follows"];
+  const h=["시간","플랫폼","제품","버전","조회","도달","좋아요","저장","공유","답글","프로필방문","팔로우"];
+  $("#mt").innerHTML="<tr>"+h.map(x=>`<th>${x}</th>`).join("")+"</tr>"+m.rows.map(r=>"<tr>"+c.map(k=>`<td>${r[k]??"–"}</td>`).join("")+"</tr>").join("")}
+async function loadInbox(){const rows=await api("/api/inbox");
+  $("#inboxlist").innerHTML=rows.length?rows.map(r=>`<div class="post"><div class="noimg">${r.platform}</div><div><b>@${esc(r.username)}</b> <span class="muted">${esc(r.ts)} · ${esc(r.product||"")}</span>
+   <pre>${esc(r.text)}</pre><div class="row" style="margin-top:6px">${r.permalink?`<a class="btn" href="${esc(r.permalink)}" target="_blank">열어서 답하기</a>`:""}
+   <button class="btn" onclick="api('/api/inbox/${r.reply_id}',{}).then(loadInbox)">답함</button></div></div></div>`).join(""):'<p class="muted">미응답 답글 없음</p>'}
+async function loadSettings(){const e=await api("/api/env");
+  $("#envform").innerHTML=e.map(x=>`<label>${x.key} ${x.set?"✅":""}</label><input data-k="${x.key}" ${x.secret?'type="password"':""} placeholder="${esc(x.value||"미입력")}">`).join("");
+  $("#pm_ig").value=ST.publish_mode.instagram;$("#pm_th").value=ST.publish_mode.threads;$("#ig_n").value=String(ST.instagram_slots.length);
+  const l=await api("/api/links");$("#linktbl").innerHTML="<tr><th>key</th><th>제품</th><th>판매</th><th>링크</th></tr>"+l.map(x=>`<tr><td>${x.key}</td><td>${esc(x.name)}</td><td>${x.available?"판매중":"제외"}</td><td>${x.linked?"✅":"❌"}</td></tr>`).join("")}
+async function saveEnv(){const b={};document.querySelectorAll("#envform input").forEach(i=>{if(i.value.trim())b[i.dataset.k]=i.value.trim()});
+  const r=await api("/api/env",b);log("설정 저장: "+(r.saved||[]).join(", "));loadSettings();refresh()}
+async function saveSettings(){await api("/api/settings",{publish_mode:{instagram:$("#pm_ig").value,threads:$("#pm_th").value},instagram_per_day:$("#ig_n").value});log("게시 방식 저장");refresh()}
+async function saveLink(){const r=await api("/api/links",{key:$("#lk").value.trim(),url:$("#lu").value.trim()});log(r.error?"✖ "+r.error:"링크 저장");loadSettings();refresh()}
+async function importLinks(){const f=$("#catfile").files[0];if(!f){alert("파일을 선택하세요");return}
+  let cat;try{cat=JSON.parse(await f.text())}catch(e){alert("JSON 파일이 아닙니다");return}
+  const r=await api("/api/links/import",{catalog:cat});log(r.error?"✖ "+r.error:`제휴 링크 ${r.count}개 등록`);refresh()}
+async function setAuto(on){const r=await api("/api/autopublish",{on});(r.log||[r.error]).forEach(log);refresh()}
+async function quitApp(){if(confirm("관리 프로그램을 끌까요? (자동발행 예약 작업은 계속 동작)")){await api("/api/quit",{});document.body.innerHTML="<p style='padding:40px'>종료됨. 바탕화면 아이콘으로 다시 열 수 있습니다.</p>"}}
+let first="start";try{first=localStorage.getItem("tab")||"start"}catch(e){}
+refresh().then(()=>go(first));setInterval(refresh,30000);
+</script>
+</body>
+</html>
