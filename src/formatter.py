@@ -43,6 +43,7 @@ NOT_ALLOWED = re.compile(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ\s.,?!%\-'\"]")  # �
 
 def sanitize(text):
     """한글, 영어, 숫자, 띄어쓰기, . , ? ! % 따옴표와 전화번호 하이픈만 남긴다."""
+    text = re.sub(r"^\s*\(?(\d{1,2})\)\s+", r"\1. ", text)  # 맨 앞 '2) ' 번호는 '2. '로 (뒤에서 ②로 바뀐다)
     for pattern, repl in REPLACEMENTS:
         text = pattern.sub(repl, text)
     text = NOT_ALLOWED.sub(" ", text)
@@ -208,7 +209,54 @@ def format_body(body, related=None):
         else:
             paragraph.append(line)
     flush()
-    return _tidy_blanks(_even_photos(_mark_phone_lines(_tidy_blanks(blocks))))
+    return _no_auto_format(_tidy_blanks(_even_photos(_mark_phone_lines(_tidy_blanks(blocks)))))
+
+
+# 네이버 에디터는 줄 맨 앞에 '1. '을 치면 번호 목록으로 바꿔 버린다 (다음 줄까지 2, 3번이 붙고 왼쪽으로 쏠린다).
+# 그래서 줄 맨 앞 번호는 ①, ② 로 바꾸고, 줄 맨 앞의 쉼표나 점 같은 부스러기는 뺀다.
+LEADING_NUMBER = re.compile(r"^\(?(\d{1,2})\s*[.)]\s*")
+LEADING_JUNK = re.compile(r"^[\s,.!?]+")
+
+
+def _circled(n):
+    return chr(0x2460 + n - 1) if 1 <= n <= 20 else f"{n}번"
+
+
+def _no_auto_format(blocks):
+    for b in blocks:
+        if b["type"] not in ("line", "heading"):
+            continue
+        text = LEADING_JUNK.sub("", b["text"])
+        match = LEADING_NUMBER.match(text)
+        if match and not re.match(r"\d{1,2}\.\d", text):  # 1.5톤 같은 숫자는 그대로
+            text = f"{_circled(int(match.group(1)))} {text[match.end():]}"
+        b["text"] = text
+    return blocks
+
+
+def parse_preview(text):
+    """미리보기 파일의 '블로그에 올라갈 모습' 부분을 다시 블록으로 바꾼다. (이미 올린 글을 다시 입력할 때)
+    돌려주는 값: (블록 목록, 사진 캡션 {파일: 캡션})"""
+    blocks, captions = [], {}
+    for line in text.splitlines():
+        line = line.rstrip()
+        photo = re.fullmatch(r"\[사진: (.+?) / 캡션: (.*)\]", line)
+        link = re.fullmatch(r"\[내부링크: (.*) (https?://\S+)\]", line)
+        if not line.strip():
+            blocks.append({"type": "blank"})
+        elif line.startswith("[소제목] "):
+            blocks.append({"type": "heading", "text": line[len("[소제목] "):]})
+        elif photo:
+            blocks.append({"type": "photo", "file": photo.group(1)})
+            if photo.group(2) != "없음":
+                captions[photo.group(1)] = photo.group(2)
+        elif link:
+            blocks.append({"type": "link", "title": link.group(1), "url": link.group(2)})
+        elif line.startswith("[굵게] "):
+            blocks.append({"type": "line", "text": line[len("[굵게] "):], "bold": True})
+        else:
+            blocks.append({"type": "line", "text": line, "bold": False})
+    return _no_auto_format(_mark_phone_lines(_tidy_blanks(blocks))), captions
 
 
 PHOTO_GAP_MIN = 6  # 사진과 사진 사이에는 글이 이 줄 수 이상 있어야 한다

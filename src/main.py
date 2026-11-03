@@ -29,7 +29,7 @@ import reviewer
 import topics
 from config import (
     ANTHROPIC_API_KEY, AUTO_PUBLISH, BLOG_ID, COMPANY_PHONE, DAILY_LIMIT, LOGS_DIR,
-    OUTPUT_DIR, PUBLISH_WINDOW_END, PUBLISH_WINDOW_START,
+    OUTPUT_DIR, PHOTO_DIR, PUBLISH_WINDOW_END, PUBLISH_WINDOW_START,
 )
 
 log = logging.getLogger("main")
@@ -242,7 +242,72 @@ def save_preview(post, topic, blocks, fails, notes=None):
         f"{post['body']}\n",
         encoding="utf-8",
     )
+    # 나중에 이 글을 다시 입력(고치기)할 때 쓰는 원본
+    path.with_suffix(".json").write_text(json.dumps({"post": post, "blocks": blocks}, ensure_ascii=False, indent=1),
+                                         encoding="utf-8")
     return path
+
+
+def _find_saved_post(title):
+    """발행한 글의 블록, 캡션, 인용구를 미리보기 파일에서 찾는다. 없으면 None."""
+    for md in sorted(OUTPUT_DIR.glob("*.md"), reverse=True):
+        text = md.read_text(encoding="utf-8", errors="ignore")
+        if not text.startswith(f"# {title}\n"):
+            continue
+        sidecar = md.with_suffix(".json")
+        if sidecar.exists():
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+            post = data["post"]
+            # 예전에 만든 블록에도 번호 목록 막기를 다시 적용한다
+            return formatter._no_auto_format(data["blocks"]), post.get("photo_captions", {}), post.get("quote", "")
+        quote = re.search(r"^인용구: (.*)$", text, re.M)
+        shown = text.split("=============== 블로그에 올라갈 모습 ===============", 1)[-1]
+        shown = shown.split("=============== AI가 쓴 원본 ===============", 1)[0].strip("\n")
+        blocks, captions = formatter.parse_preview(shown)
+        return blocks, captions, quote.group(1).strip() if quote else ""
+    return None
+
+
+def _find_photos(files, folder_name):
+    """사진 파일 이름으로 실제 파일을 찾는다. 사용한 사진은 '사용완료' 폴더로 옮겨져 있을 수 있다."""
+    found = {}
+    folders = [d for d in PHOTO_DIR.rglob(folder_name) if d.is_dir()] if folder_name else []
+    for name in files:
+        hits = [p for d in folders for p in d.glob(name)] or list(PHOTO_DIR.rglob(name))
+        if hits:
+            found[name] = photos.prepare_upload(hits[0])
+    return found
+
+
+def fix_last():
+    """가장 최근에 발행한 글의 본문을 지우고 고친 방식으로 다시 입력한다 (주소는 그대로)."""
+    records = [r for r in history.load()
+               if r.get("result") == "published" and re.search(r"/\d{9,}|logNo=\d+", r.get("url", ""))]
+    if not records:
+        stop("다시 입력할 발행 글을 기록에서 찾지 못했어요.")
+    record = records[-1]
+    saved = _find_saved_post(record["title"])
+    if saved is None:
+        stop(f"이 글의 미리보기 파일을 output 폴더에서 찾지 못했어요: {record['title']}")
+    blocks, captions, quote = saved
+    files = [b["file"] for b in blocks if b["type"] == "photo"]
+    photo_paths = _find_photos(files, record.get("photo_folder", ""))
+    missing = [f for f in files if f not in photo_paths]
+    print(f"\n다시 입력할 글: {record['title']}\n주소: {record['url']}\n사진 {len(files)}장 중 {len(photo_paths)}장 찾음"
+          + (f" (못 찾은 사진: {', '.join(missing)})" if missing else ""))
+    if input("이 글의 본문을 지우고 다시 입력할까요? 네면 y 를 치고 엔터: ").strip().lower() not in ("y", "네", "ㅇ"):
+        print("취소했어요.")
+        return
+    with publisher.open_browser() as page:
+        try:
+            result = publisher.rewrite_post(page, record["url"], record["title"], blocks, photo_paths, captions, quote)
+        except publisher.PublishError as e:
+            stop(str(e))
+    message = f"[블로그 자동화] 글을 다시 입력했어요\n제목: {record['title']}\n{result['url']}"
+    if result["warnings"]:
+        message += "\n주의: " + " / ".join(result["warnings"])
+    log.info(message)
+    notifier.notify(message)
 
 
 def main():
@@ -250,9 +315,15 @@ def main():
     parser.add_argument("--preview", action="store_true", help="글만 만들고 네이버에는 올리지 않음")
     parser.add_argument("--schedule", action="store_true", help="발행 시간대 안 무작위 시각에 실행")
     parser.add_argument("--topic", help="특정 주제로 쓰기")
+    parser.add_argument("--fix-last", action="store_true", help="가장 최근 발행 글의 본문을 다시 입력")
     args = parser.parse_args()
     setup_logging()
     keep_awake()
+    if args.fix_last:
+        if not check_login():
+            stop("네이버 로그인이 안 되어 있어요. 1_네이버로그인.bat 을 먼저 실행해 주세요.")
+        fix_last()
+        return
 
     if not ANTHROPIC_API_KEY:
         stop(".env에 ANTHROPIC_API_KEY가 없어요.")
