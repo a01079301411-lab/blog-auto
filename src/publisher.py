@@ -231,7 +231,7 @@ def type_title(page, editor, title):
 def insert_photo(page, editor, path, caption):
     """현재 커서 위치에 사진을 올리고 캡션을 단다. 성공하면 True."""
     before = editor.locator(IMAGE_COMPONENT).count()
-    try:  # 이미 있던 사진에 표시를 해 둔다 (새로 들어간 사진을 정확히 찾으려고)
+    try:  # 이미 있던 사진에 표시를 해 둔다 (방금 들어간 사진에 캡션을 달려고)
         editor.evaluate(f"() => document.querySelectorAll('{IMAGE_COMPONENT}').forEach(e => e.setAttribute('data-old', '1'))")
     except Exception:
         pass
@@ -255,22 +255,9 @@ def insert_photo(page, editor, path, caption):
         return False
     pause(page)
 
-    close_library(page, editor)
     image = editor.locator(f"{IMAGE_COMPONENT}:not([data-old])").first
     if not image.count():
         image = editor.locator(IMAGE_COMPONENT).last
-    parts = layout(editor) or []
-    kinds = [p["kind"] for p in parts]
-    try:
-        where = editor.evaluate(f"""() => {{
-            const top = [...document.querySelectorAll('.se-component')].filter(
-                c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
-            const img = document.querySelector('{IMAGE_COMPONENT}:not([data-old])');
-            return img ? top.indexOf(img) : -1; }}""")
-    except Exception:
-        where = -1
-    if where >= 0 and any(k != "text" for k in kinds[where + 1:]):
-        log.info("사진이 글 끝이 아닌 곳에 들어갔어요 (%s번째 / 전체 %s). 순서: %s", where, len(kinds), describe_layout(editor))
     if caption:
         for selector in CAPTION_AREA:
             try:
@@ -353,44 +340,12 @@ LAYOUT_JS = """
   });
 }
 """
-# 지금 커서가 본문 맨 끝 부품(글 칸) 안에 있는지
-CARET_AT_END_JS = """
-() => {
-  const sel = window.getSelection();
-  if (!sel || !sel.anchorNode) return false;
-  const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-  const here = node && node.closest('.se-component');
-  const all = [...document.querySelectorAll('.se-component')].filter(
-      c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
-  const last = all[all.length - 1];
-  return !!here && here === last && here.classList.contains('se-text') && !node.closest('.se-caption');
-}
-"""
-
-
-# 커서가 지금 몇 번째 부품의 어디에 있는지 (기록용)
-CARET_INFO_JS = """
-() => {
-  const sel = window.getSelection();
-  const all = [...document.querySelectorAll('.se-component')].filter(
-      c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
-  if (!sel || !sel.anchorNode) return {total: all.length, index: -1, where: 'no selection'};
-  const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-  const here = node && node.closest('.se-component');
-  const top = here && (all.includes(here) ? here : all.find(c => c.contains(here)));
-  return {total: all.length, index: top ? all.indexOf(top) : -1,
-          kind: top ? top.className.replace(/\\s+/g, ' ').slice(0, 60) : '',
-          caption: !!(node && node.closest('.se-caption')), title: !!(node && node.closest('.se-documentTitle')),
-          tag: node ? node.tagName + '.' + (node.className || '').toString().slice(0, 40) : ''};
-}
-"""
-
-
-def caret_info(editor):
+def layout(editor):
+    """본문 부품 목록. 못 읽으면 None."""
     try:
-        return editor.evaluate(CARET_INFO_JS)
-    except Exception as e:
-        return {"error": str(e)[:80]}
+        return editor.evaluate(LAYOUT_JS)
+    except Exception:
+        return None
 
 
 def describe_layout(editor):
@@ -403,55 +358,164 @@ def describe_layout(editor):
     return " | ".join(out)
 
 
-def layout(editor):
-    """본문 부품 목록. 못 읽으면 None."""
-    try:
-        return editor.evaluate(LAYOUT_JS)
-    except Exception:
-        return None
+
+def _plain_lower(text):
+    """비교용 글자: 띄어쓰기, 따옴표(에디터가 둥근 따옴표로 바꾸기도 한다)를 빼고 소문자로."""
+    return re.sub(r"[\"'“”‘’]", "", _plain(text)).lower()
 
 
-def caret_at_end(editor):
+def check_layout(editor, blocks, quote="", failed_photos=()):
+    """입력이 끝난 글의 실제 모양을 블록과 비교한다. 문제 목록을 돌려준다 (못 읽으면 빈 목록).
+    - 번호 목록으로 바뀐 줄, 사진끼리 붙은 곳, 사진 위치가 글 순서와 다른 곳, 첫 문장 앞부분이 빠진 것"""
+    parts = layout(editor)
+    if not parts:
+        return []
+    problems = []
+    if any(p["list"] for p in parts):
+        problems.append("번호 목록으로 바뀐 줄이 있어요")
+
+    filled = [p for p in parts if p["kind"] != "text" or _plain(p["text"])]
+    for a, b in zip(filled, filled[1:]):
+        if a["kind"] == "image" and b["kind"] == "image":
+            problems.append("사진끼리 붙은 곳이 있어요")
+            break
+
+    # 사진마다 바로 앞에 와야 할 글 줄이, 실제로 그 사진 바로 앞 글 칸들에 있는지
+    expected, last_line = [], ""
+    for b in blocks:
+        if b["type"] in ("line", "heading"):
+            last_line = b["text"]
+        elif b["type"] == "photo" and b["file"] not in failed_photos:
+            expected.append(last_line)
+    texts_before, buffer = [], ""
+    for p in parts:
+        if p["kind"] == "image":
+            texts_before.append(buffer)
+            buffer = ""
+        elif p["kind"] in ("text", "quote"):
+            buffer += p["text"]
+    for want, got in zip(expected, texts_before):
+        if want and _plain_lower(want)[-12:] not in _plain_lower(got):
+            problems.append(f"사진 위치가 글 순서와 달라요 ('{want[:15]}' 바로 아래여야 함)")
+            break
+    if len(texts_before) != len(expected):
+        problems.append(f"사진이 {len(expected)}장 들어가야 하는데 {len(texts_before)}장이에요")
+
+    first = next((b["text"] for b in blocks if b["type"] in ("line", "heading")), "")
+    body_text = "".join(p["text"] for p in parts if p["kind"] == "text")
+    if first and _plain_lower(first)[:8] not in _plain_lower(body_text):
+        problems.append(f"첫 문장 앞부분이 빠졌어요 ('{first[:15]}')")
+    return problems
+
+
+DELETE_WORDS = ["삭제", "삭제하기"]
+MORE_BUTTONS = ['button[aria-label*="더보기"]', 'a[aria-label*="더보기"]', '.btn_post_more', '.btn_more',
+                'button[class*="more"]', 'a[class*="more"]']
+CONFIRM_WORDS = ["확인", "삭제"]
+
+
+def _click_word(page, words, scope_selector=None):
+    """모든 frame에서 글자가 딱 맞는 보이는 버튼, 링크를 찾아 누른다. 누르면 True."""
+    for frame in page.frames:
+        for word in words:
+            try:
+                found = frame.locator("a, button, [role=button], span").filter(
+                    has_text=re.compile(rf"^\s*{re.escape(word)}\s*$"))
+                for i in range(min(found.count(), 10)):
+                    item = found.nth(i)
+                    if item.is_visible():
+                        item.click(timeout=3000)
+                        return True
+            except Exception:
+                continue
+    return False
+
+
+# 글의 '삭제' 버튼만 고른다: 근처에 '수정'이 있고, 댓글 영역이 아닌 것
+POST_DELETE_JS = """
+(words) => {
+  document.querySelectorAll('[data-del]').forEach(e => e.removeAttribute('data-del'));
+  const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+  const items = [...document.querySelectorAll('a, button, [role=button]')].filter(e => {
+    const r = e.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    if (!words.includes(norm(e.innerText))) return false;
+    if (e.closest('[class*="cbox"], [class*="comment"], [id*="comment"]')) return false;
+    const near = norm((e.parentElement && e.parentElement.parentElement || e.parentElement || e).innerText);
+    return near.includes('수정');
+  });
+  if (!items.length) return false;
+  items[0].setAttribute('data-del', '1');
+  return true;
+}
+"""
+
+
+def _click_post_delete(page):
+    for frame in page.frames:
+        try:
+            if frame.evaluate(POST_DELETE_JS, DELETE_WORDS):
+                frame.locator('[data-del="1"]').first.click(timeout=3000)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _is_gone(page, url):
+    """글이 지워졌는지: 글 주소를 다시 열면 '없는 글' 안내가 나오거나 글 번호가 안 보인다."""
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(3000)
+    text = " ".join(_frame_text(f) for f in page.frames)
+    return bool(re.search(r"존재하지 않|삭제되었|삭제된 게시물|찾을 수 없", text))
+
+
+def _frame_text(frame):
     try:
-        return bool(editor.evaluate(CARET_AT_END_JS))
+        return frame.evaluate("document.body ? document.body.innerText : ''") or ""
     except Exception:
-        return None
+        return ""
+
+
+def delete_post(page, url):
+    """발행한 글을 지운다. 지운 것을 확인하면 True. (확인 창은 자동으로 '확인')"""
+    accept = lambda dialog: dialog.accept()
+    page.on("dialog", accept)
+    try:
+        for attempt in range(2):
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000)
+            clicked = _click_post_delete(page)
+            if not clicked:  # 삭제 버튼이 '더보기(...)' 메뉴 안에 숨어 있는 경우 (메뉴 안에는 '수정하기'가 같이 있다)
+                for frame in page.frames:
+                    if click_first(frame, MORE_BUTTONS, timeout=1500):
+                        page.wait_for_timeout(800)
+                        clicked = _click_post_delete(page)
+                        if clicked:
+                            break
+            if not clicked:
+                log.info("삭제 버튼을 찾지 못했어요. 화면: %s", screenshot(page, "no_delete"))
+                continue
+            page.wait_for_timeout(1500)
+            _click_word(page, CONFIRM_WORDS)  # 확인 창이 화면 안 레이어로 뜨는 경우
+            page.wait_for_timeout(3000)
+            if _is_gone(page, url):
+                log.info("예전 글을 지웠어요: %s", url)
+                return True
+        log.info("예전 글이 지워졌는지 확인하지 못했어요. 화면: %s", screenshot(page, "delete_unsure"))
+        return False
+    finally:
+        page.remove_listener("dialog", accept)
 
 
 def go_to_end(page, editor):
     """커서를 글 맨 끝 본문 칸으로 옮긴다.
-    사진 캡션 칸에 커서가 남거나, 사진 위쪽 글 칸으로 가면 다음 글과 사진의 순서가 뒤바뀌고 사진끼리 붙어 버린다.
-    그래서 옮긴 뒤 정말 맨 끝인지 확인하고, 아니면 다른 방법으로 다시 옮긴다."""
+    사진 캡션 칸에 커서가 남으면 다음 글이 캡션에 들어가고 사진끼리 붙어 버려서, 캡션 칸은 고르지 않는다."""
     target = editor.locator(BODY_PARAGRAPH).last
     click_text(target)
     page.keyboard.press("End")
     page.wait_for_timeout(500)
-    parts = layout(editor) or []
-    if parts and parts[-1]["kind"] != "text":
-        # 맨 끝이 사진, 링크 카드라서 그 아래에 글 칸이 없다. 그 아래에 글 칸을 만든다.
-        page.keyboard.press("Control+End")
-        page.wait_for_timeout(400)
-        if caret_at_end(editor) is False:
-            try:
-                editor.locator(".se-component").last.click(timeout=2000)
-                page.keyboard.press("ArrowDown")
-                page.wait_for_timeout(400)
-                if caret_at_end(editor) is False:
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(400)
-            except Exception:
-                pass
-        if caret_at_end(editor) is False:
-            log.info("커서를 글 맨 끝으로 옮기지 못했어요. 화면: %s", screenshot(page, "not_end"))
     align_center(page, editor)
-
-
-def ensure_end(page, editor):
-    """커서가 글 맨 끝에 있지 않으면 맨 끝으로 옮긴다. (확인을 못 하면 그대로 둔다)"""
-    if caret_at_end(editor) is False:
-        log.info("커서가 글 맨 끝이 아니라서 옮겨요. 커서: %s", caret_info(editor))
-        go_to_end(page, editor)
-        log.debug("옮긴 뒤 커서: %s", caret_info(editor))
 
 
 def bold_is_on(editor):
@@ -537,38 +601,6 @@ def remove_url_lines(page, editor, url):
                 _undo_if_card_lost(page, editor, cards_before)
                 return result
     return result
-
-
-LINK_LAYER = [".se-custom-layer-link", ".se-popup-link", "[class*='layer-link']"]
-LIBRARY_CLOSE = [".se-sidebar-close-button", "button[class*='sidebar'][class*='close']",
-                 "[class*='library'] button[class*='close']"]
-
-
-def close_link_layer(page, editor):
-    """링크 넣는 작은 창이 아직 떠 있으면 닫는다."""
-    for selector in LINK_LAYER:
-        try:
-            layer = editor.locator(selector).first
-            if layer.count() and layer.is_visible():
-                page.keyboard.press("Escape")
-                page.wait_for_timeout(300)
-                return
-        except Exception:
-            continue
-
-
-def close_library(page, editor):
-    """사진을 올리면 오른쪽에 뜨는 '라이브러리' 칸을 닫는다 (커서를 가져가지 않게)."""
-    for selector in LIBRARY_CLOSE:
-        try:
-            button = editor.locator(selector).first
-            if button.count() and button.is_visible():
-                button.click(timeout=1500)
-                page.wait_for_timeout(300)
-                return True
-        except Exception:
-            continue
-    return False
 
 
 def add_phone_link(page, editor):
@@ -684,10 +716,6 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
     failed_photos, failed_phone_links = [], []
     for i, block in enumerate(blocks):
         kind = block["type"]
-        if kind in ("photo", "line", "heading", "link"):
-            # 글은 항상 맨 끝에 이어 쓴다. 커서가 인용구, 사진 설명 칸, 위쪽 글 칸에 가 있으면
-            # 글이 엉뚱한 곳에 들어가고 사진끼리 붙어 버린다.
-            ensure_end(page, editor)
         if kind == "blank":
             if i and blocks[i - 1]["type"] in ("photo", "link"):
                 continue  # 사진, 링크 아래에는 이미 새 줄이 있다
@@ -705,11 +733,8 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             bold = kind == "heading" or bool(block.get("bold"))
             before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
             type_line(page, block["text"])
-            if block.get("phone"):
-                if not add_phone_link(page, editor):
-                    failed_phone_links.append(block["text"])
-                close_link_layer(page, editor)
-                ensure_end(page, editor)  # 링크 창에 커서가 남으면 다음 엔터가 사라져 다음 줄이 붙어 버린다
+            if block.get("phone") and not add_phone_link(page, editor):
+                failed_phone_links.append(block["text"])
             if bold and before is None:
                 page.keyboard.press("Control+b")  # 상태를 모를 때는 켠 만큼 다시 끈다
             elif bold:
@@ -718,115 +743,6 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
         if i % 8 == 7:
             pause(page, 0.5, 2.0)  # 가끔 쉬어 가며 입력
     return failed_photos, failed_phone_links
-
-
-def _plain_lower(text):
-    """비교용 글자: 띄어쓰기, 따옴표(에디터가 둥근 따옴표로 바꾸기도 한다)를 빼고 소문자로."""
-    return re.sub(r"[\"'“”‘’]", "", _plain(text)).lower()
-
-
-def check_layout(editor, blocks, quote="", failed_photos=()):
-    """입력이 끝난 글의 실제 모양을 블록과 비교한다. 문제 목록을 돌려준다 (못 읽으면 빈 목록).
-    - 번호 목록으로 바뀐 줄, 사진끼리 붙은 곳, 사진 위치가 글 순서와 다른 곳, 첫 문장 앞부분이 빠진 것"""
-    parts = layout(editor)
-    if not parts:
-        return []
-    problems = []
-    if any(p["list"] for p in parts):
-        problems.append("번호 목록으로 바뀐 줄이 있어요")
-
-    filled = [p for p in parts if p["kind"] != "text" or _plain(p["text"])]
-    for a, b in zip(filled, filled[1:]):
-        if a["kind"] == "image" and b["kind"] == "image":
-            problems.append("사진끼리 붙은 곳이 있어요")
-            break
-
-    # 사진마다 바로 앞에 와야 할 글 줄이, 실제로 그 사진 바로 앞 글 칸들에 있는지
-    expected, last_line = [], ""
-    for b in blocks:
-        if b["type"] in ("line", "heading"):
-            last_line = b["text"]
-        elif b["type"] == "photo" and b["file"] not in failed_photos:
-            expected.append(last_line)
-    texts_before, buffer = [], ""
-    for p in parts:
-        if p["kind"] == "image":
-            texts_before.append(buffer)
-            buffer = ""
-        elif p["kind"] in ("text", "quote"):
-            buffer += p["text"]
-    for want, got in zip(expected, texts_before):
-        if want and _plain_lower(want)[-12:] not in _plain_lower(got):
-            problems.append(f"사진 위치가 글 순서와 달라요 ('{want[:15]}' 바로 아래여야 함)")
-            break
-    if len(texts_before) != len(expected):
-        problems.append(f"사진이 {len(expected)}장 들어가야 하는데 {len(texts_before)}장이에요")
-
-    first = next((b["text"] for b in blocks if b["type"] in ("line", "heading")), "")
-    body_text = "".join(p["text"] for p in parts if p["kind"] == "text")
-    if first and _plain_lower(first)[:8] not in _plain_lower(body_text):
-        problems.append(f"첫 문장 앞부분이 빠졌어요 ('{first[:15]}')")
-    return problems
-
-
-def write_body(page, editor, blocks, photo_paths, captions, quote, warnings):
-    """본문 칸을 누르고 인용구와 블록을 입력한다. (넣지 못한 사진, 전화 링크를 못 건 줄)을 돌려준다."""
-    if not click_first(editor, BODY_AREA):
-        raise PublishError(f"본문 칸을 찾지 못했어요. 화면: {screenshot(page, 'no_body')}")
-    page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
-    if not align_center(page, editor):
-        warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
-    if quote:
-        status = insert_quote(page, editor, quote)
-        if status == "ok":
-            log.info("인용구를 넣었어요: %s", quote)
-        elif status == "no_text":
-            log.info("인용구 칸은 생겼는데 글자를 확인하지 못했어요. 화면: %s", screenshot(page, "quote_text"))
-            warnings.append("인용구 글자가 제대로 들어갔는지 확인해 주세요.")
-        else:
-            # 인용구 버튼을 못 찾으면 굵은 글씨 한 줄로라도 맨 위에 보여준다
-            shot = screenshot(page, "quote_fail")
-            log.info("인용구를 넣지 못해서 굵은 글씨로 넣어요. 화면: %s", shot)
-            warnings.append("인용구를 넣지 못해 제목 아래에 굵은 글씨로 넣었어요.")
-            go_to_end(page, editor)
-            before = set_bold(page, editor, True)
-            type_line(page, quote)
-            if before is None:
-                page.keyboard.press("Control+b")
-            else:
-                set_bold(page, editor, False)
-            page.keyboard.press("Enter")
-            page.keyboard.press("Enter")
-        page.wait_for_timeout(800)  # 인용구 아래 칸으로 옮긴 뒤 바로 치면 앞 글자가 빠질 수 있다
-    failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
-    # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
-    for block in blocks:
-        if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
-            remove_url_lines(page, editor, block["url"])
-    return failed, failed_phone_links
-
-
-def write_checked(page, editor, title, blocks, photo_paths, captions, quote, warnings):
-    """본문을 입력하고 모양을 검사한다. 문제가 있으면 글쓰기 화면을 새로 열어 처음부터 한 번 더 입력한다.
-    (네이버 에디터는 전체 선택으로 본문이 지워지지 않아서, 지우지 않고 새 화면에서 다시 쓴다)
-    돌려주는 값: (에디터, 넣지 못한 사진, 전화 링크 못 건 줄, 남은 문제 목록)"""
-    problems = []
-    for attempt in range(2):
-        attempt_warnings = []
-        failed, failed_phone_links = write_body(page, editor, blocks, photo_paths, captions, quote, attempt_warnings)
-        problems = check_layout(editor, blocks, quote, failed)
-        if not problems or attempt == 1:
-            warnings.extend(attempt_warnings)
-            break
-        log.info("글 모양 문제 (%s번째): %s / 화면: %s", attempt + 1, " / ".join(problems),
-                 screenshot(page, "bad_layout"))
-        log.info("본문 부품 순서: %s", describe_layout(editor))
-        log.info("글쓰기 화면을 새로 열어 처음부터 다시 입력해요.")
-        editor = open_writer(page, title)
-    if problems:
-        log.info("다시 입력해도 글 모양 문제: %s / 화면: %s", " / ".join(problems), screenshot(page, "bad_layout2"))
-        log.info("본문 부품 순서: %s", describe_layout(editor))
-    return editor, failed, failed_phone_links, problems
 
 
 def add_tags(page, editor, tags):
@@ -894,162 +810,6 @@ def post_url(page):
     return page.url
 
 
-def open_edit(page, url):
-    """이미 올린 글의 고치기 화면을 연다. 에디터(frame)를 돌려준다. 못 열면 None."""
-    number = re.search(r"(\d{9,})", url or "")
-    if not number:
-        return None
-    for edit_url in (f"https://blog.naver.com/{BLOG_ID}/{number.group(1)}?Redirect=Update",
-                     f"https://blog.naver.com/PostUpdateForm.naver?blogId={BLOG_ID}&logNo={number.group(1)}"):
-        page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
-        if "nidlogin" in page.url:
-            raise PublishError("네이버 로그인이 풀렸어요. 1_네이버로그인.bat 으로 다시 로그인해 주세요.")
-        editor = find_editor(page, seconds=20)
-        if editor:
-            pause(page)
-            for selector in POPUP_CLOSE:
-                click_first(editor, [selector], timeout=1500)
-            return editor
-    return None
-
-
-def save_edit(page, editor):
-    """고친 글을 저장(수정 발행)한다. 끝나면 글 주소를 돌려준다."""
-    open_publish_layer(page, editor)
-    if not click_first(editor, CONFIRM_BUTTON, pick_last=True):
-        raise PublishError(f"수정 발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'edit_save')}")
-    for _ in range(60):
-        page.wait_for_timeout(1000)
-        if not still_writing(page):
-            return post_url(page)
-    raise PublishError(f"저장이 끝났는지 확인하지 못했어요. 화면: {screenshot(page, 'edit_unknown')}")
-
-
-def open_writer(page, title):
-    """새 글쓰기 화면을 열고 제목을 입력한다. 에디터(frame)를 돌려준다."""
-    accept = lambda dialog: dialog.accept()  # 쓰던 화면을 떠날 때 '나가시겠습니까?'가 뜨면 확인
-    page.on("dialog", accept)
-    try:
-        page.goto(write_url(), wait_until="domcontentloaded")
-    finally:
-        page.remove_listener("dialog", accept)
-    if "nidlogin" in page.url:
-        raise PublishError("네이버 로그인이 풀렸어요. login 을 다시 실행해 주세요.")
-    editor = find_editor(page)
-    if editor is None:
-        raise PublishError(f"글쓰기 화면을 찾지 못했어요. 화면: {screenshot(page, 'no_editor')}")
-
-    pause(page)
-    for selector in POPUP_CLOSE:  # '작성 중인 글이 있습니다'가 뜨면 취소(새로 쓰기)
-        click_first(editor, [selector], timeout=1500)
-
-    if not click_first(editor, TITLE_AREA):
-        raise PublishError(f"제목 칸을 찾지 못했어요. 화면: {screenshot(page, 'no_title')}")
-    type_title(page, editor, title)
-    pause(page)
-    return editor
-
-
-DELETE_WORDS = ["삭제", "삭제하기"]
-MORE_BUTTONS = ['button[aria-label*="더보기"]', 'a[aria-label*="더보기"]', '.btn_post_more', '.btn_more',
-                'button[class*="more"]', 'a[class*="more"]']
-CONFIRM_WORDS = ["확인", "삭제"]
-
-
-def _click_word(page, words, scope_selector=None):
-    """모든 frame에서 글자가 딱 맞는 보이는 버튼, 링크를 찾아 누른다. 누르면 True."""
-    for frame in page.frames:
-        for word in words:
-            try:
-                found = frame.locator("a, button, [role=button], span").filter(
-                    has_text=re.compile(rf"^\s*{re.escape(word)}\s*$"))
-                for i in range(min(found.count(), 10)):
-                    item = found.nth(i)
-                    if item.is_visible():
-                        item.click(timeout=3000)
-                        return True
-            except Exception:
-                continue
-    return False
-
-
-# 글의 '삭제' 버튼만 고른다: 근처에 '수정'이 있고, 댓글 영역이 아닌 것
-POST_DELETE_JS = """
-(words) => {
-  document.querySelectorAll('[data-del]').forEach(e => e.removeAttribute('data-del'));
-  const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
-  const items = [...document.querySelectorAll('a, button, [role=button]')].filter(e => {
-    const r = e.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) return false;
-    if (!words.includes(norm(e.innerText))) return false;
-    if (e.closest('[class*="cbox"], [class*="comment"], [id*="comment"]')) return false;
-    const near = norm((e.parentElement && e.parentElement.parentElement || e.parentElement || e).innerText);
-    return near.includes('수정');
-  });
-  if (!items.length) return false;
-  items[0].setAttribute('data-del', '1');
-  return true;
-}
-"""
-
-
-def _click_post_delete(page):
-    for frame in page.frames:
-        try:
-            if frame.evaluate(POST_DELETE_JS, DELETE_WORDS):
-                frame.locator('[data-del="1"]').first.click(timeout=3000)
-                return True
-        except Exception:
-            continue
-    return False
-
-
-def _is_gone(page, url):
-    """글이 지워졌는지: 글 주소를 다시 열면 '없는 글' 안내가 나오거나 글 번호가 안 보인다."""
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(3000)
-    text = " ".join(_frame_text(f) for f in page.frames)
-    return bool(re.search(r"존재하지 않|삭제되었|삭제된 게시물|찾을 수 없", text))
-
-
-def _frame_text(frame):
-    try:
-        return frame.evaluate("document.body ? document.body.innerText : ''") or ""
-    except Exception:
-        return ""
-
-
-def delete_post(page, url):
-    """발행한 글을 지운다. 지운 것을 확인하면 True. (확인 창은 자동으로 '확인')"""
-    accept = lambda dialog: dialog.accept()
-    page.on("dialog", accept)
-    try:
-        for attempt in range(2):
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000)
-            clicked = _click_post_delete(page)
-            if not clicked:  # 삭제 버튼이 '더보기(...)' 메뉴 안에 숨어 있는 경우 (메뉴 안에는 '수정하기'가 같이 있다)
-                for frame in page.frames:
-                    if click_first(frame, MORE_BUTTONS, timeout=1500):
-                        page.wait_for_timeout(800)
-                        clicked = _click_post_delete(page)
-                        if clicked:
-                            break
-            if not clicked:
-                log.info("삭제 버튼을 찾지 못했어요. 화면: %s", screenshot(page, "no_delete"))
-                continue
-            page.wait_for_timeout(1500)
-            _click_word(page, CONFIRM_WORDS)  # 확인 창이 화면 안 레이어로 뜨는 경우
-            page.wait_for_timeout(3000)
-            if _is_gone(page, url):
-                log.info("예전 글을 지웠어요: %s", url)
-                return True
-        log.info("예전 글이 지워졌는지 확인하지 못했어요. 화면: %s", screenshot(page, "delete_unsure"))
-        return False
-    finally:
-        page.remove_listener("dialog", accept)
-
-
 def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=False, category="", quote=""):
     """글을 입력하고 임시저장(publish=False) 또는 발행(publish=True)한다.
 
@@ -1058,15 +818,53 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     """
     photo_paths, captions, warnings = photo_paths or {}, captions or {}, []
 
-    editor = open_writer(page, title)
-    editor, failed, failed_phone_links, problems = write_checked(page, editor, title, blocks, photo_paths,
-                                                                 captions, quote, warnings)
-    if problems and publish:
-        # 모양이 깨진 글은 블로그에 내보내지 않는다. 임시저장해 두고 알린다.
-        publish = False
-        warnings.append("글 모양이 깨져서 발행하지 않고 임시저장했어요: " + " / ".join(problems))
-    elif problems:
-        warnings.append("글 모양을 확인해 주세요: " + " / ".join(problems))
+    page.goto(write_url(), wait_until="domcontentloaded")
+    if "nidlogin" in page.url:
+        raise PublishError("네이버 로그인이 풀렸어요. login 을 다시 실행해 주세요.")
+    editor = find_editor(page)
+    if editor is None:
+        raise PublishError(f"글쓰기 화면을 찾지 못했어요. 화면: {screenshot(page, 'no_editor')}")
+
+    pause(page)
+    for selector in POPUP_CLOSE:
+        click_first(editor, [selector], timeout=1500)
+
+    if not click_first(editor, TITLE_AREA):
+        raise PublishError(f"제목 칸을 찾지 못했어요. 화면: {screenshot(page, 'no_title')}")
+    type_title(page, editor, title)
+    pause(page)
+
+    if not click_first(editor, BODY_AREA):
+        raise PublishError(f"본문 칸을 찾지 못했어요. 화면: {screenshot(page, 'no_body')}")
+    page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
+    if not align_center(page, editor):
+        warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
+    if quote:
+        # 인용구 칸(따옴표 상자)을 맨 위에 넣으면 그 뒤로 네이버 에디터의 커서가 인용구에 묶여서
+        # 첫 문단이 사라지고 사진이 인용구 바로 아래로 몰려 붙는다 (2026-11-03 확인).
+        # 그래서 인용구 문장은 상자 없이 굵은 글씨 첫 줄로 넣는다. 원래 쓰던 '글부터 시작' 흐름 그대로다.
+        before = set_bold(page, editor, True)
+        type_line(page, f'"{quote.strip(chr(34))}"')
+        if before is None:
+            page.keyboard.press("Control+b")
+        else:
+            set_bold(page, editor, False)
+        page.keyboard.press("Enter")
+        page.keyboard.press("Enter")
+    failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
+    problems = check_layout(editor, blocks, quote, failed)
+    if problems:
+        log.info("글 모양 문제: %s / 순서: %s / 화면: %s", " / ".join(problems), describe_layout(editor),
+                 screenshot(page, "bad_layout"))
+        if publish:  # 깨진 글은 블로그에 내보내지 않는다. 임시저장해 두고 알린다.
+            publish = False
+            warnings.append("글 모양이 깨져서 발행하지 않고 임시저장했어요: " + " / ".join(problems))
+        else:
+            warnings.append("글 모양을 확인해 주세요: " + " / ".join(problems))
+    # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
+    for block in blocks:
+        if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
+            remove_url_lines(page, editor, block["url"])
     wanted = sum(1 for b in blocks if b["type"] == "link")
     cards = editor.locator(LINK_CARD_COMPONENT).count()
     log.info("내부링크: 넣을 링크 %s개, 글에 있는 링크 카드 %s개", wanted, cards)
