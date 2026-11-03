@@ -89,8 +89,29 @@ def write_brief(recs, errors, day, new_keys):
     return path
 
 
+def _won(v):
+    return f"{round(v / 10000):,}만원" if v else "-"
+
+
+def _stats(vals):
+    vals = sorted(v for v in vals if v > 0)
+    if not vals:
+        return {"건수": 0, "평균": "-", "중앙값": "-", "최소": "-", "최대": "-"}
+    mid = vals[len(vals) // 2] if len(vals) % 2 else (vals[len(vals) // 2 - 1] + vals[len(vals) // 2]) // 2
+    return {"건수": len(vals), "평균": _won(sum(vals) // len(vals)), "중앙값": _won(mid), "최소": _won(vals[0]), "최대": _won(vals[-1])}
+
+
+BANDS = [(0, 5_000_000, "500만원 이하"), (5_000_000, 20_000_000, "500만~2천만원"), (20_000_000, 50_000_000, "2천만~5천만원"),
+         (50_000_000, 100_000_000, "5천만~1억원"), (100_000_000, 10**13, "1억원 초과")]
+
+
 def write_history(recs, day):
-    """과거 이사·이전 공고 → 기관별로 묶은 '이사 발주 기관 리스트'."""
+    """과거 이사·이전 공고 → 기관별 리스트 + 금액대 분석 + 경쟁사(낙찰업체)."""
+    from rules import org_type
+    for r in recs:
+        r["기관유형"] = org_type(r["수요기관"] or r["공고기관"])
+        r["계약금액(기준)"] = r.get("낙찰금액") or r["금액"]
+        r["금액기준"] = "낙찰금액" if r.get("낙찰금액") else ("추정가격" if r["금액"] else "")
     by = defaultdict(list)
     for r in recs:
         by[r["수요기관"] or r["공고기관"]].append(r)
@@ -100,20 +121,65 @@ def write_history(recs, day):
         latest = rows[0]
         phone = next((r["담당전화"] for r in rows if r["담당전화"]), "")
         officer = next((r["담당자"] for r in rows if r["담당자"]), "")
+        amts = [r["계약금액(기준)"] for r in rows if r["계약금액(기준)"]]
+        winners = [r["낙찰업체"] for r in rows if r.get("낙찰업체")]
         summary.append({
-            "기관": org, "지역": latest["지역"], "건수": len(rows), "최근공고일": latest["공고일"][:10],
-            "최근공고명": latest["제목"], "최근금액": latest["금액"], "합계금액": sum(r["금액"] for r in rows),
-            "계약방법": latest["계약방법"], "담당자(최근)": officer, "담당전화(최근)": phone,
-            "공고기관": latest["공고기관"], "영업메모": "",
+            "기관": org, "기관유형": latest["기관유형"], "지역": latest["지역"], "건수": len(rows),
+            "최근공고일": latest["공고일"][:10], "최근공고명": latest["제목"],
+            "평균금액": _won(sum(amts) // len(amts)) if amts else "-", "최근금액": _won(latest["계약금액(기준)"]),
+            "최근낙찰업체": winners[0] if winners else "", "계약방법": latest["계약방법"],
+            "담당자(최근)": officer, "담당전화(최근)": phone, "공고기관": latest["공고기관"], "영업메모": "",
         })
-    summary.sort(key=lambda x: (-x["건수"], x["최근공고일"]), reverse=False)
     summary.sort(key=lambda x: (x["지역"] != "대구근교", -x["건수"]))
     wb = Workbook()
     ws = wb.active
     ws.title = "이사발주기관"
-    cols = list(summary[0].keys()) if summary else ["기관"]
-    _sheet(ws, summary, cols)
-    raw_cols = ["지역", "공고일", "제목", "수요기관", "공고기관", "금액", "계약방법", "담당자", "담당전화", "담당메일", "번호", "링크"]
+    _sheet(ws, summary, list(summary[0].keys()) if summary else ["기관"])
+
+    # 금액대 분석
+    vals = [r["계약금액(기준)"] for r in recs]
+    real = [r["낙찰금액"] for r in recs if r.get("낙찰금액")]
+    rows = [{"구분": "전체 (낙찰금액 우선, 없으면 추정가격)", **_stats(vals)},
+            {"구분": "실제 낙찰금액만", **_stats(real)}]
+    for t in sorted({r["기관유형"] for r in recs}):
+        rows.append({"구분": f"기관유형: {t}", **_stats([r["계약금액(기준)"] for r in recs if r["기관유형"] == t])})
+    for reg in ("대구근교", "경북", "대구경북(주소)"):
+        sub = [r["계약금액(기준)"] for r in recs if r["지역"] == reg]
+        if sub:
+            rows.append({"구분": f"지역: {reg}", **_stats(sub)})
+    rates = [float(r["낙찰률"]) for r in recs if str(r.get("낙찰률") or "").replace(".", "", 1).isdigit()]
+    cnts = [int(r["참가업체수"]) for r in recs if str(r.get("참가업체수") or "").isdigit()]
+    rows.append({"구분": "평균 낙찰률(%) / 평균 참가업체 수",
+                 "건수": len(rates), "평균": f"{sum(rates) / len(rates):.1f}%" if rates else "-",
+                 "중앙값": f"{sum(cnts) / len(cnts):.1f}곳" if cnts else "-", "최소": "", "최대": ""})
+    band = wb.create_sheet("금액대")
+    _sheet(band, rows, ["구분", "건수", "평균", "중앙값", "최소", "최대"])
+    band.append([])
+    band.append(["금액 구간", "건수", "비율", "의미"])
+    meaning = {"500만원 이하": "소규모 부서 이동", "500만~2천만원": "일반 수의계약 범위",
+               "2천만~5천만원": "여성·장애인기업 수의 범위로 알려진 구간 [업데이트 필요]",
+               "5천만~1억원": "견적·입찰", "1억원 초과": "입찰"}
+    n = len([v for v in vals if v]) or 1
+    for lo, hi, name in BANDS:
+        c = sum(1 for v in vals if v and lo < v <= hi)
+        band.append([name, c, f"{c * 100 // n}%", meaning[name]])
+
+    # 경쟁사 (이사 용역 낙찰업체)
+    comp = defaultdict(lambda: {"건수": 0, "합계": 0, "기관": set(), "전화": ""})
+    for r in recs:
+        if r.get("낙찰업체"):
+            c = comp[r["낙찰업체"]]
+            c["건수"] += 1
+            c["합계"] += r.get("낙찰금액") or 0
+            c["기관"].add(r["수요기관"] or r["공고기관"])
+            c["전화"] = c["전화"] or r.get("낙찰업체전화", "")
+    crow = [{"업체": k, "낙찰건수": v["건수"], "낙찰합계": _won(v["합계"]), "평균": _won(v["합계"] // v["건수"]) if v["합계"] else "-",
+             "주요기관": ", ".join(sorted(v["기관"]))[:120], "전화": v["전화"]}
+            for k, v in sorted(comp.items(), key=lambda kv: -kv[1]["건수"])]
+    _sheet(wb.create_sheet("경쟁사(낙찰업체)"), crow, ["업체", "낙찰건수", "낙찰합계", "평균", "주요기관", "전화"])
+
+    raw_cols = ["지역", "기관유형", "공고일", "제목", "수요기관", "공고기관", "금액", "낙찰금액", "금액기준", "낙찰률", "참가업체수",
+                "낙찰업체", "계약방법", "담당자", "담당전화", "담당메일", "번호", "링크"]
     _sheet(wb.create_sheet("공고원본"), sorted(recs, key=lambda r: r["공고일"], reverse=True), raw_cols)
     path = OUTPUT / f"이사발주기관_{day}.xlsx"
     wb.save(path)

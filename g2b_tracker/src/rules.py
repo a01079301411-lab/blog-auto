@@ -87,6 +87,10 @@ def normalize(item):
         "낙찰업체대표": pick(item, WINNER_CEO),
         "번호": pick(item, ID) + (("-" + str(item.get("bidNtceOrd"))) if item.get("bidNtceOrd") else ""),
         "링크": pick(item, URL),
+        "낙찰금액": _amount(pick(item, ("sucsfbidAmt",)) or 0),
+        "낙찰률": pick(item, ("sucsfbidRate",)),
+        "참가업체수": pick(item, ("prtcptCnum",)),
+        "공고번호": pick(item, ("bidNtceNo",)),
     }
     # 지역·키워드 판정은 모든 글자를 합쳐서 (필드 이름이 바뀌어도 놓치지 않게)
     rec["_all"] = " ".join(str(v) for k, v in item.items() if not str(k).startswith("_") and isinstance(v, (str, int)))
@@ -243,6 +247,23 @@ def is_history_hit(rec, rules):
     """과거 공고 중 진짜 이사·이전 일감인지 (제외어 걸러냄)."""
     title = rec["제목"]
     return bool(_hits(title, rules["직접수요"])) and not _hits(title, rules["제외"])
+
+
+def org_type(name):
+    n = name or ""
+    if any(w in n for w in ("교육청", "교육지원청", "학교", "유치원", "교육연구원")):
+        return "교육청·학교"
+    if "대학" in n:
+        return "대학"
+    if any(w in n for w in ("병원", "의료원", "보건소")):
+        return "병원·보건"
+    if any(w in n for w in ("법원", "검찰", "경찰", "조달청", "우정", "세무", "병무", "보훈", "고용노동", "수사청", "지방청")):
+        return "국가기관"
+    if any(w in n for w in ("공사", "공단", "진흥원", "재단", "연구원", "테크노파크", "센터", "협회")):
+        return "공공기관"
+    if any(n.endswith(w) or (w + " ") in n for w in ("구", "군", "시", "도")) or "광역시" in n or "경상북도" in n:
+        return "지자체"
+    return "기타"
 
 
 def today():

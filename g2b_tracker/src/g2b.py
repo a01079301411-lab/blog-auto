@@ -26,6 +26,7 @@ OPS = {
     "pre": "getPublicPrcureThngInfo{k}",
     "plan": "getOrderPlanSttusList{k}",
     "award": "getScsbidListSttus{k}",
+    "award_search": "getScsbidListSttus{k}PPSSrch",
 }
 
 ROWS = 500          # 한 번에 받는 건수
@@ -171,6 +172,28 @@ def collect_history(months, keywords):
     return rows, errors
 
 
+def collect_awards(months, keywords):
+    """같은 기간 같은 단어로 낙찰 결과 = 실제 계약 금액·낙찰업체(경쟁사)·참가업체 수."""
+    end = datetime.now()
+    start = end - timedelta(days=30 * months)
+    rows, errors = [], []
+    for kind in ("용역", "물품"):
+        op = OPS["award_search"].format(k=KINDS[kind])
+        for kw in keywords:
+            try:
+                got = fetch_range("award", op, start, end, extra={"bidNtceNm": kw}, window_days=30)
+                for it in got:
+                    it["_kind"], it["_kw"] = kind, kw
+                rows += got
+                log.info("과거낙찰 %s '%s' %d건", kind, kw, len(got))
+            except ApiError as e:
+                errors.append(f"{op} '{kw}': {e}")
+                log.warning("%s '%s' 실패: %s", op, kw, e)
+                if "LIMITED" in str(e).upper() or "한도" in str(e):
+                    return rows, errors
+    return rows, errors
+
+
 def check():
     """서비스별로 1건씩 불러서 활용신청·키가 정상인지 확인."""
     end = datetime.now()
@@ -180,6 +203,7 @@ def check():
         ("입찰공고 검색(공고명)", "bid", OPS["bid_search"].format(k="Servc"), {"bidNtceNm": "이전"}),
         ("사전규격정보서비스", "pre", OPS["pre"].format(k="Servc"), {}),
         ("낙찰정보서비스", "award", OPS["award"].format(k="Servc"), {}),
+        ("낙찰 검색(공고명)", "award", OPS["award_search"].format(k="Servc"), {"bidNtceNm": "이전"}),
         ("발주계획현황서비스", "plan", OPS["plan"].format(k="Servc"),
          {"orderBgnYm": end.strftime("%Y%m"), "orderEndYm": end.strftime("%Y%m")}),
     ]

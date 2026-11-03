@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config  # noqa: E402
+import contacts  # noqa: E402
 import g2b  # noqa: E402
 import notifier  # noqa: E402
 import report  # noqa: E402
@@ -51,6 +52,7 @@ def run_daily():
     xlsx = report.write_daily(recs, errors, day)
     md = report.write_brief(recs, errors, day, new_keys)
     db = report.ensure_sales_db()
+    added, total = contacts.update(recs)
     all_keys = {r["_key"] for r in recs} | {k for r in recs for k in r.get("_dupkeys", [])}
     SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
 
@@ -68,28 +70,49 @@ def run_daily():
     notifier.notify("\n".join(msg))
     print("\n".join(msg))
     print(f"\n저장: {xlsx}\n      {md}" + (f"\n      {db} (영업DB 새로 만듦)" if db else ""))
+    print(f"      연락처 새로 {added}건 (누적 {total}건) → 영업DB '자동연락처' 시트")
 
 
 def run_history(months):
     rules = R.load_rules()
     kws = ["이사", "이전", "이삿짐", "운반", "보관", "재배치", "문서고", "이송"]
-    print(f"지난 {months}개월 동안 '{', '.join(kws)}' 공고를 찾는 중... (10~20분 걸릴 수 있어요)")
+    print(f"지난 {months}개월 동안 '{', '.join(kws)}' 공고와 낙찰 결과를 찾는 중... (20~40분 걸릴 수 있어요)")
     items, errors = g2b.collect_history(months, kws)
+    awards, err2 = g2b.collect_awards(months, kws)
+    errors += err2
     recs = {}
     for it in items:
         rec = R.normalize(it)
         rec["지역"] = rec["_region"] = R.region_of(rec, rules)
         if rec["_region"] and R.is_history_hit(rec, rules):
             recs[rec["_key"]] = rec
+    by_no = {}
+    for r in recs.values():
+        by_no.setdefault(r["공고번호"], []).append(r)
+    matched = set()
+    for it in awards:
+        a = R.normalize(it)
+        a["지역"] = a["_region"] = R.region_of(a, rules)
+        targets = by_no.get(a["공고번호"])
+        if targets:
+            for r in targets:
+                for k in ("낙찰금액", "낙찰률", "참가업체수", "낙찰업체", "낙찰업체전화", "낙찰업체대표"):
+                    r[k] = a[k] or r.get(k, "")
+            matched.add(a["공고번호"])
+        elif a["_region"] and R.is_history_hit(a, rules):
+            a["출처"] = "낙찰(공고 못 찾음)"
+            recs[a["_key"]] = a
     path, summary = report.write_history(list(recs.values()), R.today())
-    print(f"\n이사·이전 공고 {len(recs)}건, 기관 {len(summary)}곳 → {path}")
+    added, total = contacts.update(list(recs.values()))
+    print(f"\n이사·이전 공고 {len(recs)}건 (낙찰금액 붙은 것 {len(matched)}건), 기관 {len(summary)}곳 → {path}")
+    print(f"연락처 새로 {added}건 (누적 {total}건) → 영업DB '자동연락처' 시트")
     for s in summary[:15]:
         print(f"  {s['건수']:>2}건  {s['기관']}  (최근 {s['최근공고일']} {s['최근공고명'][:30]})")
     if errors:
-        print(f"\n조회 실패 {len(errors)}건 (하루 호출 한도일 수 있어요. 내일 다시 실행하면 이어서 쌓입니다):")
+        print(f"\n조회 실패 {len(errors)}건 (하루 호출 한도일 수 있어요. 내일 다시 실행하면 됩니다):")
         for e in errors[:5]:
             print("  -", e)
-    notifier.notify(f"[이사 발주 기관 리스트] {len(summary)}곳 찾음. 파일: {path.name}")
+    notifier.notify(f"[이사 발주 기관 리스트] {len(summary)}곳 · 공고 {len(recs)}건 · 금액대 분석 포함. 파일: {path.name}")
 
 
 def run_check():
