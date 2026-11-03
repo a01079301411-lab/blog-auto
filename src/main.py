@@ -249,22 +249,31 @@ def save_preview(post, topic, blocks, fails, notes=None):
 
 
 def _find_saved_post(title):
-    """발행한 글의 블록, 캡션, 인용구를 미리보기 파일에서 찾는다. 없으면 None."""
+    """발행한 글을 미리보기 파일에서 찾는다. 없으면 None.
+    돌려주는 값: {"blocks", "captions", "quote", "tags", "category"}"""
     for md in sorted(OUTPUT_DIR.glob("*.md"), reverse=True):
         text = md.read_text(encoding="utf-8", errors="ignore")
         if not text.startswith(f"# {title}\n"):
             continue
+        tags = re.search(r"^태그: (.*)$", text, re.M)
+        category = re.search(r"/ 카테고리: (.*?) / ", text)
+        found = {
+            "tags": [t.lstrip("#") for t in tags.group(1).split()] if tags else [],
+            "category": category.group(1).strip() if category and category.group(1).strip() != "기본" else "",
+        }
         sidecar = md.with_suffix(".json")
         if sidecar.exists():
             data = json.loads(sidecar.read_text(encoding="utf-8"))
             post = data["post"]
             # 예전에 만든 블록에도 번호 목록 막기를 다시 적용한다
-            return formatter._no_auto_format(data["blocks"]), post.get("photo_captions", {}), post.get("quote", "")
+            return {**found, "blocks": formatter._no_auto_format(data["blocks"]),
+                    "captions": post.get("photo_captions", {}), "quote": post.get("quote", ""),
+                    "tags": post.get("tags") or found["tags"]}
         quote = re.search(r"^인용구: (.*)$", text, re.M)
         shown = text.split("=============== 블로그에 올라갈 모습 ===============", 1)[-1]
         shown = shown.split("=============== AI가 쓴 원본 ===============", 1)[0].strip("\n")
         blocks, captions = formatter.parse_preview(shown)
-        return blocks, captions, quote.group(1).strip() if quote else ""
+        return {**found, "blocks": blocks, "captions": captions, "quote": quote.group(1).strip() if quote else ""}
     return None
 
 
@@ -280,30 +289,48 @@ def _find_photos(files, folder_name):
 
 
 def fix_last():
-    """가장 최근에 발행한 글의 본문을 지우고 고친 방식으로 다시 입력한다 (주소는 그대로)."""
-    records = [r for r in history.load()
-               if r.get("result") == "published" and re.search(r"/\d{9,}|logNo=\d+", r.get("url", ""))]
-    if not records:
-        stop("다시 입력할 발행 글을 기록에서 찾지 못했어요.")
-    record = records[-1]
+    """가장 최근에 발행한 글을 고친 방식으로 새로 발행하고, 예전 글은 삭제한다.
+    새 글이 제대로 발행된 것을 확인한 뒤에만 예전 글을 지운다 (발행이 안 되면 예전 글은 그대로)."""
+    records = history.load()
+    published = [r for r in records
+                 if r.get("result") == "published" and re.search(r"/\d{9,}|logNo=\d+", r.get("url", ""))]
+    if not published:
+        stop("다시 올릴 발행 글을 기록에서 찾지 못했어요.")
+    record = published[-1]
     saved = _find_saved_post(record["title"])
     if saved is None:
         stop(f"이 글의 미리보기 파일을 output 폴더에서 찾지 못했어요: {record['title']}")
-    blocks, captions, quote = saved
+    blocks = saved["blocks"]
     files = [b["file"] for b in blocks if b["type"] == "photo"]
     photo_paths = _find_photos(files, record.get("photo_folder", ""))
     missing = [f for f in files if f not in photo_paths]
-    print(f"\n다시 입력할 글: {record['title']}\n주소: {record['url']}\n사진 {len(files)}장 중 {len(photo_paths)}장 찾음"
+    print(f"\n다시 올릴 글: {record['title']}\n예전 주소: {record['url']}\n"
+          f"카테고리: {saved['category'] or '기본'} / 태그 {len(saved['tags'])}개 / 사진 {len(files)}장 중 {len(photo_paths)}장 찾음"
           + (f" (못 찾은 사진: {', '.join(missing)})" if missing else ""))
-    if input("이 글의 본문을 지우고 다시 입력할까요? 네면 y 를 치고 엔터: ").strip().lower() not in ("y", "네", "ㅇ"):
+    print("순서: 1) 고친 모양으로 새로 발행  2) 새 글이 제대로 올라가면 예전 글 삭제")
+    if input("진행할까요? 네면 y 를 치고 엔터: ").strip().lower() not in ("y", "네", "ㅇ"):
         print("취소했어요.")
         return
     with publisher.open_browser() as page:
         try:
-            result = publisher.rewrite_post(page, record["url"], record["title"], blocks, photo_paths, captions, quote)
+            result = publisher.post(page, record["title"], blocks, saved["tags"], photo_paths, saved["captions"],
+                                    publish=True, category=saved["category"], quote=saved["quote"])
         except publisher.PublishError as e:
-            stop(str(e))
-    message = f"[블로그 자동화] 글을 다시 입력했어요\n제목: {record['title']}\n{result['url']}"
+            stop(f"새 글을 올리지 못했어요. 예전 글은 그대로 있어요. {e}")
+        if result["result"] != "published":
+            stop("새 글 모양이 깨져서 임시저장만 했어요. 예전 글은 지우지 않았어요. 주의: " + " / ".join(result["warnings"]))
+        new_url = result["url"]
+        if not re.search(r"/\d{9,}|logNo=\d+", new_url):
+            found = find_on_blog(record["title"])
+            new_url = found["url"] if found else new_url
+        deleted = publisher.delete_post(page, record["url"])
+
+    # 기록의 주소를 새 글로 바꾼다 (검색 성과 확인, 내부링크가 새 글을 보게)
+    old_url = record["url"]
+    record["url"], record["replaced_url"] = new_url, old_url
+    history.save(records)
+    message = f"[블로그 자동화] 글을 새로 발행했어요\n제목: {record['title']}\n새 주소: {new_url}"
+    message += "\n예전 글 삭제: " + ("완료" if deleted else "실패. 예전 글을 직접 지워 주세요 (글 오른쪽 위 ... → 삭제)")
     if result["warnings"]:
         message += "\n주의: " + " / ".join(result["warnings"])
     log.info(message)

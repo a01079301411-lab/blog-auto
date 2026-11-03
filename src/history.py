@@ -11,6 +11,10 @@ def load():
     return []
 
 
+def save(records):
+    HISTORY_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def add(entry):
     records = load()
     records.append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"), **entry})
