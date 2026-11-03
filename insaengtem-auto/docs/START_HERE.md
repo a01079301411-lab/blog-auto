@@ -79,3 +79,11 @@
 ## 주의
 - PC가 **절전 모드면 API 자동게시가 안 됩니다** → 전원 설정에서 절전 '안 함' 또는 웹 예약 방식 사용
 - 새 버전을 받을 때는 같은 `C:\insaengtem` 폴더에 덮어쓰기(.env·secrets·data 유지)
+
+## 업데이트
+- **평소**: 관리 화면 위쪽에 '🆕 새 버전이 있어요'가 뜨면 [업데이트] → 끝나면 화면이 자동으로 새로고침. 또는 설치 폴더의 `업데이트.bat` 더블클릭.
+- **처음 한 번만** (업데이트 기능이 없던 버전을 설치한 경우): PowerShell을 열고 아래 한 줄을 붙여넣기 → Enter → 관리 화면 [종료] 후 아이콘 다시 실행.
+```
+$d=(New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\인생템연구소 자동발행.lnk").WorkingDirectory; cd $d; Invoke-WebRequest "https://raw.githubusercontent.com/a01079301411-lab/blog-auto/claude/bold-mccarthy-s7y5jq/insaengtem-auto/insaengtem/updater.py" -OutFile updater_boot.py -UseBasicParsing; .\.venv\Scripts\python.exe updater_boot.py
+```
+- 유지되는 것: `.env`(토큰), `secrets/`(제휴 링크), `data/`(등록 제품·원고·일정·성과), 설정 화면에서 바꾼 값. 바뀐 파일 원본은 `backups/날짜` 폴더에 보관.
