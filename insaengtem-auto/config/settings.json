@@ -1,0 +1,139 @@
+{
+  "_doc": "운영 규칙. 사용자 확정 규칙(docs/DESIGN.md 1장) + 2026-11 트렌드 반영(docs/TRENDS_2026-11.md).",
+  "timezone": "Asia/Seoul",
+  "accounts": {
+    "instagram": "insaengtem_lap",
+    "threads": "insaengtem_lap"
+  },
+  "threads": {
+    "slots": [
+      "08:00",
+      "12:00",
+      "16:00",
+      "20:00",
+      "00:00"
+    ],
+    "text_only_slots": [
+      "00:00"
+    ],
+    "empathy_ratio": 0.7,
+    "max_chars": 500
+  },
+  "instagram": {
+    "slots": [
+      "12:30",
+      "18:30",
+      "21:30"
+    ],
+    "hashtag_max": 5,
+    "hashtag_last": "#사기전에",
+    "profile_link_max": 5
+  },
+  "max_same_product_per_platform_per_day": 1,
+  "variants": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6"
+  ],
+  "video": {
+    "duration": 15.0,
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "llm": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "max_tokens": 16000
+  },
+  "api": {
+    "graph_base": "https://graph.facebook.com",
+    "graph_version": "v25.0",
+    "threads_base": "https://graph.threads.net",
+    "threads_version": "v1.0"
+  },
+  "publish_mode": {
+    "instagram": "api",
+    "threads": "api"
+  },
+  "publish_grace_minutes": 40,
+  "recheck_soldout_before_publish": true,
+  "weekly_rules": {
+    "winner_weight": 2.0,
+    "min_saves_shares_per_reel": 1,
+    "profile_visits_per_week": 10,
+    "followers_14d": 50
+  },
+  "banned_phrases": [
+    "써봤",
+    "써보니",
+    "써 봤",
+    "사용해봤",
+    "사용해보니",
+    "먹어봤",
+    "먹어보니",
+    "발라봤",
+    "발라보니",
+    "바꿨어요",
+    "바꿔봤",
+    "바꿨더니",
+    "직접 써",
+    "제가 쓰는",
+    "저희 집에서 쓰는",
+    "들고 나가요",
+    "효과 보장",
+    "완치",
+    "치료",
+    "부작용 없",
+    "무조건 효과",
+    "최저가 보장",
+    "의사 추천",
+    "약사 추천"
+  ],
+  "typo_watch": [
+    "바꿈어요",
+    "됬",
+    "몇일",
+    "어의없",
+    "안되요",
+    "되요",
+    "할께요",
+    "갈께요",
+    "금새",
+    "왠만"
+  ],
+  "caution_phrases": [
+    "100%",
+    "1위",
+    "최고",
+    "최저가",
+    "무조건",
+    "역대급",
+    "완판"
+  ],
+  "trends": {
+    "window_days": 30,
+    "instagram_hashtags": [
+      "살림템",
+      "살림꿀팁",
+      "장보기",
+      "육아템",
+      "주부꿀팁",
+      "가성비템",
+      "생활꿀템"
+    ],
+    "threads_keywords": [
+      "살림",
+      "장보기",
+      "육아",
+      "가성비",
+      "택배",
+      "쟁여"
+    ],
+    "_note": "인스타 해시태그 검색은 7일 동안 고유 해시태그 30개 한도"
+  },
+  "_variants_doc": "v1 계산형 / v2 퀴즈형 / v3 이유형 / v4=v1레이아웃+절감액 훅 / v5=v2레이아웃+배송·구성 퀴즈 / v6=v3레이아웃+가격 먼저"
+}

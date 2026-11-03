@@ -1,0 +1,38 @@
+{
+ "name": "자연바구니 무항생제 유정란",
+ "category": "food",
+ "bullets": [
+  "동물복지 인증",
+  "무항생제 인증",
+  "HACCP 인증",
+  "친환경 포장 신선배송"
+ ],
+ "list_price": null,
+ "sale_price": 13900,
+ "shipping_fee": 0,
+ "free_over": null,
+ "options": [
+  {
+   "label": "20구",
+   "price": 13900,
+   "qty": 20,
+   "unit": "알"
+  },
+  {
+   "label": "40구",
+   "price": 23900,
+   "qty": 40,
+   "unit": "알"
+  },
+  {
+   "label": "60구",
+   "price": 33400,
+   "qty": 60,
+   "unit": "알"
+  }
+ ],
+ "key": "egg",
+ "soldout": false,
+ "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
+ "image": "assets/products/egg.png"
+}

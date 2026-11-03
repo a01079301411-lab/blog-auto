@@ -1,0 +1,101 @@
+{
+ "warm_light": {
+  "bg": "#FFF4E2",
+  "glow": "#FFC27A",
+  "grid": "#C28A4A",
+  "accent": "#FF6B1A",
+  "stroke": "#FFF4E2",
+  "fg": "#2A1C10",
+  "sub": "#6E5642",
+  "pill": "#FFFFFF",
+  "tag_bg": "#2A1C10",
+  "tag_fg": "#FFFFFF",
+  "mark_bg": "#FF6B1A",
+  "mark_fg": "#FFFFFF",
+  "row_bg": "#FFFFFF",
+  "row_fg": "#2A1C10",
+  "row_sub": "#8A6E55",
+  "cta_bg": "#2A1C10",
+  "cta_fg": "#FFFFFF",
+  "card_border": "#FFFFFF"
+ },
+ "dark_rich": {
+  "bg": "#24150E",
+  "glow": "#8A4A1E",
+  "grid": "#FFFFFF",
+  "accent": "#FFD23F",
+  "stroke": "#1A0E08",
+  "fg": "#FFFFFF",
+  "sub": "#E8D6C4",
+  "pill": "#000000",
+  "tag_bg": "#FF4D3D",
+  "tag_fg": "#FFFFFF",
+  "mark_bg": "#FFD23F",
+  "mark_fg": "#24150E",
+  "row_bg": "#FFF8EE",
+  "row_fg": "#24150E",
+  "row_sub": "#7A5B45",
+  "cta_bg": "#FFD23F",
+  "cta_fg": "#24150E",
+  "card_border": "#FFD23F"
+ },
+ "fresh": {
+  "bg": "#2E1B12",
+  "glow": "#B0602A",
+  "grid": "#FFFFFF",
+  "accent": "#FFC93C",
+  "stroke": "#1E110A",
+  "fg": "#FFFFFF",
+  "sub": "#EBD7C3",
+  "pill": "#000000",
+  "tag_bg": "#FF5A4E",
+  "tag_fg": "#FFFFFF",
+  "mark_bg": "#FFC93C",
+  "mark_fg": "#2E1B12",
+  "row_bg": "#FFF6EA",
+  "row_fg": "#2E1B12",
+  "row_sub": "#7C5A42",
+  "cta_bg": "#FFC93C",
+  "cta_fg": "#2E1B12",
+  "card_border": "#FFC93C"
+ },
+ "clean_cool": {
+  "bg": "#0B2340",
+  "glow": "#1F6FB0",
+  "grid": "#FFFFFF",
+  "accent": "#7FE3FF",
+  "stroke": "#06162A",
+  "fg": "#FFFFFF",
+  "sub": "#C6DCEF",
+  "pill": "#000000",
+  "tag_bg": "#7FE3FF",
+  "tag_fg": "#0B2340",
+  "mark_bg": "#7FE3FF",
+  "mark_fg": "#0B2340",
+  "row_bg": "#F2F8FF",
+  "row_fg": "#0B2340",
+  "row_sub": "#4F6B88",
+  "cta_bg": "#7FE3FF",
+  "cta_fg": "#0B2340",
+  "card_border": "#7FE3FF"
+ },
+ "_category_default": {
+  "food": [
+   "warm_light",
+   "dark_rich"
+  ],
+  "health": [
+   "fresh"
+  ],
+  "beauty": [
+   "clean_cool"
+  ],
+  "living": [
+   "clean_cool",
+   "warm_light"
+  ],
+  "baby": [
+   "warm_light"
+  ]
+ }
+}

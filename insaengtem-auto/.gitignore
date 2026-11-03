@@ -1,0 +1,13 @@
+# 비공개: 제휴 토큰·API 토큰·브라우저 프로필
+secrets/*
+!secrets/README.md
+!secrets/*.example.json
+.env
+chrome-profile*/
+# 산출물
+out/
+data/state/*.db
+data/state/*.db-journal
+__pycache__/
+*.pyc
+.pytest_cache/

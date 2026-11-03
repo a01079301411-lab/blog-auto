@@ -1,0 +1,8 @@
+pillow>=10
+numpy>=1.24
+requests>=2.31
+# 선택
+anthropic>=0.40      # 원고 자동 생성 (없으면 규칙 기반 템플릿으로 생성)
+playwright>=1.45     # 스크래퍼·웹 업로드(방법 B)
+boto3>=1.34          # 스레드 영상 공개 URL용 S3/R2 업로드
+pytest>=8

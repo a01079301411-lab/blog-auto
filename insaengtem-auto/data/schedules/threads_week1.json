@@ -1,0 +1,152 @@
+[
+ {
+  "when": "2026-11-03 12:00",
+  "video": "out/egg_v1/insaengtem_egg_v1.mp4",
+  "text": "[광고] 애들 있는 집은 달걀 일주일에 몇 판 드세요?\n저희는 아침마다 계란이라 금방 없어지는데\n동물복지·무항생제 60구가 한 알 557원, 무료배송이더라고요.\n마트 가서 들고 오는 것보다 이게 편할 듯.",
+  "reply": "[광고] 자연바구니 유정란 링크예요. 20·40·60구 중 고르면 돼요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "egg",
+  "variant": "v1"
+ },
+ {
+  "when": "2026-11-03 16:00",
+  "video": "out/shake_v1/insaengtem_shake_v1.mp4",
+  "text": "[광고] 아침에 커피만 마시고 나가는 사람 손?\n저도 그랬는데 오후에 꼭 허기져서 과자 찾게 되더라고요.\n요즘은 단백질 20g짜리 쉐이크 하나 들고 나가요. 1포 4,400원 정도.\n커피 한 잔 값이면 한 끼는 챙기는 셈.",
+  "reply": "[광고] 쏙쉐이크 7포 링크예요. 더블초코·크런치그레인 두 가지 맛\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shake",
+  "variant": "v1"
+ },
+ {
+  "when": "2026-11-03 20:00",
+  "video": "out/shampoo_v1/insaengtem_shampoo_v1.mp4",
+  "text": "[광고] 머리 감고 나서 두피 화끈거리는 거 저만 그래요?\n특히 운동하고 오면 더 심하던데\n요즘은 쿨링 샴푸로 바꿨어요. 감을 때 시원한 맛이 있음.\n바디워시도 같은 라인으로 맞추니 욕실이 깔끔해졌네요.",
+  "reply": "[광고] 피부미 나노시카 샴푸·바디워시 링크예요. 2종 같이 사면 무료배송\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shampoo",
+  "variant": "v1"
+ },
+ {
+  "when": "2026-11-04 00:00",
+  "video": null,
+  "text": "장 볼 때 1+1이랑 대용량 중에 뭐가 더 이득인지\n매번 계산기 두드리는 사람 저만 있나요?\n요즘은 그냥 '한 개당 얼마'만 봐요. 그게 제일 빠르더라고요.\n여러분은 장 볼 때 뭐부터 보세요?",
+  "reply": null,
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": null,
+  "variant": null
+ },
+ {
+  "when": "2026-11-04 08:00",
+  "video": "out/seolleong_v1/insaengtem_seolleong_v1.mp4",
+  "text": "[광고] 퇴근하고 밥하기 싫은 날, 다들 뭐 드세요?\n저는 요즘 국물 하나 데워서 밥 말아 먹는 게 최고더라고요.\n줄 서서 먹는 50년 설렁탕집 거 4팩 사면 한 팩 7,700원이던데\n배달 한 그릇 값이면 두 끼 나와요.",
+  "reply": "[광고] 이남장 설렁탕 550g 링크 남겨둘게요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "seolleong",
+  "variant": "v1"
+ },
+ {
+  "when": "2026-11-04 12:00",
+  "video": "out/egg_v2/insaengtem_egg_v2.mp4",
+  "text": "[광고] 퀴즈 하나만 풀고 가세요\n달걀 20구 13,900원 / 40구 23,900원 / 60구 33,400원\n한 알당 제일 싼 건 몇 구일까요?\n정답은 영상에 있어요. 맞히신 분 손 🙋",
+  "reply": "[광고] 자연바구니 무항생제 유정란 링크예요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "egg",
+  "variant": "v2"
+ },
+ {
+  "when": "2026-11-04 16:00",
+  "video": "out/shake_v2/insaengtem_shake_v2.mp4",
+  "text": "[광고] 편의점 단백질 음료 단백질 몇 g인지 보고 사세요?\n저는 맛만 보고 샀다가 라벨 보고 놀랐어요.\n이 쉐이크 한 팩 단백질 몇 g일까요? 10g / 15g / 20g\n정답 맞히면 오늘 점심은 단백질로 😆",
+  "reply": "[광고] 쏙쉐이크 링크예요. 1포 약 4,414원\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shake",
+  "variant": "v2"
+ },
+ {
+  "when": "2026-11-04 20:00",
+  "video": "out/shampoo_v2/insaengtem_shampoo_v2.mp4",
+  "text": "[광고] 샴푸 한 통 보통 얼마나 쓰세요?\n저희 집은 가족이 많아서 한 달도 안 가요.\n그래서 요즘은 무조건 대용량부터 봐요.\n이 샴푸 한 통 용량, 몇 ml일까요?",
+  "reply": "[광고] 피부미 나노시카 샴푸&바디 링크예요. 2종이면 무료배송\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shampoo",
+  "variant": "v2"
+ },
+ {
+  "when": "2026-11-05 00:00",
+  "video": null,
+  "text": "솔직히 '할인율 70%'보다\n'한 개당 얼마'가 훨씬 와닿지 않아요?\n할인율에 낚여서 산 거, 지금 생각나는 거 하나만 말해주세요.",
+  "reply": null,
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": null,
+  "variant": null
+ },
+ {
+  "when": "2026-11-05 08:00",
+  "video": "out/seolleong_v2/insaengtem_seolleong_v2.mp4",
+  "text": "[광고] 간편식 살 때 1팩만 사세요, 몇 팩씩 쟁이세요?\n저는 맛있으면 무조건 쟁이는 편인데\n설렁탕 1팩 8,900원, 4팩 사면 한 팩 7,700원이더라고요.\n한 팩에 1,200원 차이면 쟁일 만하죠?",
+  "reply": "[광고] 이남장 설렁탕 550g 링크예요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "seolleong",
+  "variant": "v2"
+ },
+ {
+  "when": "2026-11-05 12:00",
+  "video": "out/shake_v3/insaengtem_shake_v3.mp4",
+  "text": "[광고] 쉐이크 고를 때 맛 말고 뭐 보세요?\n저는 딱 세 개만 봐요. 단백질 g, 한 팩 용량, 비린 맛.\n이 세 개만 통과하면 일단 장바구니.",
+  "reply": "[광고] 쏙쉐이크 7포 링크예요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shake",
+  "variant": "v3"
+ },
+ {
+  "when": "2026-11-05 16:00",
+  "video": "out/shampoo_v3/insaengtem_shampoo_v3.mp4",
+  "text": "[광고] 샴푸 바꿀 때 기준 있으세요?\n저는 감을 때 시원한지, 용량 큰지, 바디워시랑 맞출 수 있는지\n이 세 개 보고 골라요.",
+  "reply": "[광고] 피부미 나노시카 샴푸&바디 링크예요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "shampoo",
+  "variant": "v3"
+ },
+ {
+  "when": "2026-11-05 20:00",
+  "video": "out/seolleong_v3/insaengtem_seolleong_v3.mp4",
+  "text": "[광고] 장바구니에 간편식 넣기 전에 딱 3초만.\n어디 거인지, 고기 뭐 쓰는지, 한 팩에 얼마인지.\n이 세 개만 봐도 실패가 확 줄어요.",
+  "reply": "[광고] 이남장 설렁탕 550g 링크예요\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "seolleong",
+  "variant": "v3"
+ },
+ {
+  "when": "2026-11-06 00:00",
+  "video": null,
+  "text": "이번 주에 산 것 중에 제일 잘 산 거 하나만 자랑해주세요.\n다음 주 '사기 전 체크' 주제로 쓸게요.",
+  "reply": null,
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": null,
+  "variant": null
+ },
+ {
+  "when": "2026-11-06 08:00",
+  "video": "out/egg_v3/insaengtem_egg_v3.mp4",
+  "text": "[광고] 달걀 살 때 껍데기 번호 보세요?\n저는 인증 마크부터 봐요. 동물복지, 무항생제, HACCP.\n그다음이 한 알 가격.",
+  "reply": "[광고] 자연바구니 유정란 링크예요. 60구 1알 557원, 무료배송\n{link}",
+  "tz": "Asia/Seoul",
+  "status": "scheduled (Threads 예약, 11/3 확인)",
+  "product": "egg",
+  "variant": "v3"
+ }
+]

@@ -1,0 +1,33 @@
+{
+ "name": "피부미 나노시카 샴푸&바디",
+ "category": "beauty",
+ "bullets": [
+  "센텔루션 나노시카 쿨카밍 스케일링 샴푸 500ml",
+  "센텔루션 나노시카 아크네 쿨링 바디워시 500ml"
+ ],
+ "list_price": null,
+ "sale_price": 28900,
+ "shipping_fee": null,
+ "free_over": 50000,
+ "options": [
+  {
+   "label": "단품",
+   "price": 28900,
+   "qty": 1,
+   "unit": "통"
+  },
+  {
+   "label": "2종",
+   "price": 57600,
+   "qty": 2,
+   "unit": "통"
+  }
+ ],
+ "unknown": [
+  "shipping_fee: 5만원 미만 배송비 미기록 → 재수집 필요"
+ ],
+ "key": "shampoo",
+ "soldout": false,
+ "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
+ "image": "assets/products/shampoo.png"
+}

@@ -1,0 +1,31 @@
+{
+ "name": "이남장 설렁탕 550g",
+ "category": "food",
+ "bullets": [
+  "50년 전통 이남장",
+  "국내산 소고기 48시간",
+  "고기 푸짐한 550g"
+ ],
+ "list_price": 14900,
+ "sale_price": 8900,
+ "shipping_fee": 3500,
+ "free_over": null,
+ "options": [
+  {
+   "label": "1팩",
+   "price": 8900,
+   "qty": 1,
+   "unit": "팩"
+  },
+  {
+   "label": "4팩",
+   "price": 30800,
+   "qty": 4,
+   "unit": "팩"
+  }
+ ],
+ "key": "seolleong",
+ "soldout": false,
+ "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
+ "image": "assets/products/seolleong.png"
+}

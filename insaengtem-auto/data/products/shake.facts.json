@@ -1,0 +1,26 @@
+{
+ "name": "쏙쉐이크 50g×7포",
+ "category": "food",
+ "bullets": [
+  "단백질 20g 함유(한 팩 기준)",
+  "50g 대용량",
+  "비린 맛 제로",
+  "더블초코 · 크런치그레인"
+ ],
+ "list_price": 38500,
+ "sale_price": 30900,
+ "shipping_fee": 3500,
+ "free_over": null,
+ "options": [
+  {
+   "label": "7포",
+   "price": 30900,
+   "qty": 7,
+   "unit": "포"
+  }
+ ],
+ "key": "shake",
+ "soldout": false,
+ "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
+ "image": "assets/products/shake.png"
+}

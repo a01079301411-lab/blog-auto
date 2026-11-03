@@ -1,0 +1,70 @@
+[
+ {
+  "key": "seolleong",
+  "name": "이남장 설렁탕 550g",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3867",
+  "price_note": "1팩 8,900원 / 4팩 30,800원, 배송비 3,500원",
+  "status": "판매중",
+  "product_no": 3867,
+  "available": true
+ },
+ {
+  "key": "egg",
+  "name": "자연바구니 무항생제 유정란",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3874",
+  "price_note": "20구 13,900 / 40구 23,900 / 60구 33,400원, 무료배송",
+  "status": "판매중",
+  "product_no": 3874,
+  "available": true
+ },
+ {
+  "key": "shake",
+  "name": "쏙쉐이크 50g×7포",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3550",
+  "price_note": "정가 38,500 → 30,900원, 배송비 3,500원",
+  "status": "판매중",
+  "product_no": 3550,
+  "available": true
+ },
+ {
+  "key": "shampoo",
+  "name": "피부미 나노시카 샴푸&바디",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=2729",
+  "price_note": "단품 28,900원 / 2종 57,600원, 5만원 이상 무료배송",
+  "status": "판매중",
+  "product_no": 2729,
+  "available": true
+ },
+ {
+  "key": "vt_lip_tattoo",
+  "name": "VT 리들샷 립타투 코랄멜로우",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3834",
+  "status": "품절(11/3 확인) - 제외",
+  "product_no": 3834,
+  "available": false
+ },
+ {
+  "key": "vt_lip_plumper",
+  "name": "VT 리들샷 립 플럼퍼 3종",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3835",
+  "status": "품절(11/3 확인) - 제외",
+  "product_no": 3835,
+  "available": false
+ },
+ {
+  "key": "vt_mist_serum",
+  "name": "VT 피디알엔 리들샷 미스트 & 세럼",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3832",
+  "status": "품절(11/3 확인) - 제외",
+  "product_no": 3832,
+  "available": false
+ },
+ {
+  "key": "vt_reedle_shot",
+  "name": "VT 리들샷 50/100/300",
+  "link": "https://yo-go.co.kr/product/detail.html?product_no=3833",
+  "status": "품절(11/3 확인) - 제외",
+  "product_no": 3833,
+  "available": false
+ }
+]
