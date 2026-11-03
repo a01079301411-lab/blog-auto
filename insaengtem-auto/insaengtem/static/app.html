@@ -103,6 +103,23 @@ label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
     <div id="postlist"></div></div>
 </section>
 
+<section id="shop">
+  <div class="card"><h2>제품 대량 등록</h2>
+    <p class="muted">COSY 앱에서 복사한 오픈딜 링크를 <b>여러 개 한 번에</b> 붙여넣으세요 (메모장에 모아둔 것 통째로 OK). sl= 없는 링크는 제외됩니다.</p>
+    <textarea id="bulk" rows="5" placeholder="https://yo-go.co.kr/product/detail.html?product_no=...&sl=..."></textarea>
+    <div class="row" style="margin-top:8px"><button class="btn p" onclick="addBulk()">등록</button>
+      <button class="btn" onclick="run(['scrape','--headless']).then(loadShop)">새 제품 정보 수집</button></div></div>
+  <div class="card"><h2>링크샵 <span class="muted" id="shopurl"></span></h2>
+    <p class="muted">판매중인 모든 제품을 한 페이지에 모은 내 링크샵. 품절은 자동으로 빠지고, 제품마다 고정 번호가 붙습니다(캡션: "링크샵 → 23번").</p>
+    <div class="row"><button class="btn p" onclick="run(['shop','build']).then(loadShop)">링크샵 만들기</button>
+      <a class="btn" href="/out/shop/index.html" target="_blank">미리보기</a>
+      <button class="btn" onclick="run(['shop','deploy']).then(()=>{refresh();loadShop()})">인터넷에 올리기(R2)</button>
+      <button class="btn" onclick="run(['shop','inpock']).then(()=>open('/out/shop/inpock.csv'))">인포크링크용 목록(엑셀)</button></div></div>
+  <div class="card"><h2>제품 목록 <span class="muted" id="pcount"></span></h2>
+    <p class="muted">카테고리 변경 · 숨김(링크샵에서 빼기) · 고정(이번 주 영상 우선 제작)</p>
+    <div class="scroll"><table id="ptbl"></table></div></div>
+</section>
+
 <section id="perf">
   <div class="card"><div class="row"><button class="btn p" onclick="run(['sync']).then(()=>run(['insights'])).then(()=>run(['weekly']))">성과 새로 받기</button>
     <span class="muted">sync → insights → weekly</span></div></div>
@@ -141,7 +158,7 @@ label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
 </div></div>
 
 <script>
-const TABS=[["start","시작하기"],["home","홈"],["week","다음 주 준비"],["posts","일정·승인"],["perf","성과"],["inbox","답글함"],["settings","설정"]];
+const TABS=[["start","시작하기"],["home","홈"],["week","다음 주 준비"],["posts","일정·승인"],["shop","링크샵·제품"],["perf","성과"],["inbox","답글함"],["settings","설정"]];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const api=(p,b)=>fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json","X-Insaengtem":"1"},body:JSON.stringify(b)}:{}).then(r=>r.json());
@@ -150,7 +167,7 @@ $("#nav").innerHTML=TABS.map(([k,v])=>`<button data-k="${k}" onclick="go('${k}')
 function go(k){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==k));
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.k==k));
   try{localStorage.setItem("tab",k)}catch(e){}
-  ({home:loadPL,posts:loadPosts,perf:loadPerf,inbox:loadInbox,settings:loadSettings}[k]||(()=>{}))();}
+  ({home:loadPL,shop:loadShop,posts:loadPosts,perf:loadPerf,inbox:loadInbox,settings:loadSettings}[k]||(()=>{}))();}
 function log(t){const l=$("#log");l.textContent+=(l.textContent=="대기 중"?"":"\n")+t;l.scrollTop=1e9}
 async function run(args){
   log(`▶ ${args.join(" ")}`);const {job,error}=await api("/api/run",{args});if(error){log("✖ "+error);return}
@@ -195,6 +212,20 @@ async function approveWeek(){const w=$("#weeksel").value;const j=await run(["app
   if(confirm(`${w} 전체를 승인할까요? 승인하면 정해진 시간에 게시됩니다.`)){await run(["approve","--week",w,"--yes"]);loadPosts()}}
 async function webSchedule(p){if(!confirm(`승인된 ${p} 게시물을 웹 예약 기능으로 걸까요? 크롬 창이 열립니다.`))return;
   await run(["schedule-web","--week",$("#weeksel").value,"--platform",p]);loadPosts()}
+async function loadShop(){const d=await api("/api/products");
+  $("#shopurl").innerHTML=d.shop_url?`<a href="${esc(d.shop_url)}" target="_blank">${esc(d.shop_url)}</a>`:"(아직 인터넷에 안 올림)";
+  $("#pcount").textContent=`${d.rows.filter(r=>r.available&&!r.hidden&&r.linked).length}개 판매 / 전체 ${d.rows.length}`;
+  const opts=k=>Object.entries(d.categories).map(([c,n])=>`<option value="${c}" ${c==k?"selected":""}>${n}</option>`).join("");
+  $("#ptbl").innerHTML="<tr><th>번호</th><th>제품</th><th>상태</th><th>카테고리</th><th>숨김</th><th>고정</th></tr>"+d.rows.map(r=>`<tr>
+   <td>${r.no??""}</td><td>${esc(r.name||r.key)}<div class="muted">${r.key} ${r.linked?"":"· 링크✗"} ${r.scraped?"":"· 정보 수집 전"}</div></td>
+   <td>${r.available?"판매중":'<span class="issues">제외</span>'}</td>
+   <td><select onchange="pset('${r.key}',{category:this.value})">${opts(r.category)}</select></td>
+   <td><input type="checkbox" style="width:auto" ${r.hidden?"checked":""} onchange="pset('${r.key}',{hidden:this.checked})"></td>
+   <td><input type="checkbox" style="width:auto" ${r.pinned?"checked":""} onchange="pset('${r.key}',{pinned:this.checked})"></td></tr>`).join("")}
+async function pset(k,b){await api("/api/products/"+k,b);log(`${k} 변경: ${JSON.stringify(b)}`)}
+async function addBulk(){const r=await api("/api/products/add",{text:$("#bulk").value});
+  if(r.error){log("✖ "+r.error);return}log(`신규 ${r.added.length} · 갱신 ${r.updated.length} · 제외(sl 없음) ${r.skipped.length}`);
+  $("#bulk").value="";loadShop();if(r.added.length&&confirm(`새 제품 ${r.added.length}개 정보를 지금 수집할까요? (크롬이 잠깐 열립니다)`))run(["scrape",...r.added,"--headless"]).then(loadShop)}
 async function loadPerf(){const m=await api("/api/metrics");
   $("#actions").innerHTML=(m.weekly.actions||["아직 데이터 없음 — [성과 새로 받기]"]).map(a=>`<li>${esc(a)}</li>`).join("");
   const c=["when_kst","platform","product","variant","views","reach","likes","saves","shares","replies","profile_visits","follows"];

@@ -6,7 +6,7 @@ import json
 from datetime import date, timedelta
 
 from . import db, qa
-from .config import fmt_when, now
+from .config import env as env_get, fmt_when, now
 
 
 def _keys(args_keys):
@@ -153,6 +153,33 @@ def cmd_profile_links(a):
         print("\n상태:", "변경 필요 ❗" if p["changed"] else "최신 ✅")
 
 
+def cmd_products(a):
+    from .catalog import add_links_bulk, load_catalog, load_links
+    if a.action == "add":
+        import sys
+        text = open(a.file, encoding="utf-8").read() if a.file else sys.stdin.read()
+        r = add_links_bulk(text)
+        print(f"신규 {len(r['added'])} · 갱신 {len(r['updated'])} · 제외(sl 없음) {len(r['skipped'])}")
+        if r["added"]:
+            print("→ 다음: python -m insaengtem scrape " + " ".join(r["added"]))
+    else:
+        links = load_links()
+        for c in sorted(load_catalog(), key=lambda c: c.get("no") or 0):
+            print(f"{c.get('no', ''):>4} {c['key']:<12} {('판매중' if c.get('available') else '제외'):4} "
+                  f"{'링크✓' if c['key'] in links else '링크✗'} {c.get('category', ''):<8} {c.get('name') or ''}")
+
+
+def cmd_shop(a):
+    from .shop import build, deploy, export_inpock
+    if a.action == "build":
+        build()
+    elif a.action == "deploy":
+        build()
+        deploy()
+    else:
+        print(export_inpock())
+
+
 def cmd_trends(a):
     from .trends import add_manual, run
     if a.action == "add":
@@ -175,7 +202,7 @@ def cmd_auto(a):
     steps = []
     try:
         from .scrape_yogo import scrape
-        scrape(None, headless=True)
+        scrape(None, headless=True, only_stale=True)
         steps.append("scrape")
     except SystemExit as e:
         print(f"[auto] scrape 건너뜀: {e}")
@@ -192,11 +219,22 @@ def cmd_auto(a):
         run()
     except SystemExit as e:
         print(f"[auto] trends 건너뜀: {e}")
-    ns = argparse.Namespace(keys=[], no_llm=False, force_video_json=False)
-    cmd_generate(ns)
-    cmd_render(argparse.Namespace(keys=[], variants="", stills=False, jobs=3))
+    from .schedule import select_week_products
+    with db.connect() as con:
+        hist = [dict(r) for r in con.execute("SELECT * FROM posts").fetchall()]
+    keys = select_week_products(hist)
+    print(f"[auto] 이번 주 영상 제품 {len(keys)}개: {', '.join(keys)}")
+    cmd_generate(argparse.Namespace(keys=keys, no_llm=False, force_video_json=False))
+    cmd_render(argparse.Namespace(keys=keys, variants="", stills=False, jobs=3))
     start = now().date() + timedelta(days=(7 - now().weekday()) % 7 or 7)
-    cmd_plan(argparse.Namespace(start=start.isoformat(), days=7, keys=[], save=True))
+    cmd_plan(argparse.Namespace(start=start.isoformat(), days=7, keys=keys, save=True))
+    try:
+        from .shop import build, deploy
+        build()
+        if env_get("S3_BUCKET"):
+            deploy()
+    except SystemExit as e:
+        print(f"[auto] 링크샵 배포 건너뜀: {e}")
     week = f"{start.isocalendar()[0]}-W{start.isocalendar()[1]:02d}"
     approve(week, yes=False)
     print(build())
@@ -228,6 +266,10 @@ def main(argv=None):
         f=lambda a: print(f"갱신 완료, 남은 {__import__('insaengtem.publish.meta_api', fromlist=['Threads']).Threads().refresh_token() // 86400}일"))
     p = sp.add_parser("profile-links", help="인스타 프로필에 걸 링크 5개(앱에서 직접 등록)"); p.add_argument("--done", action="store_true")
     p.set_defaults(f=cmd_profile_links)
+    p = sp.add_parser("products", help="제품 목록 / 제휴 링크 대량 등록"); p.add_argument("action", nargs="?", choices=["list", "add"], default="list")
+    p.add_argument("--file", help="링크가 들어있는 텍스트 파일(없으면 붙여넣기 입력)"); p.set_defaults(f=cmd_products)
+    p = sp.add_parser("shop", help="링크샵 만들기/배포/인포크 내보내기"); p.add_argument("action", choices=["build", "deploy", "inpock"])
+    p.set_defaults(f=cmd_shop)
     sp.add_parser("sync", help="게시물 원격 ID 매칭").set_defaults(f=cmd_simple("ops.sync"))
     sp.add_parser("insights", help="성과 수집").set_defaults(f=cmd_simple("ops.insights"))
     sp.add_parser("inbox", help="새 답글·댓글").set_defaults(f=cmd_simple("ops.inbox"))

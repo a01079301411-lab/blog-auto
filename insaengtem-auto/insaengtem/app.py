@@ -25,10 +25,10 @@ PORT = 8765
 STATIC = Path(__file__).parent / "static"
 ALLOWED = {"scrape", "trends", "generate", "render", "plan", "approve", "run-due", "schedule-web", "sync", "insights",
            "inbox", "weekly", "dashboard", "auto", "login", "check", "links", "import-week1", "publish-now", "refresh-token",
-           "profile-links"}
+           "profile-links", "shop", "products"}
 ENV_KEYS = ["ANTHROPIC_API_KEY", "IG_USER_ID", "IG_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
             "MEDIA_BASE_URL", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_BASE_URL",
-            "META_ASSET_ID", "META_BUSINESS_ID"]
+            "META_ASSET_ID", "META_BUSINESS_ID", "SHOP_PUBLIC_URL"]
 SECRET_KEYS = {"ANTHROPIC_API_KEY", "IG_ACCESS_TOKEN", "THREADS_ACCESS_TOKEN", "S3_SECRET_ACCESS_KEY", "S3_ACCESS_KEY_ID"}
 JOBS: dict[str, dict] = {}
 
@@ -206,6 +206,15 @@ class H(BaseHTTPRequestHandler):
                 links = load_links()
                 return self._json([{"key": c["key"], "name": c.get("name"), "available": c.get("available"),
                                     "linked": c["key"] in links} for c in load_catalog()])
+            if u.path == "/api/products":
+                from .catalog import facts_path, load_catalog, load_links
+                links = load_links()
+                rows = []
+                for c in sorted(load_catalog(), key=lambda c: c.get("no") or 0):
+                    rows.append({**{k: c.get(k) for k in ("key", "no", "name", "category", "available", "hidden", "pinned", "status")},
+                                 "linked": c["key"] in links, "scraped": facts_path(c["key"]).exists()})
+                return self._json({"rows": rows, "categories": settings()["shop"]["categories"],
+                                   "shop_url": env("SHOP_PUBLIC_URL"), "built": (OUT / "shop" / "index.html").exists()})
             if u.path == "/api/profile-links":
                 from .profile_links import plan
                 return self._json(plan())
@@ -251,6 +260,14 @@ class H(BaseHTTPRequestHandler):
                 finally:
                     tmp.unlink(missing_ok=True)
                 return self._json({"ok": True, "count": n_})
+            if u == "/api/products/add":
+                from .catalog import add_links_bulk
+                return self._json(add_links_bulk(body.get("text", "")))
+            if u.startswith("/api/products/"):
+                from .catalog import update_product
+                key = u.rsplit("/", 1)[1]
+                fields = {k: body[k] for k in ("category", "hidden", "pinned") if k in body}
+                return self._json(update_product(key, **fields))
             if u == "/api/profile-links/done":
                 from .profile_links import mark_applied, plan
                 mark_applied([i["key"] for i in plan()["items"]])

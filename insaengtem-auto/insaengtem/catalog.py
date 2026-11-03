@@ -97,3 +97,64 @@ def import_links(old_catalog: Path) -> int:
 
 def strip_token(url: str) -> str:
     return re.sub(r"&sl=[A-Za-z0-9_\-]+", "", re.sub(r"\?sl=[A-Za-z0-9_\-]+&?", "?", url))
+
+
+# ---------- 대량 등록 ----------
+_URLS = re.compile(r"https?://(?:www\.)?yo-go\.co\.kr/product/detail\.html\?[^\s\"'<>]+")
+CATEGORY_WORDS = {
+    "food": ["설렁탕", "달걀", "계란", "유정란", "국", "탕", "밥", "김치", "고기", "만두", "과일", "쌀", "면", "소스", "간식", "견과"],
+    "health": ["단백질", "쉐이크", "프로틴", "유산균", "비타민", "오메가", "콜라겐", "다이어트", "영양제"],
+    "beauty": ["샴푸", "바디", "크림", "세럼", "앰플", "선크림", "립", "토너", "클렌징", "마스크팩", "미스트", "리들샷"],
+    "baby": ["기저귀", "물티슈", "젖병", "유아", "아기", "키즈", "이유식"],
+    "kitchen": ["프라이팬", "냄비", "용기", "도마", "칼", "주방"],
+    "living": ["세제", "휴지", "수납", "청소", "섬유유연제", "방향제", "행주", "타월"],
+}
+
+
+def guess_category(name: str) -> str:
+    for cat, words in CATEGORY_WORDS.items():
+        if any(w in (name or "") for w in words):
+            return cat
+    return "etc"
+
+
+def add_links_bulk(text: str) -> dict:
+    """붙여넣은 글에서 YOGO 제휴 링크를 모두 찾아 등록. 같은 product_no 는 갱신."""
+    from datetime import datetime
+    cat = load_catalog()
+    by_no = {c.get("product_no"): c for c in cat}
+    next_no = max([c.get("no", 0) for c in cat] + [0]) + 1
+    added, updated, skipped = [], [], []
+    for url in dict.fromkeys(_URLS.findall(text or "")):
+        url = url.rstrip(").,")
+        m = re.search(r"product_no=(\d+)", url)
+        if not m or not _SL.search(url):
+            skipped.append(url)
+            continue
+        pno = int(m.group(1))
+        c = by_no.get(pno)
+        if c:
+            updated.append(c["key"])
+        else:
+            c = {"key": f"p{pno}", "product_no": pno, "name": None, "link": strip_token(url), "available": True,
+                 "status": "수집 대기", "no": next_no, "category": "etc", "hidden": False,
+                 "added_at": f"{datetime.now():%Y-%m-%d}"}
+            next_no += 1
+            cat.append(c)
+            by_no[pno] = c
+            added.append(c["key"])
+        set_link(c["key"], url)
+    save_catalog(cat)
+    return {"added": added, "updated": updated, "skipped": skipped}
+
+
+def update_product(key: str, **fields) -> dict:
+    cat = load_catalog()
+    for c in cat:
+        if c["key"] == key:
+            for k in ("category", "hidden", "name", "pinned"):
+                if k in fields:
+                    c[k] = fields[k]
+            save_catalog(cat)
+            return c
+    raise SystemExit(f"제품 없음: {key}")

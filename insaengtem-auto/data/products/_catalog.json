@@ -6,7 +6,10 @@
   "price_note": "1팩 8,900원 / 4팩 30,800원, 배송비 3,500원",
   "status": "판매중",
   "product_no": 3867,
-  "available": true
+  "available": true,
+  "no": 1,
+  "category": "food",
+  "hidden": false
  },
  {
   "key": "egg",
@@ -15,7 +18,10 @@
   "price_note": "20구 13,900 / 40구 23,900 / 60구 33,400원, 무료배송",
   "status": "판매중",
   "product_no": 3874,
-  "available": true
+  "available": true,
+  "no": 2,
+  "category": "food",
+  "hidden": false
  },
  {
   "key": "shake",
@@ -24,7 +30,10 @@
   "price_note": "정가 38,500 → 30,900원, 배송비 3,500원",
   "status": "판매중",
   "product_no": 3550,
-  "available": true
+  "available": true,
+  "no": 3,
+  "category": "health",
+  "hidden": false
  },
  {
   "key": "shampoo",
@@ -33,7 +42,10 @@
   "price_note": "단품 28,900원 / 2종 57,600원, 5만원 이상 무료배송",
   "status": "판매중",
   "product_no": 2729,
-  "available": true
+  "available": true,
+  "no": 4,
+  "category": "beauty",
+  "hidden": false
  },
  {
   "key": "vt_lip_tattoo",
@@ -41,7 +53,10 @@
   "link": "https://yo-go.co.kr/product/detail.html?product_no=3834",
   "status": "품절(11/3 확인) - 제외",
   "product_no": 3834,
-  "available": false
+  "available": false,
+  "no": 5,
+  "category": "beauty",
+  "hidden": false
  },
  {
   "key": "vt_lip_plumper",
@@ -49,7 +64,10 @@
   "link": "https://yo-go.co.kr/product/detail.html?product_no=3835",
   "status": "품절(11/3 확인) - 제외",
   "product_no": 3835,
-  "available": false
+  "available": false,
+  "no": 6,
+  "category": "beauty",
+  "hidden": false
  },
  {
   "key": "vt_mist_serum",
@@ -57,7 +75,10 @@
   "link": "https://yo-go.co.kr/product/detail.html?product_no=3832",
   "status": "품절(11/3 확인) - 제외",
   "product_no": 3832,
-  "available": false
+  "available": false,
+  "no": 7,
+  "category": "beauty",
+  "hidden": false
  },
  {
   "key": "vt_reedle_shot",
@@ -65,6 +86,9 @@
   "link": "https://yo-go.co.kr/product/detail.html?product_no=3833",
   "status": "품절(11/3 확인) - 제외",
   "product_no": 3833,
-  "available": false
+  "available": false,
+  "no": 8,
+  "category": "beauty",
+  "hidden": false
  }
 ]

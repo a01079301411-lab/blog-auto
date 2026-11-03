@@ -166,3 +166,18 @@ def save_plan_json(plan: list[dict], name: str) -> str:
     p = SCHEDULES / name
     p.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
     return str(p)
+
+
+def select_week_products(history: list[dict] | None = None, n: int | None = None) -> list[str]:
+    """이번 주 영상으로 만들 제품 n개 선택: 판매중·링크 있음·facts 있음.
+    우선순위 = 고정(pinned) > 최근 14일 영상 없음 > 성과 가중치 > 신규 등록순."""
+    from .catalog import facts_path, load_catalog, load_links
+    n = n or settings().get("shop", {}).get("video_products_per_week", 7)
+    links = load_links()
+    w = load_weights()["product"]
+    recent = {h["product"] for h in (history or []) if h.get("product")
+              and h["when_kst"] >= (datetime.now(tz()) - timedelta(days=14)).strftime("%Y-%m-%d")}
+    cands = [c for c in load_catalog() if c.get("available") and not c.get("hidden") and c["key"] in links
+             and facts_path(c["key"]).exists()]
+    cands.sort(key=lambda c: (not c.get("pinned"), c["key"] in recent, -w.get(c["key"], 1.0), -(c.get("no") or 0)))
+    return [c["key"] for c in cands[:n]]

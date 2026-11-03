@@ -40,6 +40,10 @@ def plan(days: int = 7) -> dict:
     links = load_links()
     items = [{"key": k, "title": title_for(k), "url": links.get(k), "first": r["first"]}
              for k, r in zip(keys, rows)]
+    from .config import env
+    shop = env("SHOP_PUBLIC_URL")
+    if shop:  # 1번 칸 = 링크샵(전체 제품), 나머지 4칸 = 이번 주 영상 제품 직링크
+        items = [{"key": "_shop", "title": "🛒 전체 제품 링크샵 (번호로 찾기)", "url": shop, "first": ""}] + items
     over = items[mx:]
     items = items[:mx]
     applied = json.loads(APPLIED.read_text(encoding="utf-8")) if APPLIED.exists() else {"keys": []}

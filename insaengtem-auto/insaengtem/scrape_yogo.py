@@ -77,7 +77,7 @@ def parse_option(text: str, base_price: int) -> dict | None:
     return {"label": label, "price": base_price + delta, "qty": qty, "unit": unit}
 
 
-def scrape(keys: list[str] | None = None, headless: bool = False) -> list[dict]:
+def scrape(keys: list[str] | None = None, headless: bool = False, only_stale: bool = False) -> list[dict]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -86,6 +86,11 @@ def scrape(keys: list[str] | None = None, headless: bool = False) -> list[dict]:
     cat = load_catalog()
     by_key = {c["key"]: c for c in cat}
     targets = keys or list(links)
+    if not keys and only_stale:
+        from .catalog import facts_path
+        import time
+        targets = [k for k in targets if not facts_path(k).exists() or time.time() - facts_path(k).stat().st_mtime > 3 * 86400]
+        print(f"[scrape] 수집 대상 {len(targets)}개 (3일 이내 수집분 제외)")
     results = []
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
@@ -113,6 +118,10 @@ def scrape(keys: list[str] | None = None, headless: bool = False) -> list[dict]:
             f.setdefault("image", f"assets/products/{key}.png")
             save_facts(key, f)
             c = by_key.setdefault(key, {"key": key})
+            if not c.get("category") or c.get("category") == "etc":
+                from .catalog import guess_category
+                c["category"] = guess_category(f["name"])
+            f.setdefault("category", c["category"])
             c.update({"name": f["name"], "link": strip_token(url), "available": not f["soldout"],
                       "status": "품절 - 제외" if f["soldout"] else "판매중",
                       "checked_at": f"{datetime.now():%Y-%m-%d %H:%M}"})

@@ -2,7 +2,7 @@
 
 COSY 오픈딜 제품 → 실측 → 단가 계산 → 원고(Claude) → 15초 릴스 6버전 렌더 → 검수 → **주 1회 사람 승인** → 인스타·스레드 게시 → 성과 수집 → 다음 주 반영.
 
-> **처음이면 → [docs/START_HERE.md](docs/START_HERE.md)** · Windows: `설치.bat` 더블클릭 → 바탕화면에 **'인생템연구소 자동발행'** 아이콘 생성 → 관리 화면(시작하기·다음 주 준비·일정·승인·성과·답글함·설정)
+> **처음이면 → [docs/START_HERE.md](docs/START_HERE.md)** · Windows: `설치.bat` 더블클릭 → 바탕화면에 **'인생템연구소 자동발행'** 아이콘 생성 → 관리 화면(시작하기·다음 주 준비·일정·승인·**링크샵·제품**·성과·답글함·설정) · 제품 무제한 판매: [docs/SHOP.md](docs/SHOP.md)
 
 - 설계 원본: [docs/DESIGN.md](docs/DESIGN.md) (11/3 Chrome 수동 운영 기록)
 - 검수 결과·지금 고칠 것: [docs/REVIEW_2026-11-03.md](docs/REVIEW_2026-11-03.md)
