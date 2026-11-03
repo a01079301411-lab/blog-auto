@@ -260,6 +260,7 @@ def parse_preview(text):
 
 
 PHOTO_GAP_MIN = 6  # 사진과 사진 사이에는 글이 이 줄 수 이상 있어야 한다
+PHOTO_GAP_LOOSE = 3  # 자리가 모자랄 때 최소 간격
 FAQ_WORDS = ("자주 묻는", "FAQ", "질문")
 
 
@@ -315,15 +316,16 @@ def _even_photos(blocks):
         if n == 0:
             options = [slots[0]]  # 대표 이미지
         else:
-            options = [s for s in slots if s[0] not in chosen
-                       and (last_at is None or s[1] - last_at >= PHOTO_GAP_MIN)]
+            # 같은 소제목 안, 자리가 없으면 바로 다음 소제목까지만 (그보다 멀면 엉뚱한 내용 옆에 가므로 뺀다).
+            # 6줄 간격 자리가 없으면 3줄 간격까지는 허용한다 (사진끼리 붙지는 않게).
+            options = []
+            for gap in (PHOTO_GAP_MIN, PHOTO_GAP_LOOSE):
+                options = [s for s in slots if s[0] not in chosen and s[2] in (sec, sec + 1)
+                           and (last_at is None or s[1] - last_at >= gap)]
+                if options:
+                    break
         if not options:
             continue
-        if n:
-            # 같은 소제목 안, 자리가 없으면 바로 다음 소제목까지만 (그보다 멀면 엉뚱한 내용 옆에 가므로 뺀다)
-            options = [s for s in options if s[2] in (sec, sec + 1)]
-            if not options:
-                continue
         # 같은 소제목이 먼저, 그다음 AI가 넣은 자리와 줄 수 차이가 작은 곳, 같으면 뒤쪽
         best = min(options, key=lambda s: (s[2] != sec, abs(s[1] - at), -s[1]))
         chosen[best[0]] = photo
