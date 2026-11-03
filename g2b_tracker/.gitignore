@@ -1,0 +1,10 @@
+.env
+output/
+logs/
+backup/
+data/seen.json
+data/state.json
+.update_state.json
+*.새버전
+__pycache__/
+*.pyc
