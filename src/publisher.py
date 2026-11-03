@@ -677,25 +677,95 @@ def check_layout(editor, blocks, quote="", failed_photos=()):
     return problems
 
 
-def clear_body(page, editor, title):
-    """본문(제목 빼고)을 모두 지운다. 다 지웠으면 True."""
-    for _ in range(3):
-        if not click_first(editor, [BODY_PARAGRAPH] + BODY_AREA):
-            return False
-        page.wait_for_timeout(500)
+# 본문 맨 위 단계 부품에 번호표(data-top)를 붙인다. 하나씩 지울 때 쓴다.
+TAG_TOP_JS = """
+() => {
+  document.querySelectorAll('[data-top]').forEach(e => e.removeAttribute('data-top'));
+  const top = [...document.querySelectorAll('.se-component')].filter(
+      c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
+  top.forEach((c, i) => c.setAttribute('data-top', String(i)));
+  return top.length;
+}
+"""
+
+
+def _left(editor):
+    """아직 남아 있는 본문 부품 (빈 글 칸은 뺀다)."""
+    parts = layout(editor)
+    if parts is None:
+        return None
+    return [(i, p) for i, p in enumerate(parts) if p["kind"] != "text" or _plain(p["text"])]
+
+
+def _delete_one(page, editor, index, kind):
+    """본문 부품 하나를 지운다. 사진, 링크 카드, 인용구는 눌러서 고른 뒤 지우고, 글 칸은 글자를 다 지운다."""
+    editor.evaluate(TAG_TOP_JS)
+    target = editor.locator(f'[data-top="{index}"]')
+    if kind == "text":
+        paragraph = target.locator(".se-text-paragraph").last
+        click_text(paragraph)
+        page.keyboard.press("End")
         page.keyboard.press("Control+a")
-        page.wait_for_timeout(300)
         page.keyboard.press("Backspace")
-        page.wait_for_timeout(800)
-        parts = layout(editor) or []
-        if not [p for p in parts if p["kind"] != "text" or _plain(p["text"])]:
-            break
+        page.keyboard.press("Backspace")
+    elif kind == "quote":
+        click_text(target.locator(".se-text-paragraph").first)
+        page.keyboard.press("Control+a")
+        page.keyboard.press("Backspace")
+        page.keyboard.press("Backspace")
+        page.keyboard.press("Backspace")
     else:
-        return False
+        try:
+            inner = target.locator("img").first if kind == "image" else target
+            (inner if inner.count() else target).click(timeout=3000)
+        except Exception:
+            target.click(timeout=3000, force=True)
+        page.wait_for_timeout(300)
+        page.keyboard.press("Delete")
+        page.wait_for_timeout(300)
+        if editor.locator(f'[data-top="{index}"]').count():
+            page.keyboard.press("Backspace")
+    page.wait_for_timeout(400)
+
+
+def clear_body(page, editor, title):
+    """본문(제목 빼고)을 모두 지운다. 다 지웠으면 True.
+    1) 전체 선택(두 번)으로 한꺼번에 지워 보고, 2) 안 되면 맨 아래 부품부터 하나씩 지운다."""
+    accept = lambda dialog: dialog.accept()  # '삭제할까요?' 같은 확인 창이 뜨면 확인
+    page.on("dialog", accept)
+    try:
+        if click_first(editor, [BODY_PARAGRAPH] + BODY_AREA):
+            page.wait_for_timeout(500)
+            page.keyboard.press("Control+a")
+            page.keyboard.press("Control+a")  # 첫 번째는 한 칸만, 두 번째에 본문 전체가 선택되는 에디터가 있다
+            page.wait_for_timeout(300)
+            page.keyboard.press("Backspace")
+            page.wait_for_timeout(800)
+        left = _left(editor)
+        log.info("한꺼번에 지운 뒤 남은 부품: %s", None if left is None else [p["kind"] for _, p in left])
+        for _ in range(300):
+            if not left:
+                break
+            index, part = left[-1]
+            try:
+                _delete_one(page, editor, index, part["kind"])
+            except Exception as e:
+                log.info("부품 지우기 실패 (%s): %s", part["kind"], e)
+            now = _left(editor)
+            if now is not None and len(now) >= len(left) and [p["kind"] for _, p in now] == [p["kind"] for _, p in left] \
+                    and now[-1][1]["text"] == part["text"]:
+                log.info("이 부품은 안 지워져요: %s '%s'", part["kind"], part["text"][:30])
+                break
+            left = now
+        if left:
+            log.info("다 못 지웠어요. 남은 부품: %s", [(p["kind"], p["text"][:20]) for _, p in left])
+            return False
+    finally:
+        page.remove_listener("dialog", accept)
     if not _same_title(read_title(editor), title):  # 전체 선택에 제목까지 지워졌으면 다시 쓴다
         click_first(editor, TITLE_AREA)
         type_title(page, editor, title)
-        click_first(editor, [BODY_PARAGRAPH] + BODY_AREA)
+    click_first(editor, [BODY_PARAGRAPH] + BODY_AREA)
     return True
 
 
