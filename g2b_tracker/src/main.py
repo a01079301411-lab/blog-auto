@@ -44,17 +44,19 @@ def run_daily():
     print(f"나라장터 최근 {days}일치를 훑는 중... (처음엔 몇 분 걸려요)")
     items, errors = g2b.collect_daily(days)
     recs = R.evaluate(items, rules)
-    new_keys = {r["_key"] for r in recs} - seen
+    new_keys = {r["_key"] for r in recs if not (set(r.get("_dupkeys", [])) & seen)} - seen
     for r in recs:
         r["신규"] = "NEW" if r["_key"] in new_keys else ""
     day = R.today()
     xlsx = report.write_daily(recs, errors, day)
     md = report.write_brief(recs, errors, day, new_keys)
     db = report.ensure_sales_db()
-    SEEN.write_text(json.dumps(sorted(seen | {r["_key"] for r in recs}), ensure_ascii=False), encoding="utf-8")
+    all_keys = {r["_key"] for r in recs} | {k for r in recs for k in r.get("_dupkeys", [])}
+    SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
 
-    hot = [r for r in recs if r["_key"] in new_keys and r["점수"] >= config.ALERT_MIN_SCORE]
-    msg = [f"[나라장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건)"]
+    hot = [r for r in recs if r["_key"] in new_keys and r["등급"] != "마감" and r["점수"] >= config.ALERT_MIN_SCORE]
+    closed = sum(1 for r in recs if r["등급"] == "마감")
+    msg = [f"[나라장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건, 마감 {closed}건은 원도급사 추적으로)"]
     for r in hot[:12]:
         who = r["담당전화"] or r["낙찰업체전화"] or ""
         msg.append(f"\n■ {r['등급']} {r['점수']}점 [{r['출처']}] {r['제목']}\n  {r['수요기관'] or r['공고기관']}"

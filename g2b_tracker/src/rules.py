@@ -1,7 +1,7 @@
 """공고 한 건을 '우리 일감인가?' 기준으로 골라내고 점수를 매긴다.
 
 점수 기준 (코어 프로필의 기회점수)
-  직접 이사·이전·보관 공고 +30 / 이전·개청 명시 +25 / 리모델링·환경개선 등 선행공사 +20
+  직접 이사·이전·보관 공고 +30 (용역·물품으로 나오면 +20 더) / 이전·개청 명시 +25 / 리모델링·환경개선 등 선행공사 +20
   기존 운영시설(리모델링·개선) +15 / 문서고·사무실·병원 등 +15 / 보관 필요 신호 +10
   대구 근교 +10 / 담당자 연락처 있음 +10 / 원도급사(낙찰업체) 확인 +10
   여성·장애인기업·소액수의·견적 공고 +15 / 지켜보는 사업 +20
@@ -10,6 +10,7 @@
 """
 import hashlib
 import json
+import re
 from datetime import datetime
 
 from config import DATA
@@ -119,11 +120,15 @@ def score(rec, rules):
 
     if excl and not direct and not watch:
         return 0, []
+    if _hits(title, rules.get("강제제외", [])) and not _hits(title, ["이사", "이전", "집기", "문서"]):
+        return 0, []
     if not (direct or move or pre or watch):
         return 0, []
 
     if direct:
         s += 30; reasons.append("직접수요(" + ",".join(direct[:2]) + ")")
+        if rec["구분"] in ("용역", "물품"):
+            s += 20; reasons.append("이사 용역 직접 발주")
     if move:
         s += 25; reasons.append("이전·개청(" + ",".join(move[:2]) + ")")
     if pre:
@@ -147,6 +152,9 @@ def score(rec, rules):
         s += 20; reasons.append("관심사업(" + watch[0] + ")")
     if _hits(title, rules["신축감점"]) and not (direct or move):
         s -= 15; reasons.append("신축 −15")
+    sub = rules.get("부대공종", [])
+    if rec["구분"] == "공사" and not direct and re.search(r"\((" + "|".join(sub) + r")\)|(" + "|".join(sub) + r")\s*공사", title):
+        s -= 10; reasons.append("부대공종 −10")
     if _hits(title, rules["특수운송감점"]):
         s -= 20; reasons.append("특수운송 −20")
     return s, reasons
@@ -172,6 +180,21 @@ def next_action(rec):
     return "담당자에게 공사 전후 집기 이동·임시보관이 별도 발주되는지 확인, 소개서 발송"
 
 
+def _deadline_passed(rec):
+    digits = re.sub(r"\D", "", rec["마감일"])
+    if len(digits) < 8:
+        return False
+    return digits[:12].ljust(12, "0") < datetime.now().strftime("%Y%m%d%H%M")
+
+
+def _project_key(rec, rules):
+    """같은 기관의 같은 사업(공종만 다른 공고, 재공고)은 하나로 묶는다."""
+    t = re.sub(r"\(.*?\)|\[.*?\]", "", rec["제목"])
+    t = re.sub(r"(" + "|".join(rules.get("부대공종", []) + ["건축"]) + r")\s*공사", "", t)
+    t = re.sub(r"(재공고|긴급|공사|용역|\s|\d{4}년?)", "", t)
+    return rec["출처"] + "|" + (rec["수요기관"] or rec["공고기관"]) + "|" + t[:16]
+
+
 def evaluate(items, rules):
     out = {}
     for it in items:
@@ -187,10 +210,28 @@ def evaluate(items, rules):
         rec["지역"] = rec["_region"]
         rec["이유"] = " · ".join(reasons)
         rec["다음행동"] = next_action(rec)
+        if rec["출처"] in ("입찰공고", "사전규격") and _deadline_passed(rec):
+            rec["등급"] = "마감"
+            rec["다음행동"] = "마감됨 → 낙찰 결과에서 원도급사 확인 후 협력업체 영업 (원도급사 시트·알림에 자동으로 뜸)"
         # 같은 공고가 여러 번 들어오면 점수 높은 것 하나만
         if rec["_key"] not in out or out[rec["_key"]]["점수"] < s:
             out[rec["_key"]] = rec
-    return sorted(out.values(), key=lambda r: (-r["점수"], r["마감일"] or "9999"))
+    # 같은 사업 묶기
+    groups = {}
+    for rec in out.values():
+        k = _project_key(rec, rules)
+        g = groups.setdefault(k, [])
+        g.append(rec)
+    merged = []
+    for g in groups.values():
+        g.sort(key=lambda r: (r["등급"] == "마감", -r["점수"]))
+        top = g[0]
+        if len(g) > 1:
+            top["이유"] += f" · 같은 사업 {len(g)}건"
+            top["_dupkeys"] = [r["_key"] for r in g[1:]]
+        merged.append(top)
+    order = {"즉시": 0, "추적": 1, "마감": 2}
+    return sorted(merged, key=lambda r: (order.get(r["등급"], 3), -r["점수"], r["마감일"] or "9999"))
 
 
 def is_history_hit(rec, rules):

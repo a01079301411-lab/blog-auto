@@ -11,7 +11,8 @@ from config import DATA, OUTPUT, ROOT
 COLS = ["신규", "등급", "점수", "출처", "구분", "지역", "제목", "수요기관", "공고기관", "공고일", "마감일", "금액",
         "계약방법", "담당자", "담당전화", "담당메일", "낙찰업체", "낙찰업체전화", "낙찰업체대표", "이유", "다음행동", "번호", "링크"]
 WIDTH = {"제목": 48, "수요기관": 24, "공고기관": 20, "이유": 40, "다음행동": 60, "링크": 30, "낙찰업체": 18}
-FILL = {"즉시": PatternFill("solid", fgColor="FFD6D6"), "추적": PatternFill("solid", fgColor="FFF3C4")}
+FILL = {"즉시": PatternFill("solid", fgColor="FFD6D6"), "추적": PatternFill("solid", fgColor="FFF3C4"),
+        "마감": PatternFill("solid", fgColor="E6E6E6")}
 
 
 def _sheet(ws, rows, cols):
@@ -38,10 +39,11 @@ def write_daily(recs, errors, day):
     wb = Workbook()
     ws = wb.active
     ws.title = "오늘의영업"
-    main = [r for r in recs if r["출처"] in ("입찰공고",)]
+    main = [r for r in recs if r["출처"] == "입찰공고" and r["등급"] != "마감"]
     _sheet(ws, main, COLS)
     _sheet(wb.create_sheet("원도급사(낙찰)"), [r for r in recs if r["출처"].startswith("낙찰")], COLS)
     _sheet(wb.create_sheet("사전규격·발주계획"), [r for r in recs if r["출처"] in ("사전규격", "발주계획")], COLS)
+    _sheet(wb.create_sheet("마감(원도급사로)"), [r for r in recs if r["등급"] == "마감"], COLS)
     _sheet(wb.create_sheet("전체"), recs, COLS)
     if errors:
         e = wb.create_sheet("오류")
@@ -55,6 +57,7 @@ def write_daily(recs, errors, day):
 
 def write_brief(recs, errors, day, new_keys):
     hot = [r for r in recs if r["등급"] == "즉시"]
+    # (마감 공고는 즉시·추적에 넣지 않음)
     track = [r for r in recs if r["등급"] == "추적"]
     lines = [f"# 나라장터 영업 브리핑 {day}", "",
              f"- 즉시 연락 **{len(hot)}건** · 추적 **{len(track)}건** · 오늘 새로 뜬 것 **{len(new_keys)}건**", ""]
@@ -75,6 +78,9 @@ def write_brief(recs, errors, day, new_keys):
 
     block("즉시 연락 (60점 이상)", hot)
     block("추적 (40~59점)", track)
+    closed = [r for r in recs if r["등급"] == "마감"]
+    if closed:
+        lines += [f"## 마감된 공고 {len(closed)}건", "", "엑셀 '마감(원도급사로)' 시트. 낙찰되면 '원도급사' 시트와 알림으로 다시 뜹니다.", ""]
     if errors:
         lines += ["## 조회 실패", "", *[f"- {e}" for e in errors], "",
                   "→ 1_연결점검.bat 을 실행해서 어느 서비스 활용신청이 빠졌는지 확인하세요.", ""]
