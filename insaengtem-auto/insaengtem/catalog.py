@@ -158,3 +158,28 @@ def update_product(key: str, **fields) -> dict:
             save_catalog(cat)
             return c
     raise SystemExit(f"제품 없음: {key}")
+
+
+def migrate_catalog() -> int:
+    """예전 버전 카탈로그에 새 필드(번호·카테고리·숨김) 채우기. 업데이트 후 자동 실행."""
+    cat = load_catalog()
+    n = 0
+    next_no = max([c.get("no") or 0 for c in cat] + [0]) + 1
+    for c in cat:
+        if not c.get("no"):
+            c["no"] = next_no
+            next_no += 1
+            n += 1
+        if not c.get("category"):
+            c["category"] = guess_category(c.get("name") or "")
+            n += 1
+        if "hidden" not in c:
+            c["hidden"] = False
+        if "product_no" not in c and c.get("link"):
+            m = re.search(r"product_no=(\d+)", c["link"])
+            if m:
+                c["product_no"] = int(m.group(1))
+        if "available" not in c:
+            c["available"] = "판매중" in (c.get("status") or "")
+    save_catalog(cat)
+    return n

@@ -51,6 +51,7 @@ label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
 <button class="btn" onclick="quitApp()" title="프로그램 끄기 (자동발행은 계속 동작)">종료</button></header>
 <nav id="nav"></nav>
 <main>
+<div class="card" id="updbar" style="display:none;border-color:var(--acc)"></div>
 
 <section id="start">
   <div class="card"><h2>처음 설정 (한 번만)</h2>
@@ -134,6 +135,10 @@ label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
 </section>
 
 <section id="settings">
+  <div class="card"><h2>프로그램 업데이트</h2><div id="updinfo" class="muted">확인 중…</div>
+    <div class="row" style="margin-top:8px"><button class="btn" onclick="checkUpdate(true)">새 버전 확인</button>
+    <button class="btn p" onclick="doUpdate()">지금 업데이트</button></div>
+    <p class="muted">내 설정(.env), 제휴 링크, 등록 제품, 일정·성과 기록은 그대로 유지됩니다. 바뀐 파일 원본은 backups 폴더에 보관됩니다.</p></div>
   <div class="card"><h2>API 키·토큰</h2><p class="muted">입력한 값은 이 PC의 .env 파일에만 저장됩니다. 비워두면 기존 값 유지.</p>
     <div id="envform"></div><div class="row" style="margin-top:10px"><button class="btn p" onclick="saveEnv()">저장</button>
     <button class="btn" onclick="run(['refresh-token'])">스레드 토큰 갱신</button></div></div>
@@ -248,8 +253,17 @@ async function importLinks(){const f=$("#catfile").files[0];if(!f){alert("파일
   const r=await api("/api/links/import",{catalog:cat});log(r.error?"✖ "+r.error:`제휴 링크 ${r.count}개 등록`);refresh()}
 async function setAuto(on){const r=await api("/api/autopublish",{on});(r.log||[r.error]).forEach(log);refresh()}
 async function quitApp(){if(confirm("관리 프로그램을 끌까요? (자동발행 예약 작업은 계속 동작)")){await api("/api/quit",{});document.body.innerHTML="<p style='padding:40px'>종료됨. 바탕화면 아이콘으로 다시 열 수 있습니다.</p>"}}
+async function checkUpdate(force){const i=await api("/api/update"+(force?"?refresh=1":""));
+  const txt=i.error?`확인 실패(인터넷 연결 확인): ${esc(i.error)}`:(i.update?`🆕 새 버전 있음 (설치 ${i.current} → 최신 ${i.latest}, ${i.date})`:`최신 버전입니다 (${i.current}, ${i.date})`);
+  $("#updinfo").innerHTML=txt+(i.changes&&i.changes.length?"<ul>"+i.changes.map(c=>`<li>${esc(c)}</li>`).join("")+"</ul>":"");
+  const bar=$("#updbar");if(i.update){bar.style.display="";bar.innerHTML=`<div class="row"><b>🆕 새 버전이 있어요</b><span class="muted">${esc((i.changes||[]).slice(-1)[0]||"")}</span><span class="sp" style="flex:1"></span><button class="btn p" onclick="doUpdate()">업데이트</button></div>`}else bar.style.display="none"}
+async function doUpdate(){if(!confirm("업데이트할까요? 내 데이터는 유지됩니다. 끝나면 화면이 자동으로 새로고침됩니다."))return;
+  const j=await run(["update"]);if(j.code!==0){alert("업데이트 실패 — 작업 기록 확인");return}
+  log("새 버전으로 다시 시작합니다…");await api("/api/restart",{});
+  for(let k=0;k<40;k++){await new Promise(r=>setTimeout(r,500));try{const r=await fetch("/api/status");if(r.ok){location.reload();return}}catch(e){}}
+  alert("다시 시작이 늦어지고 있어요. 바탕화면 아이콘을 다시 눌러주세요.")}
 let first="start";try{first=localStorage.getItem("tab")||"start"}catch(e){}
-refresh().then(()=>go(first));setInterval(refresh,30000);
+refresh().then(()=>go(first));checkUpdate(false);setInterval(refresh,30000);
 </script>
 </body>
 </html>

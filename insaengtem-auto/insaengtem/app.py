@@ -25,7 +25,7 @@ PORT = 8765
 STATIC = Path(__file__).parent / "static"
 ALLOWED = {"scrape", "trends", "generate", "render", "plan", "approve", "run-due", "schedule-web", "sync", "insights",
            "inbox", "weekly", "dashboard", "auto", "login", "check", "links", "import-week1", "publish-now", "refresh-token",
-           "profile-links", "shop", "products"}
+           "profile-links", "shop", "products", "update"}
 ENV_KEYS = ["ANTHROPIC_API_KEY", "IG_USER_ID", "IG_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
             "MEDIA_BASE_URL", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_BASE_URL",
             "META_ASSET_ID", "META_BUSINESS_ID", "SHOP_PUBLIC_URL"]
@@ -206,6 +206,8 @@ class H(BaseHTTPRequestHandler):
                 links = load_links()
                 return self._json([{"key": c["key"], "name": c.get("name"), "available": c.get("available"),
                                     "linked": c["key"] in links} for c in load_catalog()])
+            if u.path == "/api/update":
+                return self._json(update_info(force="refresh" in q))
             if u.path == "/api/products":
                 from .catalog import facts_path, load_catalog, load_links
                 links = load_links()
@@ -279,6 +281,10 @@ class H(BaseHTTPRequestHandler):
                 with db.connect() as con:
                     con.execute("UPDATE replies_seen SET answered=1 WHERE reply_id=?", (u.rsplit("/", 1)[1],))
                 return self._json({"ok": True})
+            if u == "/api/restart":
+                self._json({"ok": True})
+                threading.Thread(target=restart, daemon=True).start()
+                return None
             if u == "/api/quit":
                 self._json({"ok": True})
                 threading.Thread(target=lambda: (time.sleep(0.5), __import__("os")._exit(0)), daemon=True).start()
@@ -290,12 +296,46 @@ class H(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+_UPD = {"at": 0.0, "info": None}
+
+
+def update_info(force: bool = False) -> dict:
+    """GitHub 최신 버전 확인(30분 캐시). 인터넷 안 되면 조용히 실패."""
+    from . import updater
+    if force or time.time() - _UPD["at"] > 1800:
+        try:
+            i = updater.check()
+            i.pop("_sha", None)
+            _UPD["info"] = i
+        except Exception as e:  # noqa: BLE001
+            _UPD["info"] = {"update": False, "error": str(e)[:200]}
+        _UPD["at"] = time.time()
+    return _UPD["info"]
+
+
+def restart():
+    """업데이트 후 새 코드로 다시 시작: 새 프로세스를 띄우고 나는 종료."""
+    time.sleep(0.5)
+    exe = Path(sys.executable)
+    pyw = exe.with_name("pythonw.exe") if exe.with_name("pythonw.exe").exists() else exe
+    flags = (0x00000008 | 0x00000200) if sys.platform.startswith("win") else 0  # DETACHED | NEW_GROUP
+    subprocess.Popen([str(pyw), "-m", "insaengtem.app", "--no-browser", "--after-restart"], cwd=ROOT,
+                     creationflags=flags, close_fds=True, start_new_session=not sys.platform.startswith("win"))
+    __import__("os")._exit(0)
+
+
 def main(open_browser: bool = True):
     url = f"http://127.0.0.1:{PORT}/"
-    with socket.socket() as s:
-        busy = s.connect_ex(("127.0.0.1", PORT)) == 0
-    if busy:  # 이미 실행 중 → 창만 열기
-        webbrowser.open(url)
+    for _ in range(40 if "--after-restart" in sys.argv else 1):
+        with socket.socket() as s:
+            busy = s.connect_ex(("127.0.0.1", PORT)) == 0
+        if not busy:
+            break
+        time.sleep(0.25)
+    if busy:
+        if "--after-restart" in sys.argv:
+            return
+        webbrowser.open(url)  # 이미 실행 중 → 창만 열기
         return
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     if open_browser:

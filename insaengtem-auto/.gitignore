@@ -15,3 +15,6 @@ __pycache__/
 # 설치·실행 산출물
 .venv/
 logs/
+
+backups/
+updater_boot.py

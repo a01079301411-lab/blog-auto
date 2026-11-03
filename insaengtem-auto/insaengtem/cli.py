@@ -180,6 +180,17 @@ def cmd_shop(a):
         print(export_inpock())
 
 
+def cmd_update(a):
+    from . import updater
+    if a.check:
+        i = updater.check()
+        print(("🆕 새 버전 있음 " if i["update"] else "최신 버전 ") + f"(설치 {i['current']} / 최신 {i['latest']} {i['date']})")
+        for ch in i["changes"]:
+            print("  •", ch)
+    else:
+        updater.apply(force=a.force)
+
+
 def cmd_trends(a):
     from .trends import add_manual, run
     if a.action == "add":
@@ -270,6 +281,8 @@ def main(argv=None):
     p.add_argument("--file", help="링크가 들어있는 텍스트 파일(없으면 붙여넣기 입력)"); p.set_defaults(f=cmd_products)
     p = sp.add_parser("shop", help="링크샵 만들기/배포/인포크 내보내기"); p.add_argument("action", choices=["build", "deploy", "inpock"])
     p.set_defaults(f=cmd_shop)
+    p = sp.add_parser("update", help="프로그램 업데이트(내 데이터 보존)"); p.add_argument("--check", action="store_true")
+    p.add_argument("--force", action="store_true"); p.set_defaults(f=cmd_update)
     sp.add_parser("sync", help="게시물 원격 ID 매칭").set_defaults(f=cmd_simple("ops.sync"))
     sp.add_parser("insights", help="성과 수집").set_defaults(f=cmd_simple("ops.insights"))
     sp.add_parser("inbox", help="새 답글·댓글").set_defaults(f=cmd_simple("ops.inbox"))
