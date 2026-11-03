@@ -231,6 +231,10 @@ def type_title(page, editor, title):
 def insert_photo(page, editor, path, caption):
     """현재 커서 위치에 사진을 올리고 캡션을 단다. 성공하면 True."""
     before = editor.locator(IMAGE_COMPONENT).count()
+    try:  # 이미 있던 사진에 표시를 해 둔다 (새로 들어간 사진을 정확히 찾으려고)
+        editor.evaluate(f"() => document.querySelectorAll('{IMAGE_COMPONENT}').forEach(e => e.setAttribute('data-old', '1'))")
+    except Exception:
+        pass
     try:
         with page.expect_file_chooser(timeout=8000) as chooser:
             if not click_first(editor, PHOTO_BUTTON):
@@ -251,7 +255,22 @@ def insert_photo(page, editor, path, caption):
         return False
     pause(page)
 
-    image = editor.locator(IMAGE_COMPONENT).last
+    close_library(page, editor)
+    image = editor.locator(f"{IMAGE_COMPONENT}:not([data-old])").first
+    if not image.count():
+        image = editor.locator(IMAGE_COMPONENT).last
+    parts = layout(editor) or []
+    kinds = [p["kind"] for p in parts]
+    try:
+        where = editor.evaluate(f"""() => {{
+            const top = [...document.querySelectorAll('.se-component')].filter(
+                c => !c.classList.contains('se-documentTitle') && !(c.parentElement && c.parentElement.closest('.se-component')));
+            const img = document.querySelector('{IMAGE_COMPONENT}:not([data-old])');
+            return img ? top.indexOf(img) : -1; }}""")
+    except Exception:
+        where = -1
+    if where >= 0 and any(k != "text" for k in kinds[where + 1:]):
+        log.info("사진이 글 끝이 아닌 곳에 들어갔어요 (%s번째 / 전체 %s). 순서: %s", where, len(kinds), describe_layout(editor))
     if caption:
         for selector in CAPTION_AREA:
             try:
@@ -520,6 +539,38 @@ def remove_url_lines(page, editor, url):
     return result
 
 
+LINK_LAYER = [".se-custom-layer-link", ".se-popup-link", "[class*='layer-link']"]
+LIBRARY_CLOSE = [".se-sidebar-close-button", "button[class*='sidebar'][class*='close']",
+                 "[class*='library'] button[class*='close']"]
+
+
+def close_link_layer(page, editor):
+    """링크 넣는 작은 창이 아직 떠 있으면 닫는다."""
+    for selector in LINK_LAYER:
+        try:
+            layer = editor.locator(selector).first
+            if layer.count() and layer.is_visible():
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
+                return
+        except Exception:
+            continue
+
+
+def close_library(page, editor):
+    """사진을 올리면 오른쪽에 뜨는 '라이브러리' 칸을 닫는다 (커서를 가져가지 않게)."""
+    for selector in LIBRARY_CLOSE:
+        try:
+            button = editor.locator(selector).first
+            if button.count() and button.is_visible():
+                button.click(timeout=1500)
+                page.wait_for_timeout(300)
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def add_phone_link(page, editor):
     """방금 쓴 전화번호 줄을 선택해 tel: 링크를 건다. 모바일에서 누르면 바로 전화가 걸린다."""
     tel = "tel:" + re.sub(r"\D", "", COMPANY_PHONE)
@@ -654,8 +705,11 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             bold = kind == "heading" or bool(block.get("bold"))
             before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
             type_line(page, block["text"])
-            if block.get("phone") and not add_phone_link(page, editor):
-                failed_phone_links.append(block["text"])
+            if block.get("phone"):
+                if not add_phone_link(page, editor):
+                    failed_phone_links.append(block["text"])
+                close_link_layer(page, editor)
+                ensure_end(page, editor)  # 링크 창에 커서가 남으면 다음 엔터가 사라져 다음 줄이 붙어 버린다
             if bold and before is None:
                 page.keyboard.press("Control+b")  # 상태를 모를 때는 켠 만큼 다시 끈다
             elif bold:
