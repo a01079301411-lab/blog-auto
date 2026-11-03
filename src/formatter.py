@@ -264,22 +264,37 @@ FAQ_WORDS = ("자주 묻는", "FAQ", "질문")
 
 
 def _even_photos(blocks):
-    """사진을 글 전체에 고르게 나눠 넣는다. (AI가 정한 사진 순서는 지키고, 자리는 프로그램이 정한다)
+    """사진 자리를 정한다. AI가 사진 내용에 맞춰 넣은 자리(그 소제목, 그 문단)를 최대한 지키고,
+    사진끼리 붙거나 너무 가까우면 같은 소제목 안의 가장 가까운 문단 끝으로만 조금 옮긴다.
 
     - 자리는 글 문단이 끝난 곳만. 전화번호 줄, 링크 카드 바로 앞뒤에는 넣지 않는다.
-    - 첫 사진은 도입부 첫 문단 뒤 (대표 이미지). 나머지는 글 줄 수 기준으로 같은 간격.
+    - 첫 사진은 도입부 첫 문단 뒤 (대표 이미지).
     - 사진 사이에는 글이 6줄 이상. 자주 묻는 질문과 마무리에는 넣지 않는다.
-    - 자리가 모자라면 남는 사진은 넣지 않는다 (사진끼리 붙이는 것보다 낫다).
+    - 알맞은 자리가 없으면 그 사진은 넣지 않는다 (사진끼리 붙이는 것보다 낫다).
     """
-    photos = [b for b in blocks if b["type"] == "photo"]
-    rest = [b for b in blocks if b["type"] != "photo"]
+    photos, rest, wanted = [], [], []  # wanted: 사진마다 AI가 넣은 자리 (그 앞 글 줄 수, 소제목 번호)
+    lines = section = 0
+    for b in blocks:
+        if b["type"] == "photo":
+            photos.append(b)
+            wanted.append((lines, section))
+            continue
+        if b["type"] == "heading":
+            section += 1
+            lines += 2  # 소제목은 굵은 글씨와 위아래 빈 줄로 사진 사이를 띄워 주므로 2줄로 친다
+        if b["type"] == "line":
+            lines += 1
+        rest.append(b)
     if not photos:
         return rest
 
-    slots, lines = [], 0  # (rest 안의 빈 줄 위치, 그 앞까지 글 줄 수)
+    slots, lines, section = [], 0, 0  # (rest 안의 빈 줄 위치, 그 앞까지 글 줄 수, 소제목 번호)
     for i, b in enumerate(rest):
-        if b["type"] == "heading" and any(w in b["text"] for w in FAQ_WORDS):
-            break
+        if b["type"] == "heading":
+            if any(w in b["text"] for w in FAQ_WORDS):
+                break
+            section += 1
+            lines += 2
         if b["type"] == "line":
             lines += 1
         if b["type"] != "blank" or i == 0:
@@ -290,25 +305,35 @@ def _even_photos(blocks):
             continue
         if nxt is not None and (nxt["type"] not in ("line", "heading") or nxt.get("phone")):
             continue
-        slots.append((i, lines))
+        slots.append((i, lines, section))
     if not slots:
         return rest
 
-    total = slots[-1][1]
-    step = max(PHOTO_GAP_MIN, (total - slots[0][1]) / max(len(photos) - 1, 1))
-    chosen = [slots[0]]
-    for i, at in slots[1:]:
-        if len(chosen) == len(photos):
-            break
-        target = slots[0][1] + step * len(chosen)
-        if at - chosen[-1][1] >= PHOTO_GAP_MIN and at >= target - step * 0.4:
-            chosen.append((i, at))
+    chosen = {}  # rest 위치 → 사진
+    last_at = None
+    for n, (photo, (at, sec)) in enumerate(zip(photos, wanted)):
+        if n == 0:
+            options = [slots[0]]  # 대표 이미지
+        else:
+            options = [s for s in slots if s[0] not in chosen
+                       and (last_at is None or s[1] - last_at >= PHOTO_GAP_MIN)]
+        if not options:
+            continue
+        if n:
+            # 같은 소제목 안, 자리가 없으면 바로 다음 소제목까지만 (그보다 멀면 엉뚱한 내용 옆에 가므로 뺀다)
+            options = [s for s in options if s[2] in (sec, sec + 1)]
+            if not options:
+                continue
+        # 같은 소제목이 먼저, 그다음 AI가 넣은 자리와 줄 수 차이가 작은 곳, 같으면 뒤쪽
+        best = min(options, key=lambda s: (s[2] != sec, abs(s[1] - at), -s[1]))
+        chosen[best[0]] = photo
+        last_at = best[1]
 
-    out, where = [], {i: photos[n] for n, (i, _) in enumerate(chosen)}
+    out = []
     for i, b in enumerate(rest):
         out.append(b)
-        if i in where:
-            out += [where[i], {"type": "blank"}]
+        if i in chosen:
+            out += [chosen[i], {"type": "blank"}]
     return out
 
 

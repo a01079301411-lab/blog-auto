@@ -723,8 +723,13 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
                 continue  # 사진은 지금 줄 아래에 들어가므로 빈 줄을 더 만들지 않는다
             page.keyboard.press("Enter")
         elif kind == "link":
+            go_to_end(page, editor)  # 아래 사진 설명 참고
             insert_link(page, editor, block["url"])
         elif kind == "photo":
+            # 네이버 에디터는 사진을 '마지막으로 누른 자리' 뒤에 넣는다. 사진 아래 칸에 글을 키보드로만 쳤으면
+            # 에디터는 아직 앞 사진을 가리키고 있어서, 다음 사진이 앞 사진 바로 밑에 붙어 버린다 (2026-11-03 확인).
+            # 그래서 사진을 넣기 전에 지금 쓰고 있는 맨 끝 줄을 한 번 눌러 자리를 알려 준다.
+            go_to_end(page, editor)
             path = photo_paths.get(block["file"])
             if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):
                 failed_photos.append(block["file"])
@@ -840,27 +845,34 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     if not align_center(page, editor):
         warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
     if quote:
-        # 인용구 칸(따옴표 상자)을 맨 위에 넣으면 그 뒤로 네이버 에디터의 커서가 인용구에 묶여서
-        # 첫 문단이 사라지고 사진이 인용구 바로 아래로 몰려 붙는다 (2026-11-03 확인).
-        # 그래서 인용구 문장은 상자 없이 굵은 글씨 첫 줄로 넣는다. 원래 쓰던 '글부터 시작' 흐름 그대로다.
-        before = set_bold(page, editor, True)
-        type_line(page, f'"{quote.strip(chr(34))}"')
-        if before is None:
-            page.keyboard.press("Control+b")
+        status = insert_quote(page, editor, quote)
+        if status == "ok":
+            log.info("인용구를 넣었어요: %s", quote)
+        elif status == "no_text":
+            log.info("인용구 칸은 생겼는데 글자를 확인하지 못했어요. 화면: %s", screenshot(page, "quote_text"))
+            warnings.append("인용구 글자가 제대로 들어갔는지 확인해 주세요.")
         else:
-            set_bold(page, editor, False)
-        page.keyboard.press("Enter")
-        page.keyboard.press("Enter")
+            # 인용구 버튼을 못 찾으면 굵은 글씨 한 줄로라도 맨 위에 보여준다
+            shot = screenshot(page, "quote_fail")
+            log.info("인용구를 넣지 못해서 굵은 글씨로 넣어요. 화면: %s", shot)
+            warnings.append("인용구를 넣지 못해 제목 아래에 굵은 글씨로 넣었어요.")
+            go_to_end(page, editor)
+            before = set_bold(page, editor, True)
+            type_line(page, quote)
+            if before is None:
+                page.keyboard.press("Control+b")
+            else:
+                set_bold(page, editor, False)
+            page.keyboard.press("Enter")
+            page.keyboard.press("Enter")
+        page.wait_for_timeout(800)  # 인용구 아래 칸으로 옮긴 뒤 바로 치면 첫 글자가 빠질 수 있다
     failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
     problems = check_layout(editor, blocks, quote, failed)
     if problems:
         log.info("글 모양 문제: %s / 순서: %s / 화면: %s", " / ".join(problems), describe_layout(editor),
                  screenshot(page, "bad_layout"))
-        if publish:  # 깨진 글은 블로그에 내보내지 않는다. 임시저장해 두고 알린다.
-            publish = False
-            warnings.append("글 모양이 깨져서 발행하지 않고 임시저장했어요: " + " / ".join(problems))
-        else:
-            warnings.append("글 모양을 확인해 주세요: " + " / ".join(problems))
+        # 사장님 지시 (2026-11-03): 임시저장하지 말고 바로 발행한다. 문제는 알림으로만 알린다.
+        warnings.append("발행은 했는데 글 모양을 한 번 확인해 주세요: " + " / ".join(problems))
     # 마지막 확인: 늦게 생긴 링크 카드 위에 주소 글자가 남아 있으면 지운다
     for block in blocks:
         if block["type"] == "link" and editor.locator(LINK_CARD_COMPONENT).count():
