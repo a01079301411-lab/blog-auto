@@ -142,6 +142,17 @@ def cmd_publish_now(a):
             raise SystemExit(f"게시 실패: {e}")
 
 
+def cmd_profile_links(a):
+    from .profile_links import mark_applied, plan, text_for_app
+    p = plan()
+    if a.done:
+        mark_applied([i["key"] for i in p["items"]])
+        print("등록 완료로 기록")
+    else:
+        print(text_for_app(p))
+        print("\n상태:", "변경 필요 ❗" if p["changed"] else "최신 ✅")
+
+
 def cmd_trends(a):
     from .trends import add_manual, run
     if a.action == "add":
@@ -215,6 +226,8 @@ def main(argv=None):
     p = sp.add_parser("publish-now", help="한 건 즉시 게시"); p.add_argument("id", type=int); p.set_defaults(f=cmd_publish_now)
     sp.add_parser("refresh-token", help="스레드 장기 토큰 갱신").set_defaults(
         f=lambda a: print(f"갱신 완료, 남은 {__import__('insaengtem.publish.meta_api', fromlist=['Threads']).Threads().refresh_token() // 86400}일"))
+    p = sp.add_parser("profile-links", help="인스타 프로필에 걸 링크 5개(앱에서 직접 등록)"); p.add_argument("--done", action="store_true")
+    p.set_defaults(f=cmd_profile_links)
     sp.add_parser("sync", help="게시물 원격 ID 매칭").set_defaults(f=cmd_simple("ops.sync"))
     sp.add_parser("insights", help="성과 수집").set_defaults(f=cmd_simple("ops.insights"))
     sp.add_parser("inbox", help="새 답글·댓글").set_defaults(f=cmd_simple("ops.inbox"))

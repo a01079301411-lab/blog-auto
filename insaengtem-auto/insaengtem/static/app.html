@@ -70,7 +70,10 @@ label{display:block;font-size:13px;color:var(--sub);margin:8px 0 3px}
 
 <section id="home">
   <div class="grid" id="kpis"></div>
-  <div class="card" style="margin-top:14px"><h2>다음 게시</h2><div class="scroll"><table id="next"></table></div></div>
+  <div class="card" style="margin-top:14px" id="plcard"><h2>인스타 프로필 링크 <span id="plst"></span></h2>
+    <p class="muted">인스타는 프로필 링크를 <b>휴대폰 앱에서만</b> 바꿀 수 있어요. 앱 → 프로필 편집 → 링크 → 외부 링크 추가 → 아래 순서대로 붙여넣기.</p>
+    <div id="pl"></div><div class="row" style="margin-top:8px"><button class="btn p" onclick="plDone()">앱에 다 넣었어요</button></div></div>
+  <div class="card"><h2>다음 게시</h2><div class="scroll"><table id="next"></table></div></div>
   <div class="card"><h2>자동발행 상태</h2><div id="autost"></div></div>
 </section>
 
@@ -147,7 +150,7 @@ $("#nav").innerHTML=TABS.map(([k,v])=>`<button data-k="${k}" onclick="go('${k}')
 function go(k){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==k));
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.k==k));
   try{localStorage.setItem("tab",k)}catch(e){}
-  ({posts:loadPosts,perf:loadPerf,inbox:loadInbox,settings:loadSettings}[k]||(()=>{}))();}
+  ({home:loadPL,posts:loadPosts,perf:loadPerf,inbox:loadInbox,settings:loadSettings}[k]||(()=>{}))();}
 function log(t){const l=$("#log");l.textContent+=(l.textContent=="대기 중"?"":"\n")+t;l.scrollTop=1e9}
 async function run(args){
   log(`▶ ${args.join(" ")}`);const {job,error}=await api("/api/run",{args});if(error){log("✖ "+error);return}
@@ -164,6 +167,13 @@ async function refresh(){ST=await api("/api/status");$("#clock").textContent=ST.
   $("#wk").textContent=ST.next_week;
   const ws=[...new Set([ST.next_week,...ST.weeks])];const cur=$("#weeksel").value;
   $("#weeksel").innerHTML=ws.map(w=>`<option ${w==cur?"selected":""}>${w}</option>`).join("");}
+async function loadPL(){const p=await api("/api/profile-links");
+  $("#plst").innerHTML=p.changed?'<span class="tag failed">변경 필요</span>':'<span class="tag published">최신</span>';
+  $("#pl").innerHTML=(p.items.length?`<table><tr><th>#</th><th>제목</th><th>URL</th><th></th></tr>`+p.items.map((it,i)=>`<tr><td>${i+1}</td><td>${esc(it.title)} <button class="btn" onclick="cp(this,'${esc(it.title).replace(/'/g,"")}')">복사</button></td>
+   <td style="word-break:break-all">${it.url?esc(it.url):'<span class="issues">제휴 링크 미등록</span>'}</td><td>${it.url?`<button class="btn" onclick="cp(this,'${esc(it.url)}')">복사</button>`:""}</td></tr>`).join("")+"</table>":'<p class="muted">일정이 없어 계산할 수 없습니다.</p>')
+   +p.notes.map(n=>`<div class="issues">⚠️ ${esc(n)}</div>`).join("")}
+function cp(b,t){navigator.clipboard.writeText(t).then(()=>{b.textContent="✔";setTimeout(()=>b.textContent="복사",1200)})}
+async function plDone(){await api("/api/profile-links/done",{});log("프로필 링크 등록 완료로 기록");loadPL()}
 async function loadPosts(){const w=$("#weeksel").value;const rows=await api("/api/posts?week="+encodeURIComponent(w));
   $("#postlist").innerHTML=rows.length?rows.map(r=>`<div class="post">${r.cover?`<img src="${r.cover}" alt="">`:`<div class="noimg">${r.kind=="text"?"공감글":"영상 없음"}</div>`}
    <div><div class="row"><b>${r.when_kst}</b><span>${r.platform}</span><span>${esc(r.product||"")} ${r.variant||""}</span><span class="tag ${r.status}">${r.status}</span></div>

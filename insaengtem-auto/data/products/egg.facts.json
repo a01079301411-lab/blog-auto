@@ -34,5 +34,6 @@
  "key": "egg",
  "soldout": false,
  "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
- "image": "assets/products/egg.png"
+ "image": "assets/products/egg.png",
+ "link_title": "달걀 60구 1알 약 557원"
 }

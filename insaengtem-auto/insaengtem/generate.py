@@ -158,7 +158,7 @@ def template_posts(key: str, facts: dict, u: UspResult, cfg: dict) -> dict:
     L = u.lines
     sn = short_name(facts)
     bl = facts.get("bullets", [])[:3]
-    tail = "\n\n🔖 저장해두고 장 볼 때 꺼내보세요\n📩 이번 주 장 보는 사람한테 보내두기\n🔗 구매 링크는 프로필에\n\n" + hashtags(facts)
+    tail = "\n\n🔖 저장해두고 장 볼 때 꺼내보세요\n📩 이번 주 장 보는 사람한테 보내두기\n🔗 구매 링크: 프로필 링크 '" + short_name(facts) + "'\n\n" + hashtags(facts)
     table = "\n".join(f"{a} {p} ({t})" for a, p, t in L["table"]) if len(u.rows) > 1 else ""
     checks = " ".join(f"✔ {x}" for x in bl)
     q = cfg["variants"]["v2"]["quiz"]

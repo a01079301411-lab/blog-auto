@@ -22,5 +22,6 @@
  "key": "shake",
  "soldout": false,
  "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
- "image": "assets/products/shake.png"
+ "image": "assets/products/shake.png",
+ "link_title": "단백질쉐이크 1포 약 4,414원"
 }

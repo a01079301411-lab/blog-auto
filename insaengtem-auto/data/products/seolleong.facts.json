@@ -27,5 +27,6 @@
  "key": "seolleong",
  "soldout": false,
  "source": "2026-11-03 Chrome 수동 실측(_catalog.json price_note·제품 JSON 역산). scrape 재수집 시 덮어씀",
- "image": "assets/products/seolleong.png"
+ "image": "assets/products/seolleong.png",
+ "link_title": "이남장 설렁탕 4팩 1팩 7,700원"
 }

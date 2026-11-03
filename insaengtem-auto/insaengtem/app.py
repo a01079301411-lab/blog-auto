@@ -24,7 +24,8 @@ from .winsetup import NO_WINDOW
 PORT = 8765
 STATIC = Path(__file__).parent / "static"
 ALLOWED = {"scrape", "trends", "generate", "render", "plan", "approve", "run-due", "schedule-web", "sync", "insights",
-           "inbox", "weekly", "dashboard", "auto", "login", "check", "links", "import-week1", "publish-now", "refresh-token"}
+           "inbox", "weekly", "dashboard", "auto", "login", "check", "links", "import-week1", "publish-now", "refresh-token",
+           "profile-links"}
 ENV_KEYS = ["ANTHROPIC_API_KEY", "IG_USER_ID", "IG_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
             "MEDIA_BASE_URL", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_BASE_URL",
             "META_ASSET_ID", "META_BUSINESS_ID"]
@@ -205,6 +206,9 @@ class H(BaseHTTPRequestHandler):
                 links = load_links()
                 return self._json([{"key": c["key"], "name": c.get("name"), "available": c.get("available"),
                                     "linked": c["key"] in links} for c in load_catalog()])
+            if u.path == "/api/profile-links":
+                from .profile_links import plan
+                return self._json(plan())
             if u.path.startswith("/api/jobs/"):
                 j = JOBS.get(u.path.rsplit("/", 1)[1])
                 return self._json(j or {"error": "없음"})
@@ -247,6 +251,10 @@ class H(BaseHTTPRequestHandler):
                 finally:
                     tmp.unlink(missing_ok=True)
                 return self._json({"ok": True, "count": n_})
+            if u == "/api/profile-links/done":
+                from .profile_links import mark_applied, plan
+                mark_applied([i["key"] for i in plan()["items"]])
+                return self._json({"ok": True})
             if u == "/api/autopublish":
                 from .winsetup import autopublish
                 return self._json({"log": autopublish(bool(body.get("on")))})

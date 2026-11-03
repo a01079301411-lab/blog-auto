@@ -28,6 +28,10 @@ try:
         changed = [(i, s) for i, s in after.items() if before.get(i) != s]
         ok = sum(s == "published" for _, s in changed)
         bad = sum(s in ("failed", "missed", "skipped") for _, s in changed)
+        from insaengtem.profile_links import plan as _pl
+        _p = _pl()
+        if _p["changed"] and any(s == "published" for _, s in changed):
+            notify("프로필 링크 확인", "방금 올라간 릴스 제품이 프로필 링크에 없어요 → 아이콘 → [홈]")
         if ok or bad:
             notify("인생템연구소 게시", f"게시 완료 {ok}건" + (f" · 실패/건너뜀 {bad}건 → 프로그램에서 확인" if bad else ""))
     elif mode == "inbox":
@@ -44,7 +48,10 @@ try:
             print(f"토큰 갱신 건너뜀: {e}")
         from insaengtem.cli import main
         main(["auto"])
-        notify("다음 주 준비 완료", "바탕화면 아이콘 → [이번 주 승인] 에서 검토 후 승인하세요.")
+        notify("다음 주 준비 완료", "바탕화면 아이콘 → [일정·승인] 에서 검토 후 승인하세요.")
+        from insaengtem.profile_links import plan
+        if plan()["changed"]:
+            notify("인스타 프로필 링크 바꿀 차례", "아이콘 → [홈] → 프로필 링크 표대로 휴대폰 앱에서 교체하세요.")
 except BaseException:  # noqa: BLE001
     traceback.print_exc()
     notify("인생템연구소 오류", f"{mode} 실행 중 오류 — logs 폴더 확인")
