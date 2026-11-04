@@ -15,10 +15,10 @@ from config import DATA, OUTPUT, ROOT
 import rules as R
 
 log = logging.getLogger(__name__)
-STORE = DATA / "contacts.json"
+STORE = DATA / "contacts_v2.json"  # v2: 진짜 이사 계약만 (예전 폐기물 운반 등 섞인 목록은 버림)
 SHEET = "관공서담당자"
 COLS = ["우선", "기관", "기관유형", "지역", "담당부서", "담당자", "전화", "이메일",
-        "이사계약 이력", "이사계약 금액(최근)", "최근 건", "최근일", "출처", "메모"]
+        "이사계약 이력", "이사계약 금액(최근)", "최근 건", "최근일", "최근 수행업체", "출처", "메모"]
 
 
 def _load():
@@ -57,6 +57,9 @@ def update(recs, move_contract=False):
         day = (r.get("공고일") or "")[:10]
         if move_contract:
             cur["이사계약 이력"] += 1
+            comp = (r.get("계약업체") or r.get("낙찰업체") or "").replace("주계약업체 단독", "").replace("대한민국", "").strip()
+            if comp and day >= (cur.get("_comp_day") or ""):
+                cur["최근 수행업체"], cur["_comp_day"] = comp[:30], day
             amt = r.get("낙찰금액") or r.get("금액") or 0
             if amt and day >= (cur.get("_amt_day") or ""):
                 cur["이사계약 금액(최근)"], cur["_amt_day"] = f"{round(amt / 10000):,}만원", day

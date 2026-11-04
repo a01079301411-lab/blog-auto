@@ -9,3 +9,4 @@ data/state.json
 __pycache__/
 *.pyc
 data/contacts.json
+data/contacts_v2.json

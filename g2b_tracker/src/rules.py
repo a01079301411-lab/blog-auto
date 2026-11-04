@@ -67,6 +67,15 @@ def _amount(v):
         return 0
 
 
+def _corp(raw):
+    """corpList '[1^주계약업체^단독^업체명^대표자^대한민국^…]' 에서 업체명만."""
+    if not raw:
+        return ""
+    first = re.findall(r"\[([^\]]*)\]", raw)
+    parts = (first[0] if first else raw).split("^")
+    return (parts[3] if len(parts) > 3 else parts[-1]).strip()[:40]
+
+
 def normalize(item):
     title = pick(item, TITLE)
     org = pick(item, ORG)
@@ -90,7 +99,7 @@ def normalize(item):
         "번호": pick(item, ID) + (("-" + str(item.get("bidNtceOrd"))) if item.get("bidNtceOrd") else ""),
         "링크": pick(item, URL),
         "낙찰금액": _amount(pick(item, ("sucsfbidAmt", "thtmCntrctAmt", "totCntrctAmt", "cntrctAmt")) or 0),
-        "계약업체": re.sub(r"[\[\]^0-9]+", " ", pick(item, ("corpList", "cntrctCorpNm")))[:60].strip(),
+        "계약업체": _corp(pick(item, ("corpList", "cntrctCorpNm"))),
         "낙찰률": pick(item, ("sucsfbidRate",)),
         "참가업체수": pick(item, ("prtcptCnum",)),
         "공고번호": pick(item, ("bidNtceNo",)),
@@ -247,9 +256,28 @@ def evaluate(items, rules):
 
 
 def is_history_hit(rec, rules):
-    """과거 공고 중 진짜 이사·이전 일감인지 (제외어 걸러냄)."""
-    title = rec["제목"]
+    """진짜 이사·집기 이전 계약인지 (폐기물 운반·보관함 구입·장비 이전설치 등은 제외)."""
+    title = rec["제목"] or ""
+    inc = rules.get("이사판정_포함")
+    exc = rules.get("이사판정_제외")
+    if inc:
+        return bool(re.search(inc, title)) and not (exc and re.search(exc, title))
     return bool(_hits(title, rules["직접수요"])) and not _hits(title, rules["제외"])
+
+
+def move_type(title):
+    t = title or ""
+    if re.search(r"도서관|장서|도서|자료", t):
+        return "도서관·장서 이전"
+    if re.search(r"모듈러|임시교사|임시교실", t):
+        return "학교 모듈러(임시교사) 이사"
+    if re.search(r"조직개편|부서|사무실|청사|사무공간", t):
+        return "관공서 사무실·부서 이동"
+    if re.search(r"공간재구조화|그린스마트|공간혁신|고교학점제|공간조성|리모델링|환경개선|증개축|개축|공사", t):
+        return "학교·시설 공사 전후 집기이전"
+    if re.search(r"기록물|문서", t):
+        return "문서·기록물 이전"
+    return "기타 이사"
 
 
 def org_type(name):

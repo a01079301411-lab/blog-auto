@@ -109,9 +109,10 @@ BANDS = [(0, 5_000_000, "500만원 이하"), (5_000_000, 20_000_000, "500만~2�
 
 def write_history(recs, day):
     """과거 이사·이전 공고 → 기관별 리스트 + 금액대 분석 + 경쟁사(낙찰업체)."""
-    from rules import org_type
+    from rules import org_type, move_type
     for r in recs:
         r["기관유형"] = org_type(r["수요기관"] or r["공고기관"])
+        r["이사유형"] = move_type(r["제목"])
         r["계약금액(기준)"] = r.get("낙찰금액") or r["금액"]
         r["금액기준"] = ("계약금액" if r.get("출처") == "계약" else "낙찰금액") if r.get("낙찰금액") else ("추정가격" if r["금액"] else "")
     by = defaultdict(list)
@@ -149,6 +150,10 @@ def write_history(recs, day):
             {"구분": "수의계약만", **_stats(sole)}]
     for t in sorted({r["기관유형"] for r in recs}):
         rows.append({"구분": f"기관유형: {t}", **_stats([r["계약금액(기준)"] for r in recs if r["기관유형"] == t])})
+    for t in ("학교·시설 공사 전후 집기이전", "학교 모듈러(임시교사) 이사", "관공서 사무실·부서 이동", "도서관·장서 이전", "문서·기록물 이전", "기타 이사"):
+        sub = [r["계약금액(기준)"] for r in recs if r["이사유형"] == t]
+        if sub:
+            rows.append({"구분": f"이사유형: {t}", **_stats(sub)})
     for reg in ("대구근교", "경북", "대구경북(주소)"):
         sub = [r["계약금액(기준)"] for r in recs if r["지역"] == reg]
         if sub:
@@ -170,10 +175,19 @@ def write_history(recs, day):
         c = sum(1 for v in vals if v and lo < v <= hi)
         band.append([name, c, f"{c * 100 // n}%", meaning[name]])
 
+    band.append([])
+    band.append(["월", "계약 건수", "", "언제 영업할지: 계약 1~2달 전에 견적 명단에 들어가 있어야 함"])
+    months = defaultdict(int)
+    for r in recs:
+        if r["공고일"][5:7]:
+            months[r["공고일"][5:7]] += 1
+    for mth in sorted(months):
+        band.append([f"{int(mth)}월", months[mth]])
+
     # 경쟁사 (이사 용역 낙찰업체)
     comp = defaultdict(lambda: {"건수": 0, "합계": 0, "기관": set(), "전화": ""})
     for r in recs:
-        name = r.get("낙찰업체") or r.get("계약업체")
+        name = (r.get("낙찰업체") or r.get("계약업체") or "").replace("주계약업체 단독", "").replace("대한민국", "").strip()
         if name:
             c = comp[name]
             c["건수"] += 1
@@ -185,7 +199,7 @@ def write_history(recs, day):
             for k, v in sorted(comp.items(), key=lambda kv: -kv[1]["건수"])]
     _sheet(wb.create_sheet("경쟁사(낙찰업체)"), crow, ["업체", "낙찰건수", "낙찰합계", "평균", "주요기관", "전화"])
 
-    raw_cols = ["출처", "지역", "기관유형", "공고일", "제목", "수요기관", "공고기관", "금액", "낙찰금액", "금액기준", "낙찰률", "참가업체수",
+    raw_cols = ["출처", "지역", "기관유형", "이사유형", "공고일", "제목", "수요기관", "공고기관", "금액", "낙찰금액", "금액기준", "낙찰률", "참가업체수",
                 "낙찰업체", "계약업체", "계약방법", "담당부서", "담당자", "담당전화", "담당메일", "번호", "링크"]
     _sheet(wb.create_sheet("공고원본"), sorted(recs, key=lambda r: r["공고일"], reverse=True), raw_cols)
     path = OUTPUT / f"이사발주기관_{day}.xlsx"
