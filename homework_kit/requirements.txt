@@ -1,0 +1,5 @@
+anthropic>=2.4.0
+openpyxl>=3.1
+requests>=2.31
+yt-dlp>=2025.1.1      # 후킹 0.5초 프레임 캡처용 (ffmpeg 별도 설치)
+pymupdf>=1.24         # pdftoppm이 없는 Windows에서 PDF→PNG 렌더용
