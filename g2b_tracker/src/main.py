@@ -53,7 +53,7 @@ def run_daily():
         for it in citems:
             c = R.normalize(it)
             c["지역"] = c["_region"] = R.region_of(c, rules)
-            if c["_region"] and R.is_history_hit(c, rules):
+            if c["_region"] and R.is_history_hit(c, rules) and c["_key"] not in {m["_key"] for m in moves}:
                 c["출처"] = "계약"
                 moves.append(c)
     except g2b.ApiError as e:
