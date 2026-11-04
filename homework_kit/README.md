@@ -6,6 +6,7 @@ COSY 가이드 스크린샷과 양식 xlsx를 넣으면 프로그램이 숙제�
 ## 1. 처음 한 번만 설치 (Windows 기준)
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-optional.txt   # 선택(후킹 캡처·렌더 PNG)
 ```
 - **Claude API 키**: 환경변수 `ANTHROPIC_API_KEY` 설정 (또는 `ant auth login`)
 - **LibreOffice**: 렌더(잘림 확인)용. 기본 설치 경로는 자동으로 찾음. 다른 경로면 `SOFFICE` 환경변수에 지정
