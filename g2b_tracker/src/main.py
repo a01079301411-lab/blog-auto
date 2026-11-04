@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config  # noqa: E402
 import contacts  # noqa: E402
+import calllist  # noqa: E402
 import g2b  # noqa: E402
 import notifier  # noqa: E402
 import report  # noqa: E402
@@ -68,6 +69,7 @@ def run_daily():
     added, total = contacts.update([r for r in recs if r["등급"] != "마감"])
     a2, total = contacts.update(moves, move_contract=True)
     added += a2
+    cpath, cn = calllist.write()
     all_keys = {r["_key"] for r in recs} | {k for r in recs for k in r.get("_dupkeys", [])}
     SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
 
@@ -144,6 +146,8 @@ def run_history(months):
     added, total = contacts.update([r for r in recs.values() if r["출처"] != "계약"])
     a2, total = contacts.update([r for r in recs.values() if r["출처"] == "계약"], move_contract=True)
     added += a2
+    cpath, cn = calllist.write()
+    print(f"영업 콜리스트 {cn}곳 (우선순위 순) → 영업DB 맨 앞 '콜리스트' 시트, {cpath}")
     print(f"\n이사·이전 공고 {len(recs)}건 (낙찰금액 붙은 것 {len(matched)}건), 기관 {len(summary)}곳 → {path}")
     print(f"관공서 담당자 새로 {added}명 (누적 {total}명) → 영업DB '관공서담당자' 시트")
     for s in summary[:15]:
@@ -198,11 +202,17 @@ def main():
     ap.add_argument("--history", type=int)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--calllist", action="store_true")
     a = ap.parse_args()
     setup_log(a.quiet)
     try:
         if a.selftest:
             run_selftest()
+        elif a.calllist:
+            import neis
+            neis.load(force=True)
+            p, n = calllist.write()
+            print(f"영업 콜리스트 {n}곳 → 영업DB 맨 앞 '콜리스트' 시트\n{p}")
         elif a.check:
             run_check()
         elif a.history:

@@ -35,7 +35,9 @@ def update(recs, move_contract=False):
     db = _load()
     added = 0
     for r in recs:
-        tel, mail = r.get("담당전화", ""), r.get("담당메일", "")
+        tel, mail = r.get("담당전화", "") or "", r.get("담당메일", "") or ""
+        if "*" in tel:
+            tel = ""
         if not (tel or mail):
             continue
         if r.get("출처", "").startswith("낙찰"):
@@ -58,6 +60,7 @@ def update(recs, move_contract=False):
         if move_contract:
             cur["이사계약 이력"] += 1
             comp = (r.get("계약업체") or r.get("낙찰업체") or "").replace("주계약업체 단독", "").replace("대한민국", "").strip()
+            comp = comp.split()[0] if comp.split() else ""
             if comp and day >= (cur.get("_comp_day") or ""):
                 cur["최근 수행업체"], cur["_comp_day"] = comp[:30], day
             amt = r.get("낙찰금액") or r.get("금액") or 0

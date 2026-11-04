@@ -47,6 +47,9 @@ def main():
         env["TELEGRAM_BOT_TOKEN"] = ask("   봇 토큰", env.get("TELEGRAM_BOT_TOKEN", ""))
         env["TELEGRAM_CHAT_ID"] = ask("   채팅 ID", env.get("TELEGRAM_CHAT_ID", ""))
 
+    print("\n(선택) 나이스 교육정보 인증키 - 대구·경북 전체 학교 행정실 전화번호용")
+    print("   open.neis.go.kr 회원가입 → 인증키 신청 → 복사 (건너뛰려면 엔터)")
+    env["NEIS_KEY"] = ask("   나이스 인증키", env.get("NEIS_KEY", ""))
     env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n", encoding="utf-8")
     print("\n설정 저장 완료. 다음: 1_연결점검.bat")
 
