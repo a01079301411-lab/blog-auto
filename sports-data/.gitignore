@@ -1,0 +1,6 @@
+site/
+data/state.json
+data/events.json
+data/games.json
+__pycache__/
+*.tmp

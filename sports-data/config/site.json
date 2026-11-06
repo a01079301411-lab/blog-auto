@@ -1,0 +1,11 @@
+{
+  "site_name": "프로토 데이터룸",
+  "base_url": "https://a01079301411-lab.github.io/blog-auto",
+  "description": "해외축구·NBA·NHL·MLB·국내 프로스포츠 경기 일정, 라인업, 부상, 최근 5경기 데이터를 가장 빠르게 정리합니다.",
+  "adsense_client": "",
+  "telegram_channel_url": "",
+  "kakao_channel_url": "",
+  "google_form_url": "",
+  "days_back": 1,
+  "days_ahead": 2
+}

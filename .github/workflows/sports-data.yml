@@ -1,0 +1,66 @@
+name: sports-data
+
+# 10분마다 수집 → 변화 감지 → 텔레그램 알림 → 사이트 생성 → GitHub Pages 배포
+# 공개 저장소라 Actions 실행 시간과 Pages 호스팅이 무료다.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sports-data
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 직전 실행의 상태를 불러와야 '새 소식'만 골라낼 수 있다
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            sports-data/data/state.json
+            sports-data/data/events.json
+          key: sports-state-${{ github.run_id }}
+          restore-keys: sports-state-
+
+      - name: Collect and build
+        working-directory: sports-data
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m collector.run
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            sports-data/data/state.json
+            sports-data/data/events.json
+          key: sports-state-${{ github.run_id }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: sports-data/site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

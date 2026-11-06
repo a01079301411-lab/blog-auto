@@ -1,0 +1,13 @@
+[
+  {"key": "epl",        "name": "EPL",          "sport": "soccer",     "espn": "soccer/eng.1"},
+  {"key": "laliga",     "name": "라리가",        "sport": "soccer",     "espn": "soccer/esp.1"},
+  {"key": "bundesliga", "name": "분데스리가",     "sport": "soccer",     "espn": "soccer/ger.1"},
+  {"key": "seriea",     "name": "세리에A",       "sport": "soccer",     "espn": "soccer/ita.1"},
+  {"key": "ligue1",     "name": "리그1",         "sport": "soccer",     "espn": "soccer/fra.1"},
+  {"key": "ucl",        "name": "챔피언스리그",   "sport": "soccer",     "espn": "soccer/uefa.champions"},
+  {"key": "uel",        "name": "유로파리그",     "sport": "soccer",     "espn": "soccer/uefa.europa"},
+  {"key": "jleague",    "name": "J리그",         "sport": "soccer",     "espn": "soccer/jpn.1"},
+  {"key": "nba",        "name": "NBA",          "sport": "basketball", "espn": "basketball/nba"},
+  {"key": "nhl",        "name": "NHL",          "sport": "hockey",     "espn": "hockey/nhl"},
+  {"key": "mlb",        "name": "MLB",          "sport": "baseball",   "espn": "baseball/mlb"}
+]
