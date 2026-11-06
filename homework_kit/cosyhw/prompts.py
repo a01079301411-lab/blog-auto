@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from .paths import SPEC, LEARNED, SUBMITTED, USER_NAME, norm_id
+from .paths import SPEC, LEARNED, CORE, SUBMITTED, USER_NAME, norm_id
 
 ROLE = f"""너는 RIZZ 육성프로그램(COSY 앱) 수강생 '{USER_NAME}'의 숙제를 대신 수행하는 '숙제 담당'이다.
 숙제는 네가 하고, {USER_NAME}은 네 결과물과 보고서를 보고 학습한다. 모든 응답과 결과물은 한국어로 쓴다.
@@ -41,6 +41,9 @@ ROLE = f"""너는 RIZZ 육성프로그램(COSY 앱) 수강생 '{USER_NAME}'의 �
 
 def system_prompt() -> str:
     parts = [ROLE, "\n<master_spec>\n", SPEC.read_text(encoding="utf-8"), "\n</master_spec>\n"]
+    if CORE.exists():
+        parts += ["\n<rizz_core>\nRIZZ가 가장 중요시하는 세계관·기획안·USP 틀. 관련 퀘스트는 반드시 이 틀대로 쓴다.\n",
+                  CORE.read_text(encoding="utf-8"), "\n</rizz_core>\n"]
     if LEARNED.exists():
         parts += ["\n<learned_quests>\n", LEARNED.read_text(encoding="utf-8"), "\n</learned_quests>\n"]
     return "".join(parts)

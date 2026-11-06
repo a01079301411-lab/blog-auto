@@ -11,7 +11,8 @@ QUESTS = KIT / "quests.json"
 SUBMITTED = KIT / "submitted" / "submitted_cells.json"
 TEMPLATES = KIT / "templates"
 DOCS = KIT / "docs"
-LEARNED = DOCS / "퀘스트_자동학습.md"                  # 새 퀘스트 가이드 분석이 누적되는 파일
+LEARNED = DOCS / "퀘스트_자동학습.md"
+CORE = DOCS / "RIZZ_기획_USP_세계관.md"                # 세계관·기획안·USP·계약 핵심 지식 (로컬 전용)                  # 새 퀘스트 가이드 분석이 누적되는 파일
 OUTPUT = KIT / "output"
 
 MODEL = "claude-opus-5-5"
