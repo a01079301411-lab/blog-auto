@@ -233,6 +233,57 @@
    "script": "scripts/fill_2-3_q1.py",
    "submitted": "submitted/2-3_무료소스정리표_성민.xlsx",
    "extra": "docs/무료소스_즐겨찾기.html"
+  },
+  {
+   "id": "3-1-1",
+   "title": "숏폼 수익화란 무엇인가? — 랜딩까지 간 콘텐츠 25개 분석",
+   "status": "in_progress",
+   "template": "templates/3-1-1_template.xlsx",
+   "sheet": "분석표",
+   "name_cell": "B8",
+   "date_cell": "D8",
+   "data_rows": [
+    12,
+    36
+   ],
+   "groups": {
+    "12-16": "카드뉴스",
+    "17-21": "이미지 콘텐츠",
+    "22-26": "짧은 영상",
+    "27-31": "긴 영상",
+    "32-36": "글 콘텐츠"
+   },
+   "fixed": {
+    "C12": "instagram.com/p/DdBfondCQsX",
+    "C17": "instagram.com/p/Da_0c8RCVcc",
+    "C22": "instagram.com/nobrain._.girl/reel/DcTS-BPpbNh",
+    "C27": "youtube.com/watch?v=014MXDS1CB0",
+    "C32": "https://www.youtube.com/post/UgkxrpgiWw4hgNpsVyh12JNo61C_oxYCa_bm"
+   },
+   "columns": {
+    "C": "링크",
+    "D": "좋아요 / 댓글 수",
+    "E": "제작 방식\n(이 콘텐츠를 어떻게 만들었는지)",
+    "F": "USP\n(보는 사람이 '사야겠다'고 느끼게 만든 이유)",
+    "G": "랜딩",
+    "H": "어떤 상품을 전환시키는 콘텐츠인가"
+   },
+   "rules": [
+    "분류별 5개 총 25개, 각 분류 1번은 지정 링크",
+    "보고 끝나는 콘텐츠 제외 — 구독·구매·본편 등 어딘가로 랜딩시킨 것만",
+    "저장·공유·댓글 반응이 많은 '먹힌' 콘텐츠, 최신순 우선",
+    "25개마다 전환(H)·USP(F)·제작(E)·랜딩(G) 모두 작성",
+    "좋아요/댓글은 원본 실측, 예시 형식 '좋아요 30 / 댓글 88'"
+   ],
+   "final": {
+    "cells": [
+     "D37",
+     "D38"
+    ],
+    "ask": "내가 바로 따라 만들 수 있는 것 2가지"
+   },
+   "guide": "docs/3-1-1_퀘스트가이드.md (로컬 전용)",
+   "output": "3-1-1_숏폼수익화레퍼런스25_성민.xlsx"
   }
  ]
 }

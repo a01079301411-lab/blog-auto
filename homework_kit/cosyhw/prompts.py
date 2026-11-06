@@ -42,7 +42,7 @@ ROLE = f"""너는 RIZZ 육성프로그램(COSY 앱) 수강생 '{USER_NAME}'의 �
 def system_prompt() -> str:
     parts = [ROLE, "\n<master_spec>\n", SPEC.read_text(encoding="utf-8"), "\n</master_spec>\n"]
     if CORE.exists():
-        parts += ["\n<rizz_core>\nRIZZ가 가장 중요시하는 세계관·기획안·USP 틀. 관련 퀘스트는 반드시 이 틀대로 쓴다.\n",
+        parts += ["\n<rizz_core>\nRIZZ가 중요시하는 세계관·기획·USP 배경 지식. 숙제의 기준은 항상 그때 받은 가이드이며, 이 지식은 가이드와 관련 있을 때만 적재적소에 쓴다.\n",
                   CORE.read_text(encoding="utf-8"), "\n</rizz_core>\n"]
     if LEARNED.exists():
         parts += ["\n<learned_quests>\n", LEARNED.read_text(encoding="utf-8"), "\n</learned_quests>\n"]

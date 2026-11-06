@@ -318,6 +318,8 @@ def instagram_media(url: str) -> dict:
     m = re.search(r"instagram\.com/(?:[\w.]+/)?(?:p|reel|reels|tv)/([\w-]+)", url)
     if not m:
         raise ValueError(f"인스타 게시물 주소가 아님: {url}")
+    if not os.environ.get("IG_SESSIONID"):
+        return instagram_media_public(url)
     mid = ig_shortcode_to_id(m.group(1))
     r = _get(f"https://www.instagram.com/api/v1/media/{mid}/info/", headers=IG_HEADERS, cookies=_ig_cookies(), min_len=50)
     items = r.json().get("items") or []
@@ -326,6 +328,49 @@ def instagram_media(url: str) -> dict:
     out = _ig_item(items[0])
     out["collected_at"] = _now()
     return out
+
+
+def instagram_media_public(url: str) -> dict:
+    """로그인 없이: 게시물 페이지 og 메타('좋아요 1,234개, 댓글 56개 - 계정 날짜: 캡션')에서 좋아요·댓글·캡션."""
+    code = re.search(r"/(?:p|reel|reels|tv)/([\w-]+)", url).group(1)
+    html = _get(f"https://www.instagram.com/p/{code}/", headers={"User-Agent": "facebookexternalhit/1.1"}, min_len=500).text
+    m = re.search(r'<meta (?:property|name)="og:description" content="([^"]*)"', html) or \
+        re.search(r'<meta (?:property|name)="description" content="([^"]*)"', html)
+    if not m:
+        raise RuntimeError("인스타 공개 페이지에서 수치를 찾지 못함(로그인 벽) — IG_SESSIONID 설정 후 재시도")
+    import html as _h
+    desc = _h.unescape(m.group(1))
+    likes = re.search(r"([\d,.]+[KkMm만천]?)\s*(?:likes|좋아요|명이 좋아)", desc) or re.search(r"좋아요\s*([\d,.]+[만천]?)", desc)
+    comments = re.search(r"([\d,.]+[KkMm만천]?)\s*(?:comments|댓글)", desc) or re.search(r"댓글\s*([\d,.]+[만천]?)", desc)
+    lk = parse_count(likes.group(1)) if likes else None
+    cm = parse_count(comments.group(1)) if comments else None
+    return {"platform": "인스타그램", "url": url, "source": "공개 페이지 og:description(로그인 없음)",
+            "likes": lk, "likes_fmt": fmt_count(lk) if lk is not None else "미확인",
+            "comments": cm, "comments_fmt": fmt_count(cm) if cm is not None else "미확인",
+            "views": "웹 비로그인에서는 조회수 미노출", "summary": desc[:1500], "collected_at": _now()}
+
+
+def youtube_post(url: str) -> dict:
+    """유튜브 커뮤니티 게시물(/post/ID): 본문·좋아요·댓글·첨부 링크."""
+    pid = re.search(r"/post/([\w-]+)", url).group(1)
+    html = _get(f"https://www.youtube.com/post/{pid}?hl=ko&gl=KR", cookies={"CONSENT": "YES+1"}).text
+    data = _json_after(html, "ytInitialData") or {}
+    post = next(iter(_walk(data, "backstagePostRenderer")), {}) or {}
+    text = _txt(post.get("contentText"))
+    likes = _txt(post.get("voteCount"))
+    author = _txt(post.get("authorText"))
+    published = _txt(post.get("publishedTimeText"))
+    links = re.findall(r"https?://[^\s\"]+", text)
+    for ep in _walk(post, "urlEndpoint"):
+        if isinstance(ep, dict) and ep.get("url"):
+            links.append(ep["url"])
+    cm = re.search(r"댓글\s*([\d,.]+[만천]?)개", html)
+    return {"platform": "유튜브 커뮤니티", "url": url, "author": author, "published": published,
+            "likes": parse_count(likes), "likes_fmt": likes or "미확인",
+            "comments": parse_count(cm.group(1)) if cm else None, "comments_fmt": cm.group(1) if cm else "미확인",
+            "text": text[:3000], "links": list(dict.fromkeys(links))[:20],
+            "has_poll": bool(post.get("backstageAttachment", {}).get("pollRenderer")) if isinstance(post.get("backstageAttachment"), dict) else False,
+            "collected_at": _now()}
 
 
 def instagram_user(username: str, limit: int = 12) -> dict:
@@ -359,6 +404,8 @@ def collect(url: str) -> dict:
     """주소 종류를 보고 알맞은 수집기를 고른다."""
     host = (urlparse(url if "://" in url else "https://" + url).hostname or "").lower()
     if "youtu" in host:
+        if "/post/" in url:
+            return youtube_post(url)
         if re.search(r"/(watch|shorts|live|embed)|youtu\.be", url):
             return youtube_video(url)
         return youtube_channel(url, "shorts" if url.rstrip("/").endswith("shorts") else "videos")
