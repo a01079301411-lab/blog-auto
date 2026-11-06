@@ -3,121 +3,160 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
-/* Layout: 경기장 전광판 띠(회차 바) + 카드형 대상경기 리스트 + 우측 계산기. 탭 3개(시연/레퍼런스/운영설계) */
+/* Layout: 전광판 헤더 + 실시간 속보 티커 + 전 종목 경기 리스트(좌) / 속보 피드·계산기·요금제(우). 탭: 시연 · 요금제 · 레퍼런스 · 운영 설계 */
 :root{
   --bg:#F2F4F7; --surface:#FFFFFF; --ink:#13203A; --muted:#5B6578; --line:#DCE1E9;
-  --accent:#C8460E; --accent-soft:#FBE9E0; --turf:#1C6B58; --turf-soft:#E2F1EC; --warn:#9A6A00; --warn-soft:#FFF4D6; --bad:#B42318;
-  --board:#13203A; --board-fg:#F5F7FA;
+  --accent:#C8460E; --accent-soft:#FBE9E0; --turf:#1C6B58; --turf-soft:#E2F1EC; --warn:#9A6A00; --warn-soft:#FFF4D6; --bad:#B42318; --bad-soft:#FDE7E5;
+  --board:#13203A; --board-fg:#F5F7FA; --live:#E5484D;
   --display:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
   --body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0E1422; --surface:#161E30; --ink:#E8ECF3; --muted:#9AA4B8; --line:#2A3550;
-  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E;
-  --board:#060A13; --board-fg:#F5F7FA; color-scheme:dark}}
+  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E; --bad-soft:#3A1A18;
+  --board:#060A13; --board-fg:#F5F7FA; --live:#FF6369; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1422; --surface:#161E30; --ink:#E8ECF3; --muted:#9AA4B8; --line:#2A3550;
-  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E;
-  --board:#060A13; --board-fg:#F5F7FA; color-scheme:dark}
+  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E; --bad-soft:#3A1A18;
+  --board:#060A13; --board-fg:#F5F7FA; --live:#FF6369; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6}
-.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 a{color:var(--accent)}
 h1,h2,h3{text-wrap:balance;line-height:1.25;margin:0}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
-/* header */
+button{font:inherit;color:inherit}
 header.top{background:var(--board);color:var(--board-fg)}
-header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:14px}
+header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding-block:12px}
 .logo{font-family:var(--display);font-size:24px;letter-spacing:.5px}
 .logo span{color:var(--accent)}
 .age{border:2px solid var(--board-fg);border-radius:50%;width:30px;height:30px;display:grid;place-items:center;font-weight:700;font-size:12px}
 nav.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 nav.tabs a{color:var(--board-fg);opacity:.72;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:500}
 nav.tabs a[aria-current="page"]{opacity:1;background:rgba(255,255,255,.12)}
-nav.tabs a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .demo-flag{background:var(--warn-soft);color:var(--warn);font-size:13px}
 .demo-flag .wrap{padding-block:8px}
-/* round strip */
+.ticker{background:var(--board);color:var(--board-fg);border-top:1px solid rgba(255,255,255,.08);font-size:13px}
+.ticker .wrap{display:flex;gap:12px;align-items:center;padding-block:8px;overflow:hidden}
+.livedot{flex:none;display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--live)}
+.livedot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--live)}
+@media (prefers-reduced-motion:no-preference){.livedot::before{animation:pulse 1.4s infinite}@keyframes pulse{50%{opacity:.25}}}
+.tk{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tk b{color:var(--accent)}
 .strip{background:var(--board);color:var(--board-fg);border-top:1px solid rgba(255,255,255,.08)}
-.strip .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding-block:14px 18px}
-.strip .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}
-.strip .v{font-family:var(--mono);font-size:20px;font-weight:600}
+.strip .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding-block:12px 16px}
+.strip .k{font-size:11px;letter-spacing:.08em;opacity:.6}
+.strip .v{font-family:var(--mono);font-size:19px;font-weight:600}
 .strip .v.hot{color:var(--accent)}
-main{padding-block:24px 48px}
-section[hidden]{display:none}
-.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
-@media (max-width:900px){.grid{grid-template-columns:1fr}}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 14px;border-radius:999px;font:inherit;font-size:14px;cursor:pointer}
+main{padding-block:22px 48px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+@media (max-width:960px){.grid{grid-template-columns:1fr}}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);padding:5px 12px;border-radius:999px;font-size:14px;cursor:pointer}
+.chip small{font-family:var(--mono);color:var(--muted);margin-left:4px}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.list{display:flex;flex-direction:column;gap:12px}
+.chip[aria-pressed="true"] small{color:var(--bg);opacity:.7}
+.member{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.switch{position:relative;width:44px;height:24px;border-radius:12px;border:0;background:var(--line);cursor:pointer;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--surface);transition:left .15s}
+.switch[aria-checked="true"]{background:var(--turf)}
+.switch[aria-checked="true"]::after{left:23px}
+.group-h{font-size:12px;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px;display:flex;gap:8px;align-items:center}
+.group-h:first-child{margin-top:0}
+.group-h::after{content:"";flex:1;height:1px;background:var(--line)}
+.list{display:flex;flex-direction:column;gap:10px}
 .match{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.mhead{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 16px;cursor:pointer;width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left}
+.mhead{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;cursor:pointer;width:100%;background:none;border:0;text-align:left}
 .no{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
-.no b{display:block;font-size:15px;color:var(--ink)}
+.no b{display:block;font-size:14px;color:var(--ink)}
 .teams{min-width:0}
-.teams .lg{font-size:12px;color:var(--muted)}
-.teams .vs{font-weight:700;font-size:16px}
+.teams .lg{font-size:12px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.teams .vs{font-weight:700;font-size:15px}
 .teams .vs em{font-style:normal;color:var(--muted);font-weight:400;margin:0 6px}
+.flag{font-size:11px;font-weight:700;padding:0 6px;border-radius:4px}
+.flag.lu{background:var(--turf-soft);color:var(--turf)}
+.flag.mv{background:var(--accent-soft);color:var(--accent)}
+.flag.inj{background:var(--bad-soft);color:var(--bad)}
 .odds{display:flex;gap:6px}
-.odd{min-width:58px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+.odd{min-width:56px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:3px 6px}
 .odd .t{font-size:11px;color:var(--muted);display:block}
 .odd .o{font-family:var(--mono);font-weight:600}
-@media (max-width:560px){.mhead{grid-template-columns:auto minmax(0,1fr)}.odds{grid-column:1/-1}.odd{flex:1}}
-.mbody{border-top:1px dashed var(--line);padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
-.blk h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
-.prob{display:grid;grid-template-columns:70px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
+.odd .d{font-family:var(--mono);font-size:10px;display:block}
+.d.up{color:var(--turf)}.d.dn{color:var(--accent)}
+@media (max-width:600px){.mhead{grid-template-columns:44px minmax(0,1fr)}.odds{grid-column:1/-1}.odd{flex:1}}
+.mbody{border-top:1px dashed var(--line);padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.blk{min-width:0}
+.blk h4{margin:0 0 8px;font-size:12px;letter-spacing:.04em;color:var(--muted)}
+.prob{display:grid;grid-template-columns:76px minmax(0,1fr) 50px;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
+.prob span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar{height:10px;background:var(--line);border-radius:5px;position:relative;overflow:hidden}
 .bar i{position:absolute;inset:0 auto 0 0;border-radius:5px}
-.bar i.m{background:var(--turf)}
-.bar i.k{background:var(--muted);opacity:.55}
+.bar i.m{background:var(--turf)}.bar i.k{background:var(--muted);opacity:.55}
+.locked{position:relative}
+.locked .inner{filter:blur(6px);user-select:none;pointer-events:none}
+.locked .lockmsg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font-size:13px;font-weight:700}
+.lockmsg span{background:var(--surface);border:1px solid var(--line);padding:6px 10px;border-radius:8px}
 .form{display:flex;gap:4px;align-items:center;margin-bottom:6px;font-size:13px}
-.form .nm{width:92px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fw,.fl,.fd{width:22px;height:22px;border-radius:4px;display:grid;place-items:center;font-size:11px;font-weight:700;font-family:var(--mono)}
+.form .nm{width:84px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fw,.fl,.fd{width:21px;height:21px;border-radius:4px;display:grid;place-items:center;font-size:11px;font-weight:700}
 .fw{background:var(--turf-soft);color:var(--turf)}.fl{background:var(--accent-soft);color:var(--accent)}.fd{background:var(--line);color:var(--muted)}
-.kv{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:13px}
-.kv .h{color:var(--muted)}
-.kv .num{text-align:right}
-.note{grid-column:1/-1;background:var(--bg);border-radius:8px;padding:12px 14px;font-size:14px}
+svg.spark{width:100%;height:56px;display:block}
+.note{grid-column:1/-1;background:var(--bg);border-radius:8px;padding:10px 14px;font-size:14px}
 .note b{color:var(--accent)}
-.gap{display:inline-block;font-family:var(--mono);font-size:12px;padding:1px 8px;border-radius:999px}
+.gap{display:inline-block;font-family:var(--mono);font-size:12px;padding:0 8px;border-radius:999px}
 .gap.pos{background:var(--turf-soft);color:var(--turf)}.gap.neg{background:var(--accent-soft);color:var(--accent)}
-aside .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
-aside h3{font-size:16px;margin-bottom:10px}
+.off{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:12px 14px;font-size:14px;color:var(--muted)}
+aside .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+aside h3{font-size:16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.feed li{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px}
+.feed time{font-family:var(--mono);color:var(--muted)}
+.feed .lat{font-family:var(--mono);font-size:11px;color:var(--turf)}
+.feed .pro{font-size:10px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:0 4px;margin-left:4px}
 label{font-size:13px;color:var(--muted);display:block;margin-bottom:4px}
-.inrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
-input[type=number]{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:15px}
-.out{font-size:13px;display:grid;grid-template-columns:1fr auto;gap:4px 8px}
+.inrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+input[type=number]{width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:15px}
+.out{font-size:13px;display:grid;grid-template-columns:1fr auto;gap:3px 8px}
 .out .num{text-align:right}
 .small{font-size:12px;color:var(--muted)}
-.record table{width:100%;border-collapse:collapse;font-size:13px}
-.record td{padding:4px 0;border-bottom:1px solid var(--line)}
-.record td:last-child{text-align:right;font-family:var(--mono)}
+.btn{display:inline-block;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;text-decoration:none}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
 footer{border-top:1px solid var(--line);background:var(--surface)}
-footer .wrap{padding-block:20px;font-size:13px;color:var(--muted);display:grid;gap:6px}
+footer .wrap{padding-block:18px;font-size:13px;color:var(--muted);display:grid;gap:6px}
 footer b{color:var(--ink)}
-/* doc tabs */
-.doc{max-width:900px}
-.doc h2{font-size:24px;margin:8px 0 6px}
-.doc h3{font-size:18px;margin:28px 0 10px}
-.doc p{max-width:68ch}
+.doc{max-width:980px}
+.doc h2{font-size:24px;margin:6px 0 6px}
+.doc h3{font-size:18px;margin:30px 0 10px}
+.doc p{max-width:70ch}
 .lead{color:var(--muted);margin-top:0}
 .tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.tbl table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
-.tbl th,.tbl td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-.tbl th{font-size:12px;color:var(--muted);letter-spacing:.04em;background:var(--bg)}
+.tbl table{border-collapse:collapse;width:100%;min-width:780px;font-size:14px}
+.tbl th,.tbl td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:12px;color:var(--muted);background:var(--bg)}
 .tbl tr:last-child td{border-bottom:0}
+.tbl td.num{text-align:right;white-space:nowrap}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:4px;font-weight:700;white-space:nowrap}
-.tag.ok{background:var(--turf-soft);color:var(--turf)}.tag.est{background:var(--warn-soft);color:var(--warn)}.tag.no{background:var(--accent-soft);color:var(--bad)}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.tag.ok{background:var(--turf-soft);color:var(--turf)}.tag.est{background:var(--warn-soft);color:var(--warn)}.tag.no{background:var(--bad-soft);color:var(--bad)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
 .box h4{margin:0 0 6px;font-size:15px}
 .box ul{margin:0;padding-left:18px;font-size:14px}
-.box.stop{border-color:var(--bad)}
-.box.stop h4{color:var(--bad)}
-ol.steps{padding-left:20px}
-ol.steps li{margin-bottom:6px}
+.box.stop{border-color:var(--bad)}.box.stop h4{color:var(--bad)}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.plan{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.plan.best{border:2px solid var(--accent)}
+.plan .pn{font-weight:700}
+.plan .pr{font-family:var(--mono);font-size:26px;font-weight:600}
+.plan .pr small{font-size:13px;color:var(--muted);font-family:var(--body)}
+.plan ul{margin:0;padding-left:18px;font-size:14px;flex:1}
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;counter-reset:f}
+.flow div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
+.flow div b{display:block;font-size:14px}
+.flow div b::before{counter-increment:f;content:counter(f) ". ";color:var(--accent);font-family:var(--mono)}
+ol.steps{padding-left:20px}ol.steps li{margin-bottom:6px}
 @media (prefers-reduced-motion:no-preference){.mbody{animation:fade .2s ease}@keyframes fade{from{opacity:.4}to{opacity:1}}}
 </style>
 
@@ -127,242 +166,301 @@ ol.steps li{margin-bottom:6px}
     <div class="age" title="만 19세 이상 이용">19</div>
     <nav class="tabs" aria-label="화면 전환">
       <a href="#demo" data-tab="demo" aria-current="page">시연 화면</a>
-      <a href="#refs" data-tab="refs">레퍼런스 분석</a>
+      <a href="#pricing" data-tab="pricing">요금제</a>
+      <a href="#refs" data-tab="refs">레퍼런스</a>
       <a href="#plan" data-tab="plan">운영 설계</a>
     </nav>
   </div>
 </header>
-<div class="demo-flag"><div class="wrap">시연용 화면입니다. 회차·배당·확률·전적은 모두 <b>예시 데이터</b>이며 실제 발매 정보가 아닙니다. 실제 대상경기와 배당은 베트맨(betman.co.kr)에서 확인합니다.</div></div>
+<div class="demo-flag"><div class="wrap">시연 화면입니다. 경기·배당·확률·속보는 모두 <b>예시 데이터</b>이며, 실제 대상경기와 배당은 베트맨(betman.co.kr)에서 확인합니다.</div></div>
 
-<!-- ============ 시연 ============ -->
+<!-- ================= 시연 ================= -->
 <section id="tab-demo">
+  <div class="ticker"><div class="wrap"><span class="livedot">속보</span><span class="tk" id="tk"></span></div></div>
   <div class="strip"><div class="wrap">
-    <div><div class="k">프로토 승부식</div><div class="v">예시 회차</div></div>
-    <div><div class="k">대상 경기</div><div class="v" id="cnt">5</div></div>
-    <div><div class="k">종목</div><div class="v">KBL · V리그 · K리그1</div></div>
-    <div><div class="k">분석 기준일</div><div class="v">11.07 (토)</div></div>
-    <div><div class="k">지난 30일 모델 적중</div><div class="v hot">58.4%</div></div>
+    <div><div class="k">분석 기준</div><div class="v">11.07 (토)</div></div>
+    <div><div class="k">대상 경기</div><div class="v" id="cnt">0</div></div>
+    <div><div class="k">종목 · 리그</div><div class="v">6 · 16</div></div>
+    <div><div class="k">평균 반영 지연</div><div class="v hot">38초</div></div>
+    <div><div class="k">지난 30일 모델 적중</div><div class="v">57.9%</div></div>
   </div></div>
 
   <main class="wrap">
     <div class="grid">
       <div style="min-width:0">
-        <div class="chips" role="group" aria-label="종목 필터">
-          <button class="chip" aria-pressed="true" data-f="all">전체</button>
-          <button class="chip" aria-pressed="false" data-f="KBL">농구 KBL</button>
-          <button class="chip" aria-pressed="false" data-f="V리그">배구 V리그</button>
-          <button class="chip" aria-pressed="false" data-f="K리그1">축구 K리그1</button>
+        <div class="toolbar">
+          <div class="chips" role="group" aria-label="종목 필터" id="chips"></div>
+          <div class="member"><span id="memtxt">무료 회원 화면</span><button class="switch" id="mem" role="switch" aria-checked="false" aria-label="프로 회원 화면으로 보기"></button></div>
         </div>
-        <div class="list" id="list"></div>
+        <div id="list"></div>
       </div>
 
       <aside>
         <div class="card">
+          <h3>실시간 속보 <span class="small">출처 감지 → 반영</span></h3>
+          <ul class="feed" id="feed"></ul>
+        </div>
+        <div class="card">
           <h3>배당 → 확률 계산기</h3>
-          <p class="small" style="margin-top:0">배당을 넣으면 시장이 보는 확률과 발매사 몫(마진)을 보여줍니다. 무승부가 없는 종목은 무 칸을 비워 둡니다.</p>
           <div class="inrow">
             <div><label for="o1">승</label><input id="o1" type="number" step="0.01" value="1.75"></div>
-            <div><label for="o2">무</label><input id="o2" type="number" step="0.01" value="3.10"></div>
-            <div><label for="o3">패</label><input id="o3" type="number" step="0.01" value="2.95"></div>
+            <div><label for="o2">무</label><input id="o2" type="number" step="0.01" value="3.30"></div>
+            <div><label for="o3">패</label><input id="o3" type="number" step="0.01" value="3.05"></div>
           </div>
           <div class="out" id="calc"></div>
+          <p class="small" style="margin-bottom:0">무승부가 없는 종목은 무 칸을 비웁니다.</p>
         </div>
-        <div class="card record">
-          <h3>모델 적중 기록 (예시)</h3>
-          <table>
-            <tr><td>KBL 승패</td><td>61.2% · 98경기</td></tr>
-            <tr><td>V리그 승패</td><td>63.0% · 54경기</td></tr>
-            <tr><td>K리그1 승무패</td><td>47.8% · 46경기</td></tr>
-            <tr><td>언더/오버</td><td>53.1% · 128경기</td></tr>
-          </table>
-          <p class="small">틀린 경기까지 전부 공개합니다. 기록은 매일 오전 자동 갱신됩니다.</p>
+        <div class="card">
+          <h3>프로 회원 <span class="num" style="color:var(--accent)">월 14,900원</span></h3>
+          <ul style="margin:0 0 10px;padding-left:18px;font-size:14px">
+            <li>전 경기 모델 확률과 시장 차이</li>
+            <li>라인업·부상·배당 급변 즉시 알림</li>
+            <li>종목별 백테스트·필터 도구</li>
+          </ul>
+          <a class="btn" href="#pricing">요금제 보기</a>
         </div>
       </aside>
     </div>
   </main>
 </section>
 
-<!-- ============ 레퍼런스 ============ -->
-<section id="tab-refs" hidden>
+<!-- ================= 요금제 ================= -->
+<section id="tab-pricing" hidden>
   <main class="wrap doc">
-    <h2>레퍼런스 분석</h2>
-    <p class="lead">국내 프로토 정보 서비스를 성격별로 묶었습니다. 각 레퍼런스에서 빌릴 패턴과 우리 버전을 함께 적었습니다. 구조만 빌리고 데이터·문구·디자인은 새로 만듭니다.</p>
-
-    <h3>1. 참고할 레퍼런스</h3>
-    <div class="tbl"><table>
-      <thead><tr><th>레퍼런스</th><th>유형</th><th>확인</th><th>빌릴 패턴</th><th>우리 버전</th></tr></thead>
-      <tbody>
-        <tr><td><b>베트맨 토토가이드</b><br><span class="small">betman.co.kr</span></td><td>공식 발매 사이트 안의 대상경기 분석</td><td><span class="tag ok">외부 확인</span></td><td>회차 단위 정보 구조, 마감시각 중심 안내, 게임유형(일반·핸디캡·언더오버·SUM) 분류</td><td>상단 회차 바 + 유형별 탭. 구매는 항상 베트맨으로 연결하고 직접 중개하지 않음</td></tr>
-        <tr><td><b>와이즈토토</b><br><span class="small">wisetoto.com</span></td><td>민간 프로토 정보·배당 사이트</td><td><span class="tag est">검색 언급, 기능 미검증</span></td><td>대상경기 표 + 배당 변동 + 경기별 상세 진입</td><td>배당표 옆에 "모델 확률 vs 시장 확률" 막대를 붙여 차별화</td></tr>
-        <tr><td><b>언론 '토토 투데이'</b><br><span class="small">OSEN · 더팩트 · 일간스포츠</span></td><td>회차 발매 기사, 투표율 기사</td><td><span class="tag ok">외부 확인</span></td><td>"농구팬 77%가 ○○ 승리 예상" 같은 투표율 제목 공식, 회차 발매 즉시 기사화</td><td>회차 발매 당일 자동 브리핑 글 + "팬 예상 vs 데이터" 비교 제목</td></tr>
-        <tr><td><b>리그 공식 기록실</b><br><span class="small">KBO · K리그 데이터포털 · KBL · KOVO</span></td><td>원천 기록</td><td><span class="tag est">URL·이용약관 재확인 필요</span></td><td>팀·선수 세부 기록, 일정, 결과</td><td>수집 원천. 이용약관상 크롤링 허용 범위를 먼저 확인하고, 막히면 유료 데이터 API 검토</td></tr>
-        <tr><td><b>네이버 스포츠 · 라이브스코어류</b></td><td>일정·문자중계·순위</td><td><span class="tag est">추정</span></td><td>경기 카드 하나에 시간·순위·최근 흐름을 압축하는 UI</td><td>경기 카드에 최근 5경기 칩과 결장자 줄 추가</td></tr>
-        <tr><td><b>해외 확률형 매체</b><br><span class="small">Opta Analyst, 과거 FiveThirtyEight 예측</span></td><td>모델 확률 공개형 콘텐츠</td><td><span class="tag est">사전 지식</span></td><td>승률을 % 막대로 보여주고 적중 기록을 공개해 신뢰 확보</td><td>"모델 적중 기록" 상시 공개 박스. 틀린 경기도 숨기지 않음</td></tr>
-      </tbody>
-    </table></div>
-
-    <h3>2. 레퍼런스에서 뺀 곳</h3>
+    <h2>요금제</h2>
+    <p class="lead">고객이 사는 것은 <b>빠른 정보와 분석 도구</b>입니다. 적중을 보장하거나 적중하면 보상하는 상품은 만들지 않습니다.</p>
+    <div class="plans">
+      <div class="plan"><div class="pn">무료</div><div class="pr">0원</div><ul><li>전 경기 일정·배당·최근 5경기</li><li>빅매치 3경기 모델 확률</li><li>속보 피드 (5분 지연)</li><li>배당 계산기</li></ul><span class="small">광고 노출 · 회원가입 유도</span></div>
+      <div class="plan best"><div class="pn">프로</div><div class="pr">14,900<small>원/월</small></div><ul><li>전 경기 모델 확률·시장 차이</li><li>속보 실시간 (웹푸시·텔레그램 채널)</li><li>배당 변동 그래프 전체</li><li>광고 제거</li></ul><span class="small">연간 결제 119,000원 (33% 할인)</span></div>
+      <div class="plan"><div class="pn">프로 플러스</div><div class="pr">29,900<small>원/월</small></div><ul><li>프로 전체 기능</li><li>카카오 알림톡 알림</li><li>필터·백테스트 도구 (조건 저장)</li><li>주말 빅매치 심층 리포트</li></ul><span class="small">알림톡 건당 비용 반영</span></div>
+      <div class="plan"><div class="pn">판매점 · 매체용</div><div class="pr">49,000<small>원/월</small></div><ul><li>회차별 출력용 분석지 PDF</li><li>매장 TV용 화면</li><li>언론·유튜버용 데이터 라이선스</li></ul><span class="small">B2B 계약 · 세금계산서</span></div>
+    </div>
+    <h3>판매 문구 원칙</h3>
     <div class="cols">
-      <div class="box stop">
-        <h4>참고하지 않은 유형</h4>
-        <ul>
-          <li>"분석·커뮤니티"를 내걸고 보증업체·안전놀이터 배너를 다는 사이트</li>
-          <li>텔레그램·카톡 유료 픽방, 리딩방</li>
-          <li>베트맨·스포츠토토를 흉내 낸 유사 도메인</li>
-        </ul>
-        <p class="small" style="margin-bottom:0">검색 상위의 상당수가 이 유형입니다. 불법 사이트 홍보·알선은 처벌과 신고포상 대상이라 구조도 따라 하지 않습니다.</p>
-      </div>
-      <div class="box">
-        <h4>시장 빈자리</h4>
-        <ul>
-          <li>국내 프로토 분석은 기사형(발매 안내)과 배당표형으로 양분되어 있음</li>
-          <li><b>확률 모델 + 적중 기록 공개</b>를 합친 국내 종목 전용 서비스는 이번 조사에서 찾지 못함 <span class="tag est">추정</span></li>
-          <li>지역 연고 콘텐츠(예: 대구 한국가스공사 홈경기 데이터 리포트)는 경쟁이 약함</li>
-        </ul>
-      </div>
+      <div class="box"><h4>쓰는 표현</h4><ul><li>"라인업 확정 평균 38초 안에 알림"</li><li>"16개 리그 모델 확률"</li><li>"틀린 경기까지 전부 공개한 적중 기록"</li></ul></div>
+      <div class="box stop"><h4>쓰지 않는 표현</h4><ul><li>"적중 보장", "필승", "100%"</li><li>"못 맞히면 환불", "적중 시 상금"</li><li>"대신 구매해 드립니다", "공동구매"</li></ul></div>
     </div>
   </main>
 </section>
 
-<!-- ============ 운영 설계 ============ -->
+<!-- ================= 레퍼런스 ================= -->
+<section id="tab-refs" hidden>
+  <main class="wrap doc">
+    <h2>레퍼런스</h2>
+    <p class="lead">레퍼런스 → 빌린 패턴 → 우리 버전 순서로 정리했습니다. 구조만 빌리고 데이터·문구·디자인은 새로 만듭니다.</p>
+    <h3>1. 국내</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>레퍼런스</th><th>확인</th><th>빌릴 패턴</th><th>우리 버전</th></tr></thead>
+      <tbody>
+        <tr><td><b>베트맨 토토가이드</b></td><td><span class="tag ok">외부 확인</span></td><td>회차 단위 구조, 게임유형 분류</td><td>회차 바 + 유형 필터. 구매는 베트맨으로만 안내</td></tr>
+        <tr><td><b>와이즈토토</b></td><td><span class="tag est">이름만 확인</span></td><td>대상경기 표, 배당 변동</td><td>배당표 옆에 모델 확률·변동 그래프</td></tr>
+        <tr><td><b>언론 '토토 투데이'</b><br><span class="small">OSEN·더팩트·일간스포츠</span></td><td><span class="tag ok">외부 확인</span></td><td>회차 발매 즉시 기사, 투표율 제목</td><td>회차 발매 1분 안에 자동 브리핑 페이지</td></tr>
+        <tr><td><b>리그 공식 기록실</b><br><span class="small">KBO·K리그·KBL·KOVO·WKBL</span></td><td><span class="tag est">약관 확인 필요</span></td><td>원천 기록, 라인업 발표</td><td>국내 리그 수집 원천</td></tr>
+      </tbody>
+    </table></div>
+    <h3>2. 해외 (구독 수익 모델)</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>레퍼런스</th><th>확인</th><th>빌릴 패턴</th><th>우리 버전</th></tr></thead>
+      <tbody>
+        <tr><td><b>Action Network</b> (미국)</td><td><span class="tag est">사전 지식</span></td><td>무료 기사 + 유료 PRO(모델 예측, 배당 변동, 알림) 구독</td><td>무료/프로 2단 구조 그대로</td></tr>
+        <tr><td><b>Rotowire · Underdog News</b></td><td><span class="tag est">사전 지식</span></td><td>부상·라인업 속보를 가장 빨리 전달하는 것 자체가 상품</td><td>속보 피드 + "반영 지연 n초" 표기</td></tr>
+        <tr><td><b>FotMob · SofaScore · Flashscore</b></td><td><span class="tag est">사전 지식</span></td><td>팀 즐겨찾기 → 라인업·골 푸시 알림</td><td>관심 팀 등록 → 웹푸시</td></tr>
+        <tr><td><b>Opta Analyst · 과거 FiveThirtyEight</b></td><td><span class="tag est">사전 지식</span></td><td>확률 막대, 적중 기록 공개</td><td>모델 적중 기록 상시 공개</td></tr>
+        <tr><td><b>OddsPortal류 배당 비교</b></td><td><span class="tag est">사전 지식</span></td><td>배당 변동 히스토리 그래프</td><td>베트맨 배당 변동만 그래프화. 해외 업체명·링크는 쓰지 않음</td></tr>
+      </tbody>
+    </table></div>
+    <h3>3. 참고하지 않은 유형</h3>
+    <div class="box stop"><ul>
+      <li>보증업체·안전놀이터 배너를 다는 '분석 커뮤니티'</li>
+      <li>텔레그램·카톡 유료 픽방, 리딩방, 공동구매방</li>
+      <li>베트맨·스포츠토토 유사 도메인</li>
+    </ul></div>
+  </main>
+</section>
+
+<!-- ================= 운영 설계 ================= -->
 <section id="tab-plan" hidden>
   <main class="wrap doc">
     <h2>운영 설계</h2>
-    <p class="lead">결론: <b>무료 데이터 분석 + 적중 기록 공개 + 검색·쇼츠 유입 + 광고·제휴 수익</b> 구조로 갑니다. 유료 픽 판매와 사설 배너는 하지 않습니다.</p>
+    <p class="lead">결론: <b>"속도 + 전 종목 모델 확률"을 구독으로 판다.</b> 무료 페이지로 검색 유입을 받고, 속보·전체 확률·알림은 유료로 잠급니다.</p>
 
-    <h3>1. 법·정책 체크리스트 (오픈 전 필수)</h3>
+    <h3>1. 법적 한계선</h3>
     <div class="tbl"><table>
-      <thead><tr><th>항목</th><th>기준</th><th>상태</th></tr></thead>
+      <thead><tr><th>행위</th><th>판단</th><th>근거</th></tr></thead>
       <tbody>
-        <tr><td>합법 발매처</td><td>체육진흥투표권은 스포츠토토(베트맨·판매점)만 합법. 사이트는 정보 제공만, 구매 대행·중개 금지</td><td><span class="tag ok">확정</span></td></tr>
-        <tr><td>불법 사이트 광고</td><td>국민체육진흥법상 불법 도박 사이트 홍보·알선은 처벌 대상, 홍보자도 신고포상 대상</td><td><span class="tag ok">외부 확인</span></td></tr>
-        <tr><td>유료 픽·멤버십</td><td>직접 처벌 조항은 이번 조사로 확인 못함. 사기·유사행위 시비가 잦아 운영하지 않는 것을 권장</td><td><span class="tag est">변호사 확인 필요</span></td></tr>
-        <tr><td>애드센스</td><td>도박 관련 콘텐츠 광고 정책이 국가별로 다름. 정보성 분석 글의 수익화 허용 범위 확인</td><td><span class="tag est">업데이트 필요</span></td></tr>
-        <tr><td>네이버 블로그</td><td>'토토' 키워드 글은 노출 제한 가능성. 블로그는 이사업 채널과 반드시 분리</td><td><span class="tag est">추정</span></td></tr>
-        <tr><td>이용자 보호 표기</td><td>만 19세 이상 표기, 도박문제 상담 1336, 불법스포츠토토 신고 1899-1119 하단 고정</td><td><span class="tag ok">반영됨</span></td></tr>
-        <tr><td>데이터 저작권</td><td>리그 기록실·언론사 데이터의 크롤링·재게시 허용 범위 확인. 배당은 출처 표기</td><td><span class="tag est">업데이트 필요</span></td></tr>
+        <tr><td>경기 분석·데이터·속보 제공 (무료·유료)</td><td><span class="tag ok">가능</span></td><td>유사행위는 '발행 + 적중자 보상'이 함께 있어야 성립 (대법원 2017도13140). 정보 판매 자체는 해당하지 않는다는 해석 <span class="tag est">변호사 확인</span></td></tr>
+        <tr><td>베트맨 공식 배당·회차 정보 표시</td><td><span class="tag ok">가능</span></td><td>출처 표기. 수집 방식은 베트맨 이용약관 확인 <span class="tag est">업데이트 필요</span></td></tr>
+        <tr><td>예측 이벤트 (맞히면 상품 지급)</td><td><span class="tag no">금지</span></td><td>예측권 발행 + 적중 보상 구조가 유사행위로 볼 여지</td></tr>
+        <tr><td>"못 맞히면 환불" 상품</td><td><span class="tag no">금지</span></td><td>결과에 따라 돈이 오가 유사행위·사기 시비</td></tr>
+        <tr><td>구매대행, 공동구매, 조합 구매방</td><td><span class="tag no">금지</span></td><td>제26조 ②: 체육진흥투표권 구매 중개·알선 금지 (공식 투표권도 포함)</td></tr>
+        <tr><td>사설·해외 사이트 배너·링크·코드</td><td><span class="tag no">금지</span></td><td>유사행위 홍보 금지, 5년 이하 징역 또는 5천만원 이하 벌금 (제48조)</td></tr>
+        <tr><td>해외 시장 배당 수치를 참고 지표로 표시</td><td><span class="tag est">회색</span></td><td>업체명·링크 없이 평균 수치만 쓰더라도 홍보로 볼 여지. 오픈 전 변호사 판단 후 결정</td></tr>
       </tbody>
     </table></div>
 
-    <h3>2. 수익 구조</h3>
-    <div class="cols">
-      <div class="box"><h4>한다</h4><ul>
-        <li>디스플레이 광고 (정책 확인 후)</li>
-        <li>스포츠용품·직관 굿즈 쿠팡파트너스</li>
-        <li>유튜브 쇼츠 "오늘의 데이터 3줄" → 사이트 유입</li>
-        <li>지역 스포츠 펍·용품점 일반 광고</li>
-      </ul></div>
-      <div class="box stop"><h4>하지 않는다</h4><ul>
-        <li>유료 픽, VIP방, 적중 보장 문구</li>
-        <li>사설·해외 베팅 배너, 제휴 코드</li>
-        <li>텔레그램 리딩방 운영</li>
-        <li>"확실", "필승", "100%" 표현</li>
-      </ul></div>
-    </div>
-
-    <h3>3. 자동화 파이프라인 (blog-auto 재사용)</h3>
-    <ol class="steps">
-      <li><b>수집</b>: 회차 발매 정보·대상경기 목록, 리그 공식 기록(팀 득실, 홈/원정, 최근 5경기, 결장자)</li>
-      <li><b>모델</b>: 농구·배구는 Elo + 홈 어드밴티지, 축구는 포아송 득점 모델로 승·무·패 확률 산출</li>
-      <li><b>비교</b>: 배당을 내재 확률로 바꿔 마진을 걷어낸 뒤 모델 확률과의 차이를 계산</li>
-      <li><b>발행</b>: 경기별 분석 글 자동 생성 → WordPress 신규 도메인 (기존 cuppang.com·Tistory와 분리)</li>
-      <li><b>검증</b>: 경기 종료 후 결과를 자동 채점해 적중 기록 페이지 갱신</li>
-    </ol>
-
-    <h3>4. 30일 로드맵</h3>
+    <h3>2. 돈 버는 구조</h3>
     <div class="tbl"><table>
-      <thead><tr><th>주차</th><th>할 일</th><th>완료 기준</th></tr></thead>
+      <thead><tr><th>수익원</th><th>방식</th><th class="num">월 매출 가정</th><th>시점</th></tr></thead>
       <tbody>
-        <tr><td class="num">1주</td><td>법률 상담 1회, 도메인·호스팅, 데이터 원천 이용약관 확인</td><td>사용 가능한 데이터 목록 확정</td></tr>
-        <tr><td class="num">2주</td><td>KBL 1종목으로 수집기·Elo 모델 구축, 지난 시즌 백테스트</td><td>백테스트 적중률·브라이어 점수 산출</td></tr>
-        <tr><td class="num">3주</td><td>이 시연 화면을 실제 데이터로 연결, 자동 글 하루 5개</td><td>사이트 오픈, 검색 등록</td></tr>
-        <tr><td class="num">4주</td><td>V리그 추가, 쇼츠 하루 1개, 적중 기록 페이지 공개</td><td>방문자·체류시간 첫 측정</td></tr>
+        <tr><td><b>프로 구독</b></td><td>월 14,900원 · 방문자 10만 명 중 0.8% 전환</td><td class="num">약 1,190만원</td><td>3개월차</td></tr>
+        <tr><td><b>프로 플러스</b></td><td>월 29,900원 · 구독자의 20%가 상위 요금제</td><td class="num">약 480만원</td><td>3개월차</td></tr>
+        <tr><td><b>판매점 B2B</b></td><td>월 49,000원 · 전국 판매점 50곳</td><td class="num">약 245만원</td><td>4개월차</td></tr>
+        <tr><td><b>단건 리포트</b></td><td>빅매치·월드컵·한국시리즈 등 3,900원</td><td class="num">시즌 변동</td><td>이벤트 시</td></tr>
+        <tr><td><b>광고·제휴</b></td><td>디스플레이 광고, 굿즈·유니폼 쿠팡파트너스, 스포츠 중계 OTT 제휴</td><td class="num">약 100~300만원</td><td>1개월차</td></tr>
+        <tr><td><b>유튜브·쇼츠</b></td><td>"오늘 경기 데이터 3줄" 매일 자동 생성 → 사이트 유입</td><td class="num">유입용</td><td>1개월차</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small">모든 수치는 <b>[추정]</b>입니다. 방문자 10만 명은 6개월 목표치입니다.</p>
+
+    <h3>3. 가장 빠른 업데이트 구조</h3>
+    <div class="flow">
+      <div><b>감시</b>경기마다 시간표 생성: 24시간 전 · 90분 전 · 라인업 발표 시각 · 경기 중 · 종료 직후</div>
+      <div><b>수집</b>라인업 발표 구간은 15~30초 간격 폴링, 평소는 5~10분</div>
+      <div><b>변화 감지</b>직전 값과 비교해 바뀐 항목만 이벤트로 기록</div>
+      <div><b>요약</b>부상·라인업 뉴스를 AI로 한 줄 요약 (원문 복제 금지, 사실만)</div>
+      <div><b>발송</b>웹푸시 · 텔레그램 채널 · 카카오 알림톡 → 페이지 자동 갱신</div>
+      <div><b>채점</b>종료 1분 뒤 결과 반영, 적중 기록 자동 갱신</div>
+    </div>
+    <div class="tbl" style="margin-top:14px"><table>
+      <thead><tr><th>종목</th><th>데이터 원천</th><th>비용</th><th>확인</th></tr></thead>
+      <tbody>
+        <tr><td>해외 축구 (EPL·라리가·분데스·세리에·리그1·UCL·J리그)</td><td>API-Football: 라인업·경기 중 15초 갱신, 전 플랜 전 엔드포인트</td><td class="num">무료 100회/일 · 유료 월 $19~</td><td><span class="tag est">가격은 출처마다 다름, 공식 확인</span></td></tr>
+        <tr><td>MLB</td><td>MLB Stats API (공개)</td><td class="num">무료</td><td><span class="tag est">약관 확인</span></td></tr>
+        <tr><td>NBA · NHL</td><td>리그 공개 통계 엔드포인트 또는 유료 API</td><td class="num">무료~유료</td><td><span class="tag est">추정</span></td></tr>
+        <tr><td>KBO·K리그·KBL·WKBL·V리그</td><td>리그 공식 기록실 수집 + 구단 공식 SNS 감시</td><td class="num">개발비</td><td><span class="tag est">약관 확인</span></td></tr>
+        <tr><td>회차·배당</td><td>베트맨 공개 페이지</td><td class="num">개발비</td><td><span class="tag est">약관 확인</span></td></tr>
+        <tr><td>우천취소 (야구·축구)</td><td>기상청 단기예보 API</td><td class="num">무료</td><td><span class="tag est">추정</span></td></tr>
       </tbody>
     </table></div>
 
-    <h3>5. 주간 KPI</h3>
+    <h3>4. 편법이지만 합법인 성장 방법</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>방법</th><th>내용</th><th>위험</th></tr></thead>
+      <tbody>
+        <tr><td><b>경기별 페이지 자동 생성</b></td><td>모든 대상경기마다 "A vs B 분석" 페이지를 자동 생성. 하루 수십~수백 개 URL</td><td>내용이 겹치면 구글이 저품질로 판단. 경기마다 다른 수치·노트 필수</td></tr>
+        <tr><td><b>키워드 우회</b></td><td>'토토' 대신 '경기 예측', '승부 예측', '팀명 + 라인업', '프로토 회차'</td><td>낮음</td></tr>
+        <tr><td><b>속보 선점</b></td><td>라인업 발표 직후 "○○ 선발 확정" 페이지를 먼저 띄워 검색 상단 선점</td><td>기사 문장 복제 금지, 사실만 사용</td></tr>
+        <tr><td><b>무료 텔레그램 채널</b></td><td>속보 일부를 5분 늦게 무료 공개 → 실시간은 유료 구독으로 유도</td><td>픽·구매 권유 없이 정보만</td></tr>
+        <tr><td><b>판매점 영업</b></td><td>전국 스포츠토토 판매점에 출력용 분석지 무료 체험 → 유료 전환</td><td>판매점 계약·규정 확인</td></tr>
+        <tr><td><b>쇼츠 자동화</b></td><td>경기 데이터 → 대본 → 음성·자막 자동 생성, 매일 업로드</td><td>플랫폼 도박 콘텐츠 정책</td></tr>
+        <tr><td><b>커뮤니티 시딩</b></td><td>스포츠 커뮤니티에 데이터 이미지 공유 (링크는 프로필에만)</td><td>각 커뮤니티 홍보 규정 위반 시 차단</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>5. 오픈 전 막힐 수 있는 곳</h3>
     <div class="cols">
-      <div class="box"><h4>콘텐츠</h4><ul><li>분석 글 25개</li><li>쇼츠 5개</li><li>적중 기록 매일 갱신</li></ul></div>
-      <div class="box"><h4>유입</h4><ul><li>검색 노출 키워드 수</li><li>재방문율 30%+</li><li>평균 체류 2분+</li></ul></div>
-      <div class="box"><h4>모델</h4><ul><li>브라이어 점수 주간 추이</li><li>종목별 적중률</li><li>시장 대비 차이가 컸던 경기 사후 검토</li></ul></div>
+      <div class="box"><h4>결제 (PG)</h4><ul><li>토토 관련 업종은 PG 심사에서 거절될 수 있음 <span class="tag est">추정</span></li><li>업종은 "스포츠 데이터 정보서비스"로 정확히 쓰고 사이트 문구를 미리 정리한 뒤 심사</li></ul></div>
+      <div class="box"><h4>광고·앱</h4><ul><li>애드센스와 구글플레이는 도박 관련 콘텐츠 정책이 따로 있음 <span class="tag est">업데이트 필요</span></li><li>앱보다 웹(PWA) + 웹푸시로 먼저 시작</li></ul></div>
+      <div class="box"><h4>사업자</h4><ul><li>통신판매업 신고, 사업자 업종 추가</li><li>이사업 사업자와 분리 권장 (여성기업·공공영업 이미지 보호)</li></ul></div>
     </div>
+
+    <h3>6. 60일 로드맵</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>기간</th><th>할 일</th><th>완료 기준</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1~2주</td><td>변호사 상담, 사업자·PG 심사, 데이터 약관 확인, 도메인</td><td>법적 회색 항목 결론, 결제 가능</td></tr>
+        <tr><td class="num">3~4주</td><td>축구(API-Football)·KBL·V리그 수집기와 모델, 지난 시즌 백테스트</td><td>종목별 적중률·브라이어 점수</td></tr>
+        <tr><td class="num">5~6주</td><td>이 시연 화면을 실데이터로 연결, 속보 파이프라인, 경기별 페이지 자동 생성</td><td>평균 반영 지연 60초 이내</td></tr>
+        <tr><td class="num">7~8주</td><td>NBA·NHL·해외축구 확대, 유료 구독 오픈, 판매점 10곳 체험</td><td>첫 유료 결제 발생</td></tr>
+      </tbody>
+    </table></div>
   </main>
 </section>
 
 <footer><div class="wrap">
-  <div><b>프로토데이터룸은 체육진흥투표권을 판매하거나 중개하지 않습니다.</b> 모든 분석은 참고 정보이며 결과를 보장하지 않습니다. 구매는 공식 발매처 베트맨과 스포츠토토 판매점에서만 가능합니다.</div>
+  <div><b>프로토데이터룸은 체육진흥투표권을 판매·중개·대행하지 않습니다.</b> 모든 분석은 참고 정보이며 결과를 보장하지 않습니다. 구매는 공식 발매처 베트맨과 스포츠토토 판매점에서만 가능합니다.</div>
   <div>만 19세 미만은 구매할 수 없습니다 · 도박문제 상담 <b>1336</b> · 불법스포츠토토 신고 <b>1899-1119</b> (cleansports.kspo.or.kr)</div>
 </div></footer>
 
 <script>
+const SPORTS=[["all","전체"],["축구","축구"],["농구","농구"],["배구","배구"],["야구","야구"],["하키","하키"]];
+// 예시 데이터. odds: [승,무,패], open: 개장 배당, model: 모델 확률
 const M=[
- {no:"001",lg:"KBL",time:"14:00",home:"대구 한국가스공사",away:"서울 SK",type:"승패",odds:[2.10,null,1.42],model:[0.43,0,0.57],
-  form:{h:"WLWWL",a:"WWLWW"},stats:[["득점",81.4,84.2],["실점",80.1,77.6],["리바운드",35.2,37.9],["3점 성공률",34.1,32.8]],
-  h2h:"최근 4번 맞대결 2승 2패",out:"SK 주전 가드 발목 부상으로 출전 불투명(예시)",
-  note:"시장은 SK 승리를 약 60%로 보지만, 홈 승률과 SK 백코트 공백을 반영한 모델은 43:57로 차이가 작다고 봅니다. 핸디캡 +4.5 구간이 관전 포인트입니다."},
- {no:"002",lg:"KBL",time:"16:00",home:"창원 LG",away:"부산 KCC",type:"승패",odds:[1.55,null,1.95],model:[0.61,0,0.39],
-  form:{h:"WWWLW",a:"LWLLW"},stats:[["득점",79.8,82.5],["실점",74.3,81.0],["리바운드",38.4,34.1],["3점 성공률",35.6,33.9]],
-  h2h:"최근 4번 맞대결 LG 3승",out:"결장자 없음(예시)",
-  note:"LG의 실점 74.3은 리그 최저 수준(예시). 시장 확률과 모델 확률이 거의 같아 데이터상 특이점이 적은 경기입니다."},
- {no:"003",lg:"V리그",time:"14:00",home:"대한항공",away:"현대캐피탈",type:"승패",odds:[1.80,null,1.70],model:[0.47,0,0.53],
-  form:{h:"WLWLW",a:"WWWLW"},stats:[["공격 성공률",52.8,54.1],["세트당 블로킹",2.4,2.7],["서브 득점/세트",1.3,1.5],["리시브 효율",38.2,36.0]],
-  h2h:"이번 시즌 1번 맞대결 현대캐피탈 3:1 승",out:"결장자 없음(예시)",
-  note:"양 팀 차이가 작은 경기. 세트 핸디캡 ±1.5보다 총 세트수 언더/오버(3.5) 쪽 데이터가 뚜렷합니다. 최근 5번 중 4번이 4세트 이상."},
- {no:"004",lg:"V리그",time:"16:00",home:"흥국생명",away:"현대건설",type:"승패",odds:[1.62,null,1.88],model:[0.55,0,0.45],
-  form:{h:"WWLWW",a:"WLWWL"},stats:[["공격 성공률",41.9,40.7],["세트당 블로킹",2.1,2.5],["서브 득점/세트",1.1,0.9],["리시브 효율",33.5,35.8]],
-  h2h:"지난 시즌 6번 맞대결 3승 3패",out:"현대건설 미들블로커 1명 컨디션 관리(예시)",
-  note:"시장은 흥국생명 약 54%, 모델은 55%. 수치상 차이가 거의 없어 분석 글은 '관전 포인트' 중심으로 작성합니다."},
- {no:"005",lg:"K리그1",time:"16:30",home:"전북",away:"울산",type:"승무패",odds:[1.75,3.10,2.95],model:[0.50,0.27,0.23],
-  form:{h:"WDWWL",a:"LDWLD"},stats:[["경기당 득점",1.62,1.31],["경기당 실점",0.94,1.22],["기대득점 xG",1.55,1.28],["점유율 %",54.2,51.0]],
-  h2h:"최근 5번 맞대결 2승 2무 1패",out:"울산 주전 공격수 경고 누적 결장(예시)",
-  note:"포아송 모델은 1-0, 1-1, 2-1 순으로 확률이 높게 나옵니다. 무승부 확률 27%로 시장(약 30%)보다 약간 낮게 봅니다."}
+ {sp:"축구",lg:"EPL",no:"0101",time:"21:30",home:"아스널",away:"첼시",odds:[1.75,3.30,3.05],open:[1.85,3.25,2.85],model:[0.53,0.25,0.22],free:true,flags:["mv"],form:["WWDWL","WLDWW"],note:"아스널 배당이 1.85에서 1.75로 내려갔습니다. 첼시 주전 미드필더 결장 소식(예시) 직후 움직였습니다."},
+ {sp:"축구",lg:"라리가",no:"0108",time:"24:00",home:"레알 마드리드",away:"바르셀로나",odds:[2.15,3.45,2.45],open:[2.10,3.50,2.55],model:[0.41,0.26,0.33],flags:[],form:["WWWDW","WWLWW"],note:"두 팀 경기당 기대득점 합계 3.4(예시). 언더/오버 3.5 기준점 근처라 득점 쪽 데이터가 더 뚜렷합니다."},
+ {sp:"축구",lg:"분데스리가",no:"0112",time:"23:30",home:"바이에른 뮌헨",away:"도르트문트",odds:[1.38,4.60,5.40],open:[1.40,4.50,5.20],model:[0.70,0.17,0.13],flags:["lu"],form:["WWWWD","LWWDL"],note:"선발 명단 확정. 바이에른은 로테이션 없이 최정예(예시)."},
+ {sp:"축구",lg:"K리그1",no:"0120",time:"16:30",home:"전북",away:"울산",odds:[1.75,3.10,2.95],open:[1.80,3.05,2.90],model:[0.50,0.27,0.23],free:true,flags:["inj"],form:["WDWWL","LDWLD"],note:"울산 주전 공격수 경고 누적 결장(예시). 포아송 모델은 1-0, 1-1, 2-1 순."},
+ {sp:"축구",lg:"UCL",no:"—",time:"",off:"챔피언스리그 다음 라운드는 다음 주 화·수 대상 회차에 편성 예정(예시)."},
+ {sp:"농구",lg:"NBA",no:"0201",time:"09:30",home:"보스턴",away:"밀워키",odds:[1.40,null,2.25],open:[1.48,null,2.10],model:[0.66,0,0.34],flags:["inj","mv"],form:["WWLWW","LWLWL"],note:"밀워키 주전 포워드 출전 의문(예시) 발표 4분 뒤 배당 1.48 → 1.40."},
+ {sp:"농구",lg:"KBL",no:"0230",time:"14:00",home:"대구 한국가스공사",away:"서울 SK",odds:[2.10,null,1.42],open:[2.00,null,1.48],model:[0.43,0,0.57],free:true,flags:["inj"],form:["WLWWL","WWLWW"],note:"SK 주전 가드 발목 부상(예시). 대구 홈 승률 반영 시 시장보다 대구 쪽 확률이 높게 나옵니다."},
+ {sp:"농구",lg:"WKBL",no:"0240",time:"18:00",home:"아산 우리은행",away:"용인 삼성생명",odds:[1.55,null,1.95],open:[1.55,null,1.95],model:[0.60,0,0.40],flags:[],form:["WWLWL","LWWLW"],note:"배당 변동 없음. 시장과 모델 차이 1%p 이내."},
+ {sp:"배구",lg:"V리그 남자",no:"0301",time:"14:00",home:"대한항공",away:"현대캐피탈",odds:[1.80,null,1.70],open:[1.75,null,1.75],model:[0.47,0,0.53],flags:["lu"],form:["WLWLW","WWWLW"],note:"최근 맞대결 5번 중 4번이 4세트 이상. 총 세트수 오버 3.5 쪽 데이터가 뚜렷합니다."},
+ {sp:"배구",lg:"V리그 여자",no:"0305",time:"16:00",home:"흥국생명",away:"현대건설",odds:[1.62,null,1.88],open:[1.62,null,1.88],model:[0.55,0,0.45],flags:[],form:["WWLWW","WLWWL"],note:"시장과 모델 차이 1%p 이내. 관전 포인트 중심 리포트."},
+ {sp:"야구",lg:"KBO · MLB · NPB",no:"—",time:"",off:"야구는 시즌 종료. 스토브리그 FA·트레이드 속보만 제공하며, 내년 3월 시범경기부터 분석을 재개합니다."},
+ {sp:"하키",lg:"NHL",no:"0401",time:"09:00",home:"뉴욕 레인저스",away:"토론토",odds:[1.95,null,1.80],open:[2.05,null,1.72],model:[0.51,0,0.49],flags:["lu","mv"],form:["WLWWL","WWLLW"],note:"레인저스 주전 골리 선발 확정(예시) 후 배당 2.05 → 1.95. 프로토 하키 편성 여부는 회차마다 확인합니다."}
 ];
+const FEED=[
+ {t:"09:41",lat:"31초",txt:"[NHL] 레인저스 주전 골리 선발 확정",pro:true},
+ {t:"09:22",lat:"44초",txt:"[NBA] 밀워키 주전 포워드 출전 의문 발표",pro:true},
+ {t:"09:26",lat:"자동",txt:"[NBA] 보스턴 승 배당 1.48 → 1.40",pro:true},
+ {t:"08:55",lat:"29초",txt:"[K리그1] 울산 주전 공격수 경고 누적 결장",pro:false},
+ {t:"08:10",lat:"52초",txt:"[KBL] SK 주전 가드 발목 부상, 출전 불투명",pro:false},
+ {t:"08:00",lat:"1분",txt:"[프로토] 예시 회차 발매 시작, 대상 10경기 페이지 생성",pro:false},
+ {t:"07:30",lat:"38초",txt:"[KBO] FA 시장 첫 계약 발표 (스토브리그)",pro:false}
+];
+let pro=false,filter="all";
 const pct=x=>(x*100).toFixed(1)+"%";
-function fair(odds){const inv=odds.map(o=>o?1/o:0);const s=inv.reduce((a,b)=>a+b,0);return{fair:inv.map(v=>v/s),margin:s-1}}
-function formChips(s){return [...s].map(c=>`<span class="${c==="W"?"fw":c==="L"?"fl":"fd"}">${c==="W"?"승":c==="L"?"패":"무"}</span>`).join("")}
+function fair(o){const inv=o.map(x=>x?1/x:0),s=inv.reduce((a,b)=>a+b,0);return{fair:inv.map(v=>v/s),margin:s-1}}
+const chipsHtml=f=>[...f].map(c=>`<span class="${c==="W"?"fw":c==="L"?"fl":"fd"}">${c==="W"?"승":c==="L"?"패":"무"}</span>`).join("");
+const FL={lu:["lu","라인업 확정"],mv:["mv","배당 급변"],inj:["inj","부상"]};
+function spark(open,now,idx){
+  // 개장 → 현재 사이 예시 변동 6포인트
+  const W=260,H=56,pad=6;const series=idx.map(k=>{const a=open[k],b=now[k];return[0,.2,.45,.6,.8,1].map((t,i)=>a+(b-a)*t+(i%2?0.01:-0.01)*(i>0&&i<5))});
+  const all=series.flat(),mn=Math.min(...all),mx=Math.max(...all),r=mx-mn||1;
+  const cols=["var(--turf)","var(--muted)","var(--accent)"];
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="배당 변동">`+
+   series.map((s,j)=>{const pts=s.map((v,i)=>`${pad+i*(W-2*pad)/5},${pad+(1-(v-mn)/r)*(H-2*pad)}`).join(" ");const last=pts.split(" ").pop().split(",");
+   return `<polyline fill="none" stroke="${cols[idx[j]]}" stroke-width="2" points="${pts}"/><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="${cols[idx[j]]}"/>`}).join("")+`</svg>`}
 function card(m,i){
-  const f=fair(m.odds),lbl=m.odds[1]?["승","무","패"]:["승","패"];
-  const idx=m.odds[1]?[0,1,2]:[0,2];
-  const oddsHtml=idx.map((k,j)=>`<div class="odd"><span class="t">${lbl[j]}</span><span class="o">${m.odds[k].toFixed(2)}</span></div>`).join("");
-  const probs=idx.map((k,j)=>{const d=m.model[k]-f.fair[k];const name=k===0?m.home:k===2?m.away:"무승부";
-    return `<div class="prob"><span>${name.length>6?name.slice(-4):name}</span><div><div class="bar" title="모델"><i class="m" style="width:${m.model[k]*100}%"></i></div><div class="bar" style="margin-top:3px;height:6px" title="시장"><i class="k" style="width:${f.fair[k]*100}%"></i></div></div><span class="num">${pct(m.model[k])}</span></div>`}).join("");
-  const diffs=idx.map(k=>{const d=(m.model[k]-f.fair[k])*100;const name=k===0?"홈":k===2?"원정":"무";return `<span class="gap ${d>=0?"pos":"neg"}">${name} ${d>=0?"+":""}${d.toFixed(1)}p</span>`}).join(" ");
-  const stats=m.stats.map(s=>`<span>${s[0]}</span><span class="num">${s[1]}</span><span class="num">${s[2]}</span>`).join("");
-  return `<article class="match" data-lg="${m.lg}">
-    <button class="mhead" aria-expanded="${i===0}" aria-controls="b${i}">
+  if(m.off)return `<div class="off"><b>${m.lg}</b> · ${m.off}</div>`;
+  const idx=m.odds[1]?[0,1,2]:[0,2],lbl={0:"승",1:"무",2:"패"},f=fair(m.odds);
+  const oddsHtml=idx.map(k=>{const d=m.odds[k]-m.open[k];return `<div class="odd"><span class="t">${lbl[k]}</span><span class="o">${m.odds[k].toFixed(2)}</span><span class="d ${d>0?"up":d<0?"dn":""}">${d?(d>0?"▲":"▼")+Math.abs(d).toFixed(2):"–"}</span></div>`}).join("");
+  const nm=k=>k===0?m.home:k===2?m.away:"무승부";
+  const probs=idx.map(k=>`<div class="prob"><span>${nm(k)}</span><div><div class="bar"><i class="m" style="width:${m.model[k]*100}%"></i></div><div class="bar" style="margin-top:3px;height:6px"><i class="k" style="width:${f.fair[k]*100}%"></i></div></div><span class="num">${pct(m.model[k])}</span></div>`).join("");
+  const diffs=idx.map(k=>{const d=(m.model[k]-f.fair[k])*100;return `<span class="gap ${d>=0?"pos":"neg"}">${lbl[k]} ${d>=0?"+":""}${d.toFixed(1)}p</span>`}).join(" ");
+  const lock=!pro&&!m.free;
+  const flags=m.flags.map(x=>`<span class="flag ${FL[x][0]}">${FL[x][1]}</span>`).join("");
+  return `<article class="match">
+    <button class="mhead" aria-expanded="false" aria-controls="b${i}">
       <div class="no">${m.time}<b>${m.no}</b></div>
-      <div class="teams"><div class="lg">${m.lg} · ${m.type}</div><div class="vs">${m.home}<em>vs</em>${m.away}</div></div>
+      <div class="teams"><div class="lg">${m.lg}${flags}</div><div class="vs">${m.home}<em>vs</em>${m.away}</div></div>
       <div class="odds">${oddsHtml}</div>
     </button>
-    <div class="mbody" id="b${i}" ${i===0?"":"hidden"}>
-      <div class="blk"><h4>모델 확률 (위) · 시장 확률 (아래)</h4>${probs}<div class="small" style="margin-top:6px">시장 마진 ${pct(f.margin)} 제거 후 비교 · ${diffs}</div></div>
-      <div class="blk"><h4>최근 5경기</h4><div class="form"><span class="nm">${m.home}</span>${formChips(m.form.h)}</div><div class="form"><span class="nm">${m.away}</span>${formChips(m.form.a)}</div><div class="small">${m.h2h}<br>${m.out}</div></div>
-      <div class="blk"><h4>시즌 지표</h4><div class="kv"><span class="h">항목</span><span class="h num">홈</span><span class="h num">원정</span>${stats}</div></div>
+    <div class="mbody" id="b${i}" hidden>
+      <div class="blk ${lock?"locked":""}"><h4>모델 확률(위) · 시장 확률(아래)</h4><div class="inner">${probs}<div class="small">마진 ${pct(f.margin)} 제거 후 · ${diffs}</div></div>${lock?'<div class="lockmsg"><span>프로 회원 전용</span></div>':""}</div>
+      <div class="blk ${lock?"locked":""}"><h4>배당 변동 (개장 → 현재)</h4><div class="inner">${spark(m.open,m.odds,idx)}<div class="small">${idx.map(k=>`${lbl[k]} ${m.open[k].toFixed(2)}→${m.odds[k].toFixed(2)}`).join(" · ")}</div></div>${lock?'<div class="lockmsg"><span>프로 회원 전용</span></div>':""}</div>
+      <div class="blk"><h4>최근 5경기</h4><div class="form"><span class="nm">${m.home}</span>${chipsHtml(m.form[0])}</div><div class="form"><span class="nm">${m.away}</span>${chipsHtml(m.form[1])}</div></div>
       <div class="note"><b>데이터 노트</b> · ${m.note}</div>
     </div>
   </article>`}
-const list=document.getElementById("list");
-list.innerHTML=M.map(card).join("");
-list.addEventListener("click",e=>{const b=e.target.closest(".mhead");if(!b)return;const body=document.getElementById(b.getAttribute("aria-controls"));const open=b.getAttribute("aria-expanded")==="true";b.setAttribute("aria-expanded",!open);body.hidden=open});
-document.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>{
-  document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===c));
-  let n=0;document.querySelectorAll(".match").forEach(m=>{const show=c.dataset.f==="all"||m.dataset.lg===c.dataset.f;m.hidden=!show;if(show)n++});
-  document.getElementById("cnt").textContent=n;
-}));
+function render(){
+  const list=document.getElementById("list");let html="",n=0;
+  SPORTS.slice(1).forEach(([s])=>{if(filter!=="all"&&filter!==s)return;const g=M.filter(m=>m.sp===s);if(!g.length)return;
+    html+=`<div class="group-h">${s}</div><div class="list">${g.map(m=>card(m,M.indexOf(m))).join("")}</div>`;n+=g.filter(m=>!m.off).length});
+  list.innerHTML=html;document.getElementById("cnt").textContent=n;
+  const first=list.querySelector(".mhead");if(first){first.setAttribute("aria-expanded","true");document.getElementById(first.getAttribute("aria-controls")).hidden=false}
+  document.getElementById("feed").innerHTML=FEED.map(x=>{const hide=!pro&&x.pro;return `<li><time>${x.t}</time><div>${hide?'<span style="filter:blur(4px)">'+x.txt+"</span>":x.txt}${x.pro?'<span class="pro">PRO</span>':""}<div class="lat">${hide?"무료 회원은 5분 뒤 공개":"감지 후 "+x.lat+" 만에 반영"}</div></div></li>`}).join("");
+}
+document.getElementById("chips").innerHTML=SPORTS.map(([k,l])=>`<button class="chip" data-f="${k}" aria-pressed="${k==="all"}">${l}<small>${k==="all"?M.filter(m=>!m.off).length:M.filter(m=>m.sp===k&&!m.off).length}</small></button>`).join("");
+document.getElementById("chips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;filter=c.dataset.f;document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===c));render()});
+document.getElementById("list").addEventListener("click",e=>{const b=e.target.closest(".mhead");if(!b)return;const body=document.getElementById(b.getAttribute("aria-controls"));const open=b.getAttribute("aria-expanded")==="true";b.setAttribute("aria-expanded",!open);body.hidden=open});
+document.getElementById("mem").addEventListener("click",e=>{pro=!pro;e.currentTarget.setAttribute("aria-checked",pro);document.getElementById("memtxt").textContent=pro?"프로 회원 화면":"무료 회원 화면";render()});
+// 티커
+let ti=0;const tk=document.getElementById("tk");
+function tick(){const x=FEED[ti%FEED.length];tk.innerHTML=`<b>${x.t}</b> ${x.txt}`;ti++}
+tick();setInterval(tick,4000);
 function calc(){
-  const v=["o1","o2","o3"].map(id=>parseFloat(document.getElementById(id).value));
-  const ok=v.map(x=>x>1?x:null);
-  const out=document.getElementById("calc");
+  const v=["o1","o2","o3"].map(id=>parseFloat(document.getElementById(id).value)),ok=v.map(x=>x>1?x:null),out=document.getElementById("calc");
   if(!ok[0]||!ok[2]){out.innerHTML='<span>승·패 배당을 1.01 이상으로 입력하세요.</span><span></span>';return}
-  const f=fair(ok);const names=["승","무","패"];
-  let h="";ok.forEach((o,i)=>{if(o)h+=`<span>${names[i]} 시장 확률</span><span class="num">${pct(f.fair[i])}</span>`});
-  h+=`<span>발매사 마진</span><span class="num">${pct(f.margin)}</span><span>환급률(이론)</span><span class="num">${pct(1/(1+f.margin))}</span>`;
-  out.innerHTML=h}
+  const f=fair(ok),names=["승","무","패"];let h="";
+  ok.forEach((o,i)=>{if(o)h+=`<span>${names[i]} 시장 확률</span><span class="num">${pct(f.fair[i])}</span>`});
+  h+=`<span>발매사 마진</span><span class="num">${pct(f.margin)}</span><span>이론 환급률</span><span class="num">${pct(1/(1+f.margin))}</span>`;out.innerHTML=h}
 ["o1","o2","o3"].forEach(id=>document.getElementById(id).addEventListener("input",calc));calc();
-const tabs=["demo","refs","plan"];
-function route(){const t=tabs.includes(location.hash.slice(1))?location.hash.slice(1):"demo";
-  tabs.forEach(x=>{document.getElementById("tab-"+x).hidden=x!==t});
-  document.querySelectorAll("nav.tabs a").forEach(a=>a.toggleAttribute("aria-current",a.dataset.tab===t));
-  document.querySelectorAll('nav.tabs a[aria-current]').forEach(a=>a.setAttribute("aria-current","page"))}
-window.addEventListener("hashchange",route);route();
+const TABS=["demo","pricing","refs","plan"];
+function route(){const h=location.hash.slice(1),t=TABS.includes(h)?h:"demo";
+  TABS.forEach(x=>{document.getElementById("tab-"+x).hidden=x!==t});
+  document.querySelectorAll("nav.tabs a").forEach(a=>{if(a.dataset.tab===t)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
+  if(h&&TABS.includes(h))window.scrollTo(0,0)}
+window.addEventListener("hashchange",route);
+render();route();
 </script>
