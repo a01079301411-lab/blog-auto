@@ -37,6 +37,9 @@ jobs:
           path: |
             sports-data/data/state.json
             sports-data/data/events.json
+            sports-data/data/history
+            sports-data/data/apisports_budget.json
+            sports-data/data/apisports_cache.json
           key: sports-state-${{ github.run_id }}
           restore-keys: sports-state-
 
@@ -45,6 +48,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APISPORTS_KEY: ${{ secrets.APISPORTS_KEY }}
         run: python -m collector.run
 
       - name: Save state
@@ -54,6 +58,9 @@ jobs:
           path: |
             sports-data/data/state.json
             sports-data/data/events.json
+            sports-data/data/history
+            sports-data/data/apisports_budget.json
+            sports-data/data/apisports_cache.json
           key: sports-state-${{ github.run_id }}
 
       - uses: actions/configure-pages@v5

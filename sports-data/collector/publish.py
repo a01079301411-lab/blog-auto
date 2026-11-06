@@ -11,6 +11,8 @@ import shutil
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from .espn import inj_ko
+
 KST = timezone(timedelta(hours=9))
 WD = "월화수목금토일"
 SPORT_KO = {"soccer": "축구", "basketball": "농구", "hockey": "아이스하키", "baseball": "야구", "volleyball": "배구", "etc": "기타"}
@@ -122,6 +124,7 @@ class Site:
     def __init__(self, cfg, ko, now, out):
         self.cfg, self.ko, self.now, self.out = cfg, ko, now, out
         self.pages = []
+        self.models = {}
 
     def ad(self):
         c = self.cfg.get("adsense_client")
@@ -159,7 +162,7 @@ class Site:
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="{r}assets/style.css">{head_ads}{ld}</head><body>
 <header><div class="wrap"><a class="logo" href="{r}index.html">프로토<span>데이터룸</span></a>
-<nav><a href="{r}index.html">오늘 경기</a><a href="{r}proto.html">프로토 회차</a><a href="{r}news.html">속보</a><a href="{r}about.html">소개</a></nav></div></header>
+<nav><a href="{r}index.html">오늘 경기</a><a href="{r}proto.html">프로토 회차</a><a href="{r}news.html">속보</a><a href="{r}record.html">적중 기록</a><a href="{r}about.html">소개</a></nav></div></header>
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div><b>{esc(c['site_name'])}는 체육진흥투표권을 판매·중개·대행하지 않습니다.</b> 모든 정보는 참고용이며 결과를 보장하지 않습니다. 구매는 공식 발매처(베트맨, 스포츠토토 판매점)에서만 가능합니다.</div>
 <div>만 19세 미만 구매 불가 · 도박문제 상담 1336 · 불법스포츠토토 신고 1899-1119</div>
@@ -185,6 +188,10 @@ class Site:
             badges += '<span class="b live">LIVE</span>'
         if g["state"] in ("in", "post") and g["home"].get("score") is not None:
             st = f'<span class="num">{esc(str(g["home"]["score"]))} : {esc(str(g["away"]["score"]))}</span>'
+        elif g.get("prob") and g["state"] == "pre":
+            pr = g["prob"]
+            fav = ko(g["home"]["name"]) if pr["home"] >= pr["away"] else ko(g["away"]["name"])
+            st = f'<span class="small">{esc(fav)} <b class="num">{max(pr["home"], pr["away"]) * 100:.0f}%</b></span>'
         else:
             st = f'<span class="small">{status_ko(g)}</span>'
         href = ("../" * depth) + f"m/{slug(g)}.html"
@@ -218,7 +225,7 @@ class Site:
         H, A = ko(g["home"]["name"]), ko(g["away"]["name"])
         dt = to_kst(g["start_utc"])
         sport = SPORT_KO.get(g["sport"], "")
-        title = f"{H} vs {A} 경기 분석 · {kdate(dt)} {g['league_name']} 라인업·부상·최근 5경기"
+        title = f"{H} vs {A} 경기 분석 · {kdate(dt)} {g['league_name']} 승률·라인업·부상"
         hrec, arec = record_ko(g["home"].get("record"), g["sport"]), record_ko(g["away"].get("record"), g["sport"])
         l5 = g.get("last_five", {})
         hf, af = form_count(l5.get(g["home"].get("id"))), form_count(l5.get(g["away"].get("id")))
@@ -234,8 +241,6 @@ class Site:
             def fs(c):
                 return f"{c['W']}승" + (f" {c['D']}무" if c.get("D") else "") + f" {c['L']}패"
             p.append(f"최근 5경기는 {esc(H)} {fs(hf)}, {esc(A)} {fs(af)}입니다.")
-        if g.get("series"):
-            p.append(f"이번 시즌 맞대결: {esc(g['series'])}.")
         n_inj = sum(len(v) for v in inj.values())
         if n_inj:
             p.append(f"현재 부상·결장 관련 선수는 두 팀 합계 {n_inj}명입니다.")
@@ -247,6 +252,8 @@ class Site:
             p.append(f"경기는 {esc(H)} {esc(str(g['home'].get('score')))} : {esc(str(g['away'].get('score')))} {esc(A)}로 끝났습니다.")
         if g.get("note"):
             p.append(esc(g["note"]))
+        if g.get("comment"):
+            p.append(esc(g["comment"][0]))
 
         info = [("경기 시각", f"{kdate(dt)} {ktime(dt)} (한국시간)"), ("리그", f"{g['league_name']} · {sport}"),
                 ("장소", g.get("venue") or "-"), ("상태", status_ko(g))]
@@ -254,7 +261,32 @@ class Site:
 
         prob_html = ""
         pr = g.get("prob")
-        if pr:
+        an = g.get("analysis")
+        if an:
+            rows = [(H, pr["home"])] + ([("무승부", pr["draw"])] if "draw" in pr else []) + [(A, pr["away"])]
+            bars = "".join(f'<div class="prob"><span>{esc(n)}</span><div class="bar"><i style="width:{v * 100:.0f}%"></i></div><span class="num">{v * 100:.1f}%</span></div>' for n, v in rows)
+            extra = []
+            if an.get("xg"):
+                extra.append(f"<tr><th>예상 득점</th><td>{esc(H)} {an['xg'][0]:.2f} · {esc(A)} {an['xg'][1]:.2f}</td></tr>")
+                extra.append("<tr><th>유력 스코어</th><td>" + ", ".join(f"{s_} ({p_ * 100:.0f}%)" for s_, p_ in an["top_scores"]) + "</td></tr>")
+                extra.append(f"<tr><th>{an['ou_line']} 오버 / 언더</th><td class='num'>{an['over'] * 100:.0f}% / {(1 - an['over']) * 100:.0f}%</td></tr>")
+                extra.append(f"<tr><th>양 팀 모두 득점</th><td class='num'>{an['btts'] * 100:.0f}%</td></tr>")
+            if an.get("exp_score"):
+                extra.append(f"<tr><th>예상 점수</th><td>{esc(H)} {an['exp_score'][0]} : {an['exp_score'][1]} {esc(A)}</td></tr>")
+                extra.append(f"<tr><th>예상 점수차 / 총점</th><td class='num'>{an['exp_margin']:+.1f} / {an['exp_total']:.1f}</td></tr>")
+            ftab = "".join(
+                f"<tr><td>{esc(f['label'])}</td><td>{esc(f['text'])}</td><td class='num'>{f['pts']:+.0f}</td>"
+                f"<td>{esc(H) if f['pts'] > 0 else esc(A) if f['pts'] < 0 else '-'}</td></tr>" for f in an["factors"])
+            com = "".join(f"<li>{esc(c_)}</li>" for c_ in g.get("comment", []))
+            prob_html = (f"<h2>승률 분석 <span class='b {'lu' if an['confidence'] == '높음' else 'inj' if an['confidence'] == '낮음' else 'live'}'>신뢰도 {an['confidence']}</span></h2>"
+                         f"<div class='card'>{bars}</div>"
+                         f"<h2>분석 코멘트</h2><div class='card'><ul style='margin:0;padding-left:18px'>{com}</ul></div>"
+                         + (f"<div class='card tbl'><table>{''.join(extra)}</table></div>" if extra else "")
+                         + f"<h2>승률에 반영한 요인</h2><div class='card tbl'><table><tr><th>요인</th><th>근거</th><th>영향(Elo)</th><th>유리</th></tr>{ftab}"
+                         f"<tr><th colspan='2'>합계 (홈 기준, +면 홈 유리)</th><td class='num'><b>{an['diff']:+.0f}</b></td><td></td></tr></table></div>"
+                         "<p class='small'>Elo 100점 차이는 승률 약 64% 대 36%에 해당합니다. 표본이 적은 요인은 자동으로 영향이 줄어듭니다. "
+                         f"분석은 데이터 갱신 때마다 다시 계산됩니다 (최근 {self.now.astimezone(KST).strftime('%m-%d %H:%M')}).</p>")
+        elif pr:
             rows = [(H, pr["home"])] + ([("무승부", pr["draw"])] if "draw" in pr else []) + [(A, pr["away"])]
             prob_html = ("<h2>시즌 성적 기반 기본 확률</h2><div class='card'>" +
                          "".join(f'<div class="prob"><span>{esc(n)}</span><div class="bar"><i style="width:{v * 100:.0f}%"></i></div><span class="num">{v * 100:.1f}%</span></div>' for n, v in rows) +
@@ -275,7 +307,7 @@ class Site:
             name = ko(g[side]["name"])
             if not items:
                 return f"<div class='card'><b>{esc(name)}</b><p class='small'>보고된 부상자가 없습니다.</p></div>"
-            li = "".join(f"<tr><td>{esc(i.get('name') or '')}</td><td>{esc(i.get('status') or '')}</td><td>{esc(i.get('part') or '')}</td></tr>" for i in items)
+            li = "".join(f"<tr><td>{esc(i.get('name') or '')}</td><td>{esc(inj_ko(i.get('status')))}</td><td>{esc(i.get('part') or '')}</td></tr>" for i in items)
             return f"<div class='card'><b>{esc(name)}</b><div class='tbl'><table><tr><th>선수</th><th>상태</th><th>부위</th></tr>{li}</table></div></div>"
 
         def l5_block(side):
@@ -292,9 +324,10 @@ class Site:
 
         sections = [f"<p class='small'>{esc(g['league_name'])} · {sport} · 데이터 출처 {esc(g.get('source', ''))}</p>",
                     f"<h1>{esc(H)} vs {esc(A)} 경기 분석</h1>",
+                    self.team_links(g),
                     "<div class='card'>" + " ".join(p) + "</div>", self.ad(),
                     f"<div class='card tbl'><table>{info_html}</table></div>", prob_html]
-        if g.get("source") == "ESPN":
+        if g.get("source") in ("ESPN", "API-Sports"):
             sections += ["<h2>선발 라인업</h2><div class='cols'>" + lineup_block("home") + lineup_block("away") + "</div>",
                          "<h2>부상·결장</h2><div class='cols'>" + inj_block("home") + inj_block("away") + "</div>"]
             l5h = l5_block("home") + l5_block("away")
@@ -306,6 +339,7 @@ class Site:
             sections.append(f"<h2>{esc(g['league_name'])} 다른 경기</h2>" + "".join(self.row(s, 1) for s in rel))
         # FAQ (검색 노출용)
         faq = [(f"{H} {A} 경기 시간은 언제인가요?", f"한국시간 {kdate(dt)} {ktime(dt)}입니다."),
+               (f"{H} {A} 승리 확률은?", (f"{H} {pr['home'] * 100:.0f}%" + (f", 무승부 {pr['draw'] * 100:.0f}%" if 'draw' in pr else '') + f", {A} {pr['away'] * 100:.0f}%입니다.") if pr else "계산 중입니다."),
                (f"{H} {A} 선발 라인업은 발표됐나요?", "발표됐습니다. 위 선발 라인업 표를 확인하세요." if lineups else "아직입니다. " + LINEUP_HINT.get(g["sport"], "")),
                (f"{H} {A} 부상자는 누구인가요?", f"두 팀 합계 {n_inj}명이 보고돼 있습니다." if n_inj else "현재 보고된 부상자가 없습니다.")]
         sections.append("<h2>자주 묻는 질문</h2>" + "".join(f"<details><summary>{esc(q)}</summary><p>{esc(a)}</p></details>" for q, a in faq))
@@ -318,8 +352,82 @@ class Site:
                "location": {"@type": "Place", "name": g.get("venue") or g["league_name"]}},
               {"@context": "https://schema.org", "@type": "FAQPage",
                "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faq]}]
-        desc = f"{kdate(dt)} {ktime(dt)} {g['league_name']} {H} vs {A}. " + (f"시즌 {H} {hrec}, {A} {arec}. " if hrec and arec else "") + "선발 라인업, 부상자, 최근 5경기, 기본 확률을 정리했습니다."
+        desc = f"{kdate(dt)} {ktime(dt)} {g['league_name']} {H} vs {A}. " + (f"시즌 {H} {hrec}, {A} {arec}. " if hrec and arec else "") + "승률 분석, 선발 라인업, 부상자, 휴식일, 최근 5경기, 상대전적을 정리했습니다."
         self.page(f"m/{slug(g)}.html", title, desc, "".join(sections), ld, depth=1)
+
+    def team_href(self, league, tid, depth):
+        return ("../" * depth) + f"t/{league}-{tid}.html"
+
+    def team_links(self, g):
+        if not g["home"].get("id") or g["league"] not in self.models:
+            return ""
+        return ("<p class='small'>팀 페이지: " + " · ".join(
+            f"<a href='{self.team_href(g['league'], g[s]['id'], 1)}'>{esc(self.ko(g[s]['name']))} 최신 정보</a>" for s in ("home", "away")) + "</p>")
+
+    def team_pages(self, games, league_names):
+        ko = self.ko
+        upcoming = defaultdict(list)
+        for g in games:
+            for s in ("home", "away"):
+                if g[s].get("id"):
+                    upcoming[(g["league"], g[s]["id"])].append(g)
+        n = 0
+        for key, m in self.models.items():
+            names = {}
+            for g in m.games:
+                names[g["home"]] = g.get("home_name")
+                names[g["away"]] = g.get("away_name")
+            current = {g["home"] for g in m.games} | {g["away"] for g in m.games}
+            order = sorted(current, key=lambda t: -m.elo.get(t, m.default))
+            for tid in order:
+                st = m.team_stats(tid)
+                name = ko(names.get(tid) or tid)
+                rank = order.index(tid) + 1
+                pct = lambda v: f"{v * 100:.0f}%" if v is not None else "-"
+                rows = [("전력 점수(Elo)", f"{m.elo.get(tid, m.default):.0f} · 리그 {rank}위/{len(order)}팀"),
+                        ("시즌 승률", f"{pct(st['win'])} ({st['n']}경기)"),
+                        ("홈 / 원정 승률", f"{pct(st['home_win'])} ({st['home_n']}) / {pct(st['away_win'])} ({st['away_n']})"),
+                        ("경기당 득점 / 실점", f"{st['gf']:.1f} / {st['ga']:.1f}" if st["gf"] is not None else "-")]
+                info = "".join(f"<tr><th>{esc(a)}</th><td>{esc(b)}</td></tr>" for a, b in rows)
+                res_ko = {1: "승", 0: "패", 0.5: "무"}
+                last = "".join(
+                    f"<tr><td class='num'>{to_kst(x['date']).strftime('%m-%d')}</td><td>{'홈' if x['home'] else '원정'}</td>"
+                    f"<td>{esc(ko(names.get(x['opp']) or x['opp']))}</td><td class='num'>{x['gf']}-{x['ga']}</td><td>{res_ko.get(x['res'], '')}</td>"
+                    f"<td class='num'>{x['exp'] * 100:.0f}%</td></tr>" for x in reversed(st["last"]))
+                ups = sorted((g for g in upcoming.get((key, tid), []) if g["state"] != "post"), key=lambda x: x["start_utc"])
+                up_html = "".join(self.row(g, 1) for g in ups[:5]) or "<p class='small'>예정 경기가 아직 없습니다.</p>"
+                inj = []
+                for g in ups[:1]:
+                    inj = g.get("injuries", {}).get(tid, [])
+                inj_html = ("<div class='card tbl'><table><tr><th>선수</th><th>상태</th><th>부위</th></tr>" + "".join(
+                    f"<tr><td>{esc(i.get('name') or '')}</td><td>{esc(inj_ko(i.get('status')))}</td><td>{esc(i.get('part') or '')}</td></tr>" for i in inj)
+                    + "</table></div>") if inj else "<p class='small'>보고된 부상자가 없습니다.</p>"
+                lname = league_names.get(key, key)
+                body = (f"<p class='small'>{esc(lname)} · 팀 정보</p><h1>{esc(name)} 최신 정보·전력 분석</h1>{self.ad()}"
+                        f"<div class='card tbl'><table>{info}</table></div><h2>다음 경기</h2>{up_html}"
+                        f"<h2>부상·결장</h2>{inj_html}{self.cta()}"
+                        f"<h2>최근 10경기</h2><div class='card tbl'><table><tr><th>날짜</th><th>장소</th><th>상대</th><th>스코어</th><th>결과</th><th>경기 전 승률</th></tr>{last}</table></div>{self.ad()}")
+                self.page(f"t/{key}-{tid}.html", f"{name} 최신 정보 · 일정·부상·전력 분석 | {lname}",
+                          f"{name}({lname})의 다음 경기 승률, 부상자, 홈·원정 성적, 최근 10경기를 자동으로 갱신합니다.", body, depth=1)
+                n += 1
+        return n
+
+    def record_page(self, record, league_names):
+        rows = []
+        tot_n = tot_hit = 0
+        for key, r in sorted(record.items(), key=lambda x: -(x[1]["n"] or 0)):
+            if not r["n"]:
+                continue
+            tot_n += r["n"]
+            tot_hit += r["acc"] * r["n"]
+            rows.append(f"<tr><td>{esc(league_names.get(key, key))}</td><td class='num'>{r['n']}</td><td class='num'>{r['acc'] * 100:.1f}%</td><td class='num'>{r['brier']:.3f}</td></tr>")
+        overall = f"{tot_hit / tot_n * 100:.1f}%" if tot_n else "-"
+        body = (f"<h1>모델 적중 기록</h1><p class='muted'>모든 경기를 경기 전 시점의 전력 점수로 예측해 채점한 결과입니다. 틀린 경기도 빼지 않습니다.</p>"
+                f"<div class='card'><b>전체 {tot_n}경기 적중률 {overall}</b></div>"
+                f"<div class='card tbl'><table><tr><th>리그</th><th>채점 경기</th><th>적중률</th><th>브라이어 점수(낮을수록 정확)</th></tr>{''.join(rows)}</table></div>"
+                "<p class='small'>축구는 승·무·패 3지선다라 적중률이 낮게 나오는 것이 정상입니다. 각 팀이 3경기 이상 치른 뒤의 경기만 채점합니다. "
+                "부상·휴식일 같은 경기 요인은 과거 시점 자료가 없어 이 채점에는 빠져 있고, 실제 경기 분석에는 반영합니다.</p>" + self.cta())
+        self.page("record.html", f"모델 적중 기록 | {self.cfg['site_name']}", "리그별 승률 모델의 실제 적중률과 브라이어 점수를 매일 공개합니다.", body)
 
     # ---------- 목록 페이지 ----------
     def index(self, games, feed):
@@ -405,13 +513,15 @@ class Site:
             f.write("")
 
 
-def build(cfg, games, feed, proto, ko, now, out):
+def build(cfg, games, feed, proto, ko, now, out, models=None, record=None):
     if os.path.isdir(out):
         shutil.rmtree(out)
     os.makedirs(os.path.join(out, "assets"))
     with open(os.path.join(out, "assets", "style.css"), "w", encoding="utf-8") as f:
         f.write(CSS)
     site = Site(cfg, ko, now, out)
+    site.models = models or {}
+    league_names = {g["league"]: g["league_name"] for g in games}
     by_league = defaultdict(list)
     for g in games:
         by_league[g["league"]].append(g)
@@ -421,6 +531,8 @@ def build(cfg, games, feed, proto, ko, now, out):
     site.league_pages(games)
     site.proto_page(proto)
     site.news(feed)
+    site.team_pages(games, league_names)
+    site.record_page(record or {}, league_names)
     site.static_pages()
     site.seo_files()
     return len(site.pages)

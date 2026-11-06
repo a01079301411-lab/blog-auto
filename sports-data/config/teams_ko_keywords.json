@@ -1,0 +1,26 @@
+[
+  ["Red Sparks", "정관장(배구)"], ["Hi-pass", "한국도로공사"], ["Korea Expressway", "한국도로공사"], ["Heungkuk", "흥국생명"],
+  ["Hillstate", "현대건설"], ["Hyundai E&C", "현대건설"], ["IBK", "IBK기업은행"], ["GS Caltex", "GS칼텍스"], ["Pepper", "페퍼저축은행"],
+  ["Korean Air", "대한항공"], ["Hyundai Capital", "현대캐피탈"], ["KB Insurance", "KB손해보험"], ["Woori Card", "우리카드"],
+  ["WOORI WON", "우리카드"], ["KEPCO", "한국전력"], ["OK Savings", "OK저축은행"], ["OK Financial", "OK저축은행"],
+  ["Samsung Fire", "삼성화재"], ["Bluefangs", "삼성화재"],
+
+  ["KOGAS", "대구 한국가스공사"], ["Pegasus", "대구 한국가스공사"], ["Seoul SK", "서울 SK"], ["SK Knights", "서울 SK"],
+  ["Changwon", "창원 LG"], ["Sakers", "창원 LG"], ["KCC", "부산 KCC"], ["Sonicboom", "수원 KT"], ["Suwon KT", "수원 KT"],
+  ["Mobis", "울산 현대모비스"], ["Jung Kwan Jang", "안양 정관장"], ["Red Boosters", "안양 정관장"], ["KGC", "안양 정관장"],
+  ["DB Promy", "원주 DB"], ["Wonju", "원주 DB"], ["Sono", "고양 소노"], ["Samsung Thunders", "서울 삼성"],
+
+  ["Woori Bank", "아산 우리은행"], ["Samsung Life", "용인 삼성생명"], ["Blueminx", "용인 삼성생명"], ["KB Stars", "청주 KB"],
+  ["Shinhan", "인천 신한은행"], ["BNK", "부산 BNK"],
+
+  ["Doosan", "두산"], ["LG Twins", "LG"], ["Kiwoom", "키움"], ["SSG", "SSG"], ["Lotte", "롯데"], ["Samsung Lions", "삼성"],
+  ["KIA", "KIA"], ["Kia Tigers", "KIA"], ["Hanwha", "한화"], ["NC Dinos", "NC"], ["KT Wiz", "KT"],
+
+  ["Seoul E-Land", "서울 이랜드"], ["FC Seoul", "FC 서울"], ["Ulsan", "울산 HD"], ["Pohang", "포항"], ["Jeonbuk", "전북"],
+  ["Daejeon", "대전"], ["Hana", "부천 하나은행"], ["Incheon", "인천"], ["Gangwon", "강원"], ["Gimcheon", "김천"],
+  ["Suwon Bluewings", "수원 삼성"], ["Suwon Samsung", "수원 삼성"], ["Suwon FC", "수원 FC"], ["Suwon", "수원 FC"],
+  ["Jeju", "제주"], ["Gwangju", "광주"], ["Daegu", "대구 FC"], ["Anyang", "FC 안양"], ["Bucheon", "부천 FC"],
+  ["Busan", "부산 아이파크"], ["Jeonnam", "전남"], ["Gyeongnam", "경남"], ["Seongnam", "성남"], ["Ansan", "안산"],
+  ["Asan", "충남아산"], ["Cheonan", "천안"], ["Cheongju", "충북청주"], ["Gimpo", "김포"], ["Hwaseong", "화성"],
+  ["Paju", "파주"], ["Gimhae", "김해"], ["Yongin", "용인 FC"]
+]

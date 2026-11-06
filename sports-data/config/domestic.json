@@ -1,0 +1,9 @@
+[
+  {"key": "kleague1", "name": "K리그1", "sport": "soccer",     "match": "K League 1"},
+  {"key": "kleague2", "name": "K리그2", "sport": "soccer",     "match": "K League 2"},
+  {"key": "kbl",      "name": "KBL",    "sport": "basketball", "match": "KBL"},
+  {"key": "wkbl",     "name": "WKBL",   "sport": "basketball", "match": "WKBL"},
+  {"key": "vleague_m","name": "V리그 남자", "sport": "volleyball", "match": "V-League", "loose": false},
+  {"key": "vleague_w","name": "V리그 여자", "sport": "volleyball", "match": "V-League Women", "loose": false},
+  {"key": "kbo",      "name": "KBO",    "sport": "baseball",   "match": "KBO"}
+]

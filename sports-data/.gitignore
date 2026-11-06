@@ -4,3 +4,7 @@ data/events.json
 data/games.json
 __pycache__/
 *.tmp
+data/history/
+data/model_record.json
+data/apisports_budget.json
+data/apisports_cache.json
