@@ -1,0 +1,368 @@
+<title>프로토 데이터룸</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: 경기장 전광판 띠(회차 바) + 카드형 대상경기 리스트 + 우측 계산기. 탭 3개(시연/레퍼런스/운영설계) */
+:root{
+  --bg:#F2F4F7; --surface:#FFFFFF; --ink:#13203A; --muted:#5B6578; --line:#DCE1E9;
+  --accent:#C8460E; --accent-soft:#FBE9E0; --turf:#1C6B58; --turf-soft:#E2F1EC; --warn:#9A6A00; --warn-soft:#FFF4D6; --bad:#B42318;
+  --board:#13203A; --board-fg:#F5F7FA;
+  --display:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
+  --body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1422; --surface:#161E30; --ink:#E8ECF3; --muted:#9AA4B8; --line:#2A3550;
+  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E;
+  --board:#060A13; --board-fg:#F5F7FA; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1422; --surface:#161E30; --ink:#E8ECF3; --muted:#9AA4B8; --line:#2A3550;
+  --accent:#F07A43; --accent-soft:#3A2218; --turf:#4FC3A1; --turf-soft:#173229; --warn:#E8B64A; --warn-soft:#3A2F12; --bad:#F27A6E;
+  --board:#060A13; --board-fg:#F5F7FA; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:var(--accent)}
+h1,h2,h3{text-wrap:balance;line-height:1.25;margin:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* header */
+header.top{background:var(--board);color:var(--board-fg)}
+header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:14px}
+.logo{font-family:var(--display);font-size:24px;letter-spacing:.5px}
+.logo span{color:var(--accent)}
+.age{border:2px solid var(--board-fg);border-radius:50%;width:30px;height:30px;display:grid;place-items:center;font-weight:700;font-size:12px}
+nav.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav.tabs a{color:var(--board-fg);opacity:.72;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:500}
+nav.tabs a[aria-current="page"]{opacity:1;background:rgba(255,255,255,.12)}
+nav.tabs a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.demo-flag{background:var(--warn-soft);color:var(--warn);font-size:13px}
+.demo-flag .wrap{padding-block:8px}
+/* round strip */
+.strip{background:var(--board);color:var(--board-fg);border-top:1px solid rgba(255,255,255,.08)}
+.strip .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding-block:14px 18px}
+.strip .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}
+.strip .v{font-family:var(--mono);font-size:20px;font-weight:600}
+.strip .v.hot{color:var(--accent)}
+main{padding-block:24px 48px}
+section[hidden]{display:none}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 14px;border-radius:999px;font:inherit;font-size:14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.list{display:flex;flex-direction:column;gap:12px}
+.match{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mhead{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 16px;cursor:pointer;width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left}
+.no{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
+.no b{display:block;font-size:15px;color:var(--ink)}
+.teams{min-width:0}
+.teams .lg{font-size:12px;color:var(--muted)}
+.teams .vs{font-weight:700;font-size:16px}
+.teams .vs em{font-style:normal;color:var(--muted);font-weight:400;margin:0 6px}
+.odds{display:flex;gap:6px}
+.odd{min-width:58px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+.odd .t{font-size:11px;color:var(--muted);display:block}
+.odd .o{font-family:var(--mono);font-weight:600}
+@media (max-width:560px){.mhead{grid-template-columns:auto minmax(0,1fr)}.odds{grid-column:1/-1}.odd{flex:1}}
+.mbody{border-top:1px dashed var(--line);padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.blk h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.prob{display:grid;grid-template-columns:70px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
+.bar{height:10px;background:var(--line);border-radius:5px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;border-radius:5px}
+.bar i.m{background:var(--turf)}
+.bar i.k{background:var(--muted);opacity:.55}
+.form{display:flex;gap:4px;align-items:center;margin-bottom:6px;font-size:13px}
+.form .nm{width:92px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fw,.fl,.fd{width:22px;height:22px;border-radius:4px;display:grid;place-items:center;font-size:11px;font-weight:700;font-family:var(--mono)}
+.fw{background:var(--turf-soft);color:var(--turf)}.fl{background:var(--accent-soft);color:var(--accent)}.fd{background:var(--line);color:var(--muted)}
+.kv{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:13px}
+.kv .h{color:var(--muted)}
+.kv .num{text-align:right}
+.note{grid-column:1/-1;background:var(--bg);border-radius:8px;padding:12px 14px;font-size:14px}
+.note b{color:var(--accent)}
+.gap{display:inline-block;font-family:var(--mono);font-size:12px;padding:1px 8px;border-radius:999px}
+.gap.pos{background:var(--turf-soft);color:var(--turf)}.gap.neg{background:var(--accent-soft);color:var(--accent)}
+aside .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+aside h3{font-size:16px;margin-bottom:10px}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:4px}
+.inrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+input[type=number]{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:15px}
+.out{font-size:13px;display:grid;grid-template-columns:1fr auto;gap:4px 8px}
+.out .num{text-align:right}
+.small{font-size:12px;color:var(--muted)}
+.record table{width:100%;border-collapse:collapse;font-size:13px}
+.record td{padding:4px 0;border-bottom:1px solid var(--line)}
+.record td:last-child{text-align:right;font-family:var(--mono)}
+footer{border-top:1px solid var(--line);background:var(--surface)}
+footer .wrap{padding-block:20px;font-size:13px;color:var(--muted);display:grid;gap:6px}
+footer b{color:var(--ink)}
+/* doc tabs */
+.doc{max-width:900px}
+.doc h2{font-size:24px;margin:8px 0 6px}
+.doc h3{font-size:18px;margin:28px 0 10px}
+.doc p{max-width:68ch}
+.lead{color:var(--muted);margin-top:0}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.tbl table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
+.tbl th,.tbl td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:12px;color:var(--muted);letter-spacing:.04em;background:var(--bg)}
+.tbl tr:last-child td{border-bottom:0}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:4px;font-weight:700;white-space:nowrap}
+.tag.ok{background:var(--turf-soft);color:var(--turf)}.tag.est{background:var(--warn-soft);color:var(--warn)}.tag.no{background:var(--accent-soft);color:var(--bad)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.box h4{margin:0 0 6px;font-size:15px}
+.box ul{margin:0;padding-left:18px;font-size:14px}
+.box.stop{border-color:var(--bad)}
+.box.stop h4{color:var(--bad)}
+ol.steps{padding-left:20px}
+ol.steps li{margin-bottom:6px}
+@media (prefers-reduced-motion:no-preference){.mbody{animation:fade .2s ease}@keyframes fade{from{opacity:.4}to{opacity:1}}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo">프로토<span>데이터룸</span></div>
+    <div class="age" title="만 19세 이상 이용">19</div>
+    <nav class="tabs" aria-label="화면 전환">
+      <a href="#demo" data-tab="demo" aria-current="page">시연 화면</a>
+      <a href="#refs" data-tab="refs">레퍼런스 분석</a>
+      <a href="#plan" data-tab="plan">운영 설계</a>
+    </nav>
+  </div>
+</header>
+<div class="demo-flag"><div class="wrap">시연용 화면입니다. 회차·배당·확률·전적은 모두 <b>예시 데이터</b>이며 실제 발매 정보가 아닙니다. 실제 대상경기와 배당은 베트맨(betman.co.kr)에서 확인합니다.</div></div>
+
+<!-- ============ 시연 ============ -->
+<section id="tab-demo">
+  <div class="strip"><div class="wrap">
+    <div><div class="k">프로토 승부식</div><div class="v">예시 회차</div></div>
+    <div><div class="k">대상 경기</div><div class="v" id="cnt">5</div></div>
+    <div><div class="k">종목</div><div class="v">KBL · V리그 · K리그1</div></div>
+    <div><div class="k">분석 기준일</div><div class="v">11.07 (토)</div></div>
+    <div><div class="k">지난 30일 모델 적중</div><div class="v hot">58.4%</div></div>
+  </div></div>
+
+  <main class="wrap">
+    <div class="grid">
+      <div style="min-width:0">
+        <div class="chips" role="group" aria-label="종목 필터">
+          <button class="chip" aria-pressed="true" data-f="all">전체</button>
+          <button class="chip" aria-pressed="false" data-f="KBL">농구 KBL</button>
+          <button class="chip" aria-pressed="false" data-f="V리그">배구 V리그</button>
+          <button class="chip" aria-pressed="false" data-f="K리그1">축구 K리그1</button>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <h3>배당 → 확률 계산기</h3>
+          <p class="small" style="margin-top:0">배당을 넣으면 시장이 보는 확률과 발매사 몫(마진)을 보여줍니다. 무승부가 없는 종목은 무 칸을 비워 둡니다.</p>
+          <div class="inrow">
+            <div><label for="o1">승</label><input id="o1" type="number" step="0.01" value="1.75"></div>
+            <div><label for="o2">무</label><input id="o2" type="number" step="0.01" value="3.10"></div>
+            <div><label for="o3">패</label><input id="o3" type="number" step="0.01" value="2.95"></div>
+          </div>
+          <div class="out" id="calc"></div>
+        </div>
+        <div class="card record">
+          <h3>모델 적중 기록 (예시)</h3>
+          <table>
+            <tr><td>KBL 승패</td><td>61.2% · 98경기</td></tr>
+            <tr><td>V리그 승패</td><td>63.0% · 54경기</td></tr>
+            <tr><td>K리그1 승무패</td><td>47.8% · 46경기</td></tr>
+            <tr><td>언더/오버</td><td>53.1% · 128경기</td></tr>
+          </table>
+          <p class="small">틀린 경기까지 전부 공개합니다. 기록은 매일 오전 자동 갱신됩니다.</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+</section>
+
+<!-- ============ 레퍼런스 ============ -->
+<section id="tab-refs" hidden>
+  <main class="wrap doc">
+    <h2>레퍼런스 분석</h2>
+    <p class="lead">국내 프로토 정보 서비스를 성격별로 묶었습니다. 각 레퍼런스에서 빌릴 패턴과 우리 버전을 함께 적었습니다. 구조만 빌리고 데이터·문구·디자인은 새로 만듭니다.</p>
+
+    <h3>1. 참고할 레퍼런스</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>레퍼런스</th><th>유형</th><th>확인</th><th>빌릴 패턴</th><th>우리 버전</th></tr></thead>
+      <tbody>
+        <tr><td><b>베트맨 토토가이드</b><br><span class="small">betman.co.kr</span></td><td>공식 발매 사이트 안의 대상경기 분석</td><td><span class="tag ok">외부 확인</span></td><td>회차 단위 정보 구조, 마감시각 중심 안내, 게임유형(일반·핸디캡·언더오버·SUM) 분류</td><td>상단 회차 바 + 유형별 탭. 구매는 항상 베트맨으로 연결하고 직접 중개하지 않음</td></tr>
+        <tr><td><b>와이즈토토</b><br><span class="small">wisetoto.com</span></td><td>민간 프로토 정보·배당 사이트</td><td><span class="tag est">검색 언급, 기능 미검증</span></td><td>대상경기 표 + 배당 변동 + 경기별 상세 진입</td><td>배당표 옆에 "모델 확률 vs 시장 확률" 막대를 붙여 차별화</td></tr>
+        <tr><td><b>언론 '토토 투데이'</b><br><span class="small">OSEN · 더팩트 · 일간스포츠</span></td><td>회차 발매 기사, 투표율 기사</td><td><span class="tag ok">외부 확인</span></td><td>"농구팬 77%가 ○○ 승리 예상" 같은 투표율 제목 공식, 회차 발매 즉시 기사화</td><td>회차 발매 당일 자동 브리핑 글 + "팬 예상 vs 데이터" 비교 제목</td></tr>
+        <tr><td><b>리그 공식 기록실</b><br><span class="small">KBO · K리그 데이터포털 · KBL · KOVO</span></td><td>원천 기록</td><td><span class="tag est">URL·이용약관 재확인 필요</span></td><td>팀·선수 세부 기록, 일정, 결과</td><td>수집 원천. 이용약관상 크롤링 허용 범위를 먼저 확인하고, 막히면 유료 데이터 API 검토</td></tr>
+        <tr><td><b>네이버 스포츠 · 라이브스코어류</b></td><td>일정·문자중계·순위</td><td><span class="tag est">추정</span></td><td>경기 카드 하나에 시간·순위·최근 흐름을 압축하는 UI</td><td>경기 카드에 최근 5경기 칩과 결장자 줄 추가</td></tr>
+        <tr><td><b>해외 확률형 매체</b><br><span class="small">Opta Analyst, 과거 FiveThirtyEight 예측</span></td><td>모델 확률 공개형 콘텐츠</td><td><span class="tag est">사전 지식</span></td><td>승률을 % 막대로 보여주고 적중 기록을 공개해 신뢰 확보</td><td>"모델 적중 기록" 상시 공개 박스. 틀린 경기도 숨기지 않음</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>2. 레퍼런스에서 뺀 곳</h3>
+    <div class="cols">
+      <div class="box stop">
+        <h4>참고하지 않은 유형</h4>
+        <ul>
+          <li>"분석·커뮤니티"를 내걸고 보증업체·안전놀이터 배너를 다는 사이트</li>
+          <li>텔레그램·카톡 유료 픽방, 리딩방</li>
+          <li>베트맨·스포츠토토를 흉내 낸 유사 도메인</li>
+        </ul>
+        <p class="small" style="margin-bottom:0">검색 상위의 상당수가 이 유형입니다. 불법 사이트 홍보·알선은 처벌과 신고포상 대상이라 구조도 따라 하지 않습니다.</p>
+      </div>
+      <div class="box">
+        <h4>시장 빈자리</h4>
+        <ul>
+          <li>국내 프로토 분석은 기사형(발매 안내)과 배당표형으로 양분되어 있음</li>
+          <li><b>확률 모델 + 적중 기록 공개</b>를 합친 국내 종목 전용 서비스는 이번 조사에서 찾지 못함 <span class="tag est">추정</span></li>
+          <li>지역 연고 콘텐츠(예: 대구 한국가스공사 홈경기 데이터 리포트)는 경쟁이 약함</li>
+        </ul>
+      </div>
+    </div>
+  </main>
+</section>
+
+<!-- ============ 운영 설계 ============ -->
+<section id="tab-plan" hidden>
+  <main class="wrap doc">
+    <h2>운영 설계</h2>
+    <p class="lead">결론: <b>무료 데이터 분석 + 적중 기록 공개 + 검색·쇼츠 유입 + 광고·제휴 수익</b> 구조로 갑니다. 유료 픽 판매와 사설 배너는 하지 않습니다.</p>
+
+    <h3>1. 법·정책 체크리스트 (오픈 전 필수)</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>항목</th><th>기준</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td>합법 발매처</td><td>체육진흥투표권은 스포츠토토(베트맨·판매점)만 합법. 사이트는 정보 제공만, 구매 대행·중개 금지</td><td><span class="tag ok">확정</span></td></tr>
+        <tr><td>불법 사이트 광고</td><td>국민체육진흥법상 불법 도박 사이트 홍보·알선은 처벌 대상, 홍보자도 신고포상 대상</td><td><span class="tag ok">외부 확인</span></td></tr>
+        <tr><td>유료 픽·멤버십</td><td>직접 처벌 조항은 이번 조사로 확인 못함. 사기·유사행위 시비가 잦아 운영하지 않는 것을 권장</td><td><span class="tag est">변호사 확인 필요</span></td></tr>
+        <tr><td>애드센스</td><td>도박 관련 콘텐츠 광고 정책이 국가별로 다름. 정보성 분석 글의 수익화 허용 범위 확인</td><td><span class="tag est">업데이트 필요</span></td></tr>
+        <tr><td>네이버 블로그</td><td>'토토' 키워드 글은 노출 제한 가능성. 블로그는 이사업 채널과 반드시 분리</td><td><span class="tag est">추정</span></td></tr>
+        <tr><td>이용자 보호 표기</td><td>만 19세 이상 표기, 도박문제 상담 1336, 불법스포츠토토 신고 1899-1119 하단 고정</td><td><span class="tag ok">반영됨</span></td></tr>
+        <tr><td>데이터 저작권</td><td>리그 기록실·언론사 데이터의 크롤링·재게시 허용 범위 확인. 배당은 출처 표기</td><td><span class="tag est">업데이트 필요</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>2. 수익 구조</h3>
+    <div class="cols">
+      <div class="box"><h4>한다</h4><ul>
+        <li>디스플레이 광고 (정책 확인 후)</li>
+        <li>스포츠용품·직관 굿즈 쿠팡파트너스</li>
+        <li>유튜브 쇼츠 "오늘의 데이터 3줄" → 사이트 유입</li>
+        <li>지역 스포츠 펍·용품점 일반 광고</li>
+      </ul></div>
+      <div class="box stop"><h4>하지 않는다</h4><ul>
+        <li>유료 픽, VIP방, 적중 보장 문구</li>
+        <li>사설·해외 베팅 배너, 제휴 코드</li>
+        <li>텔레그램 리딩방 운영</li>
+        <li>"확실", "필승", "100%" 표현</li>
+      </ul></div>
+    </div>
+
+    <h3>3. 자동화 파이프라인 (blog-auto 재사용)</h3>
+    <ol class="steps">
+      <li><b>수집</b>: 회차 발매 정보·대상경기 목록, 리그 공식 기록(팀 득실, 홈/원정, 최근 5경기, 결장자)</li>
+      <li><b>모델</b>: 농구·배구는 Elo + 홈 어드밴티지, 축구는 포아송 득점 모델로 승·무·패 확률 산출</li>
+      <li><b>비교</b>: 배당을 내재 확률로 바꿔 마진을 걷어낸 뒤 모델 확률과의 차이를 계산</li>
+      <li><b>발행</b>: 경기별 분석 글 자동 생성 → WordPress 신규 도메인 (기존 cuppang.com·Tistory와 분리)</li>
+      <li><b>검증</b>: 경기 종료 후 결과를 자동 채점해 적중 기록 페이지 갱신</li>
+    </ol>
+
+    <h3>4. 30일 로드맵</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>주차</th><th>할 일</th><th>완료 기준</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1주</td><td>법률 상담 1회, 도메인·호스팅, 데이터 원천 이용약관 확인</td><td>사용 가능한 데이터 목록 확정</td></tr>
+        <tr><td class="num">2주</td><td>KBL 1종목으로 수집기·Elo 모델 구축, 지난 시즌 백테스트</td><td>백테스트 적중률·브라이어 점수 산출</td></tr>
+        <tr><td class="num">3주</td><td>이 시연 화면을 실제 데이터로 연결, 자동 글 하루 5개</td><td>사이트 오픈, 검색 등록</td></tr>
+        <tr><td class="num">4주</td><td>V리그 추가, 쇼츠 하루 1개, 적중 기록 페이지 공개</td><td>방문자·체류시간 첫 측정</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>5. 주간 KPI</h3>
+    <div class="cols">
+      <div class="box"><h4>콘텐츠</h4><ul><li>분석 글 25개</li><li>쇼츠 5개</li><li>적중 기록 매일 갱신</li></ul></div>
+      <div class="box"><h4>유입</h4><ul><li>검색 노출 키워드 수</li><li>재방문율 30%+</li><li>평균 체류 2분+</li></ul></div>
+      <div class="box"><h4>모델</h4><ul><li>브라이어 점수 주간 추이</li><li>종목별 적중률</li><li>시장 대비 차이가 컸던 경기 사후 검토</li></ul></div>
+    </div>
+  </main>
+</section>
+
+<footer><div class="wrap">
+  <div><b>프로토데이터룸은 체육진흥투표권을 판매하거나 중개하지 않습니다.</b> 모든 분석은 참고 정보이며 결과를 보장하지 않습니다. 구매는 공식 발매처 베트맨과 스포츠토토 판매점에서만 가능합니다.</div>
+  <div>만 19세 미만은 구매할 수 없습니다 · 도박문제 상담 <b>1336</b> · 불법스포츠토토 신고 <b>1899-1119</b> (cleansports.kspo.or.kr)</div>
+</div></footer>
+
+<script>
+const M=[
+ {no:"001",lg:"KBL",time:"14:00",home:"대구 한국가스공사",away:"서울 SK",type:"승패",odds:[2.10,null,1.42],model:[0.43,0,0.57],
+  form:{h:"WLWWL",a:"WWLWW"},stats:[["득점",81.4,84.2],["실점",80.1,77.6],["리바운드",35.2,37.9],["3점 성공률",34.1,32.8]],
+  h2h:"최근 4번 맞대결 2승 2패",out:"SK 주전 가드 발목 부상으로 출전 불투명(예시)",
+  note:"시장은 SK 승리를 약 60%로 보지만, 홈 승률과 SK 백코트 공백을 반영한 모델은 43:57로 차이가 작다고 봅니다. 핸디캡 +4.5 구간이 관전 포인트입니다."},
+ {no:"002",lg:"KBL",time:"16:00",home:"창원 LG",away:"부산 KCC",type:"승패",odds:[1.55,null,1.95],model:[0.61,0,0.39],
+  form:{h:"WWWLW",a:"LWLLW"},stats:[["득점",79.8,82.5],["실점",74.3,81.0],["리바운드",38.4,34.1],["3점 성공률",35.6,33.9]],
+  h2h:"최근 4번 맞대결 LG 3승",out:"결장자 없음(예시)",
+  note:"LG의 실점 74.3은 리그 최저 수준(예시). 시장 확률과 모델 확률이 거의 같아 데이터상 특이점이 적은 경기입니다."},
+ {no:"003",lg:"V리그",time:"14:00",home:"대한항공",away:"현대캐피탈",type:"승패",odds:[1.80,null,1.70],model:[0.47,0,0.53],
+  form:{h:"WLWLW",a:"WWWLW"},stats:[["공격 성공률",52.8,54.1],["세트당 블로킹",2.4,2.7],["서브 득점/세트",1.3,1.5],["리시브 효율",38.2,36.0]],
+  h2h:"이번 시즌 1번 맞대결 현대캐피탈 3:1 승",out:"결장자 없음(예시)",
+  note:"양 팀 차이가 작은 경기. 세트 핸디캡 ±1.5보다 총 세트수 언더/오버(3.5) 쪽 데이터가 뚜렷합니다. 최근 5번 중 4번이 4세트 이상."},
+ {no:"004",lg:"V리그",time:"16:00",home:"흥국생명",away:"현대건설",type:"승패",odds:[1.62,null,1.88],model:[0.55,0,0.45],
+  form:{h:"WWLWW",a:"WLWWL"},stats:[["공격 성공률",41.9,40.7],["세트당 블로킹",2.1,2.5],["서브 득점/세트",1.1,0.9],["리시브 효율",33.5,35.8]],
+  h2h:"지난 시즌 6번 맞대결 3승 3패",out:"현대건설 미들블로커 1명 컨디션 관리(예시)",
+  note:"시장은 흥국생명 약 54%, 모델은 55%. 수치상 차이가 거의 없어 분석 글은 '관전 포인트' 중심으로 작성합니다."},
+ {no:"005",lg:"K리그1",time:"16:30",home:"전북",away:"울산",type:"승무패",odds:[1.75,3.10,2.95],model:[0.50,0.27,0.23],
+  form:{h:"WDWWL",a:"LDWLD"},stats:[["경기당 득점",1.62,1.31],["경기당 실점",0.94,1.22],["기대득점 xG",1.55,1.28],["점유율 %",54.2,51.0]],
+  h2h:"최근 5번 맞대결 2승 2무 1패",out:"울산 주전 공격수 경고 누적 결장(예시)",
+  note:"포아송 모델은 1-0, 1-1, 2-1 순으로 확률이 높게 나옵니다. 무승부 확률 27%로 시장(약 30%)보다 약간 낮게 봅니다."}
+];
+const pct=x=>(x*100).toFixed(1)+"%";
+function fair(odds){const inv=odds.map(o=>o?1/o:0);const s=inv.reduce((a,b)=>a+b,0);return{fair:inv.map(v=>v/s),margin:s-1}}
+function formChips(s){return [...s].map(c=>`<span class="${c==="W"?"fw":c==="L"?"fl":"fd"}">${c==="W"?"승":c==="L"?"패":"무"}</span>`).join("")}
+function card(m,i){
+  const f=fair(m.odds),lbl=m.odds[1]?["승","무","패"]:["승","패"];
+  const idx=m.odds[1]?[0,1,2]:[0,2];
+  const oddsHtml=idx.map((k,j)=>`<div class="odd"><span class="t">${lbl[j]}</span><span class="o">${m.odds[k].toFixed(2)}</span></div>`).join("");
+  const probs=idx.map((k,j)=>{const d=m.model[k]-f.fair[k];const name=k===0?m.home:k===2?m.away:"무승부";
+    return `<div class="prob"><span>${name.length>6?name.slice(-4):name}</span><div><div class="bar" title="모델"><i class="m" style="width:${m.model[k]*100}%"></i></div><div class="bar" style="margin-top:3px;height:6px" title="시장"><i class="k" style="width:${f.fair[k]*100}%"></i></div></div><span class="num">${pct(m.model[k])}</span></div>`}).join("");
+  const diffs=idx.map(k=>{const d=(m.model[k]-f.fair[k])*100;const name=k===0?"홈":k===2?"원정":"무";return `<span class="gap ${d>=0?"pos":"neg"}">${name} ${d>=0?"+":""}${d.toFixed(1)}p</span>`}).join(" ");
+  const stats=m.stats.map(s=>`<span>${s[0]}</span><span class="num">${s[1]}</span><span class="num">${s[2]}</span>`).join("");
+  return `<article class="match" data-lg="${m.lg}">
+    <button class="mhead" aria-expanded="${i===0}" aria-controls="b${i}">
+      <div class="no">${m.time}<b>${m.no}</b></div>
+      <div class="teams"><div class="lg">${m.lg} · ${m.type}</div><div class="vs">${m.home}<em>vs</em>${m.away}</div></div>
+      <div class="odds">${oddsHtml}</div>
+    </button>
+    <div class="mbody" id="b${i}" ${i===0?"":"hidden"}>
+      <div class="blk"><h4>모델 확률 (위) · 시장 확률 (아래)</h4>${probs}<div class="small" style="margin-top:6px">시장 마진 ${pct(f.margin)} 제거 후 비교 · ${diffs}</div></div>
+      <div class="blk"><h4>최근 5경기</h4><div class="form"><span class="nm">${m.home}</span>${formChips(m.form.h)}</div><div class="form"><span class="nm">${m.away}</span>${formChips(m.form.a)}</div><div class="small">${m.h2h}<br>${m.out}</div></div>
+      <div class="blk"><h4>시즌 지표</h4><div class="kv"><span class="h">항목</span><span class="h num">홈</span><span class="h num">원정</span>${stats}</div></div>
+      <div class="note"><b>데이터 노트</b> · ${m.note}</div>
+    </div>
+  </article>`}
+const list=document.getElementById("list");
+list.innerHTML=M.map(card).join("");
+list.addEventListener("click",e=>{const b=e.target.closest(".mhead");if(!b)return;const body=document.getElementById(b.getAttribute("aria-controls"));const open=b.getAttribute("aria-expanded")==="true";b.setAttribute("aria-expanded",!open);body.hidden=open});
+document.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>{
+  document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===c));
+  let n=0;document.querySelectorAll(".match").forEach(m=>{const show=c.dataset.f==="all"||m.dataset.lg===c.dataset.f;m.hidden=!show;if(show)n++});
+  document.getElementById("cnt").textContent=n;
+}));
+function calc(){
+  const v=["o1","o2","o3"].map(id=>parseFloat(document.getElementById(id).value));
+  const ok=v.map(x=>x>1?x:null);
+  const out=document.getElementById("calc");
+  if(!ok[0]||!ok[2]){out.innerHTML='<span>승·패 배당을 1.01 이상으로 입력하세요.</span><span></span>';return}
+  const f=fair(ok);const names=["승","무","패"];
+  let h="";ok.forEach((o,i)=>{if(o)h+=`<span>${names[i]} 시장 확률</span><span class="num">${pct(f.fair[i])}</span>`});
+  h+=`<span>발매사 마진</span><span class="num">${pct(f.margin)}</span><span>환급률(이론)</span><span class="num">${pct(1/(1+f.margin))}</span>`;
+  out.innerHTML=h}
+["o1","o2","o3"].forEach(id=>document.getElementById(id).addEventListener("input",calc));calc();
+const tabs=["demo","refs","plan"];
+function route(){const t=tabs.includes(location.hash.slice(1))?location.hash.slice(1):"demo";
+  tabs.forEach(x=>{document.getElementById("tab-"+x).hidden=x!==t});
+  document.querySelectorAll("nav.tabs a").forEach(a=>a.toggleAttribute("aria-current",a.dataset.tab===t));
+  document.querySelectorAll('nav.tabs a[aria-current]').forEach(a=>a.setAttribute("aria-current","page"))}
+window.addEventListener("hashchange",route);route();
+</script>
