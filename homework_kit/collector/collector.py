@@ -13,8 +13,9 @@ COSY 숙제용 로컬 수집기 (성민 PC에서 실행)
   urls.txt 한 줄에 하나: 게시물 링크 또는 계정 링크
     https://www.youtube.com/watch?v=...      / https://www.youtube.com/shorts/...
     https://www.youtube.com/@채널              (최근 영상 목록)
+    https://www.youtube.com/@채널/posts        (커뮤니티 글 최근 목록·좋아요)
     https://www.instagram.com/reel/코드/        / https://www.instagram.com/p/코드/
-    https://www.instagram.com/계정/             (릴스 탭 최근 조회수)
+    https://www.instagram.com/계정/             (프로필 링크·소개글 + 최근 게시물 목록 + 릴스 탭 최근 조회수)
     https://www.tiktok.com/@계정/video/ID       / https://www.tiktok.com/@계정  (최근 10개)
     https://www.youtube.com/post/ID            (유튜브 커뮤니티 글: 좋아요·본문·링크)
     그 밖의 링크(스레드·네이버 블로그·링크트리·상품 페이지)  (화면 글자·링크·캡처)
@@ -89,6 +90,33 @@ JS_YT_POST = r"""() => {
           attachment: p.backstageAttachment ? Object.keys(p.backstageAttachment)[0] : null};
 }"""
 
+JS_IG_GRID = r"""async () => {
+  for (let i = 0; i < 3; i++) { window.scrollBy(0, 900); await new Promise(r => setTimeout(r, 1500)); }
+  const seen = new Set(); const out = [];
+  for (const a of document.querySelectorAll('a')) {
+    const h = a.getAttribute('href') || ''; const m = h.match(/\/(p|reel)\/([\w-]+)/);
+    if (!m || seen.has(m[2])) continue; seen.add(m[2]);
+    const img = a.querySelector('img'); const multi = !!a.querySelector('svg[aria-label*="슬라이드"], svg[aria-label*="Carousel"], svg[aria-label*="carousel"]');
+    out.push({href: 'https://www.instagram.com/' + m[1] + '/' + m[2] + '/', kind: m[1], carousel_icon: multi,
+              alt: img ? (img.getAttribute('alt') || '').slice(0, 120) : ''});
+  }
+  return out.slice(0, 24);
+}"""
+
+JS_YT_POSTS_TAB = r"""() => {
+  const t = document.documentElement.innerHTML;
+  const mm = t.match(/ytInitialData\s*=\s*(\{.+?\});\s*<\/script>/s);
+  if (!mm) return [];
+  const d = JSON.parse(mm[1]); const out = [];
+  const txt = x => !x ? '' : x.simpleText || (x.runs || []).map(r => r.text).join('');
+  const walk = o => { if (!o || typeof o !== 'object') return;
+    if (o.backstagePostRenderer) { const p = o.backstagePostRenderer;
+      out.push({id: p.postId, url: 'https://www.youtube.com/post/' + p.postId, published: txt(p.publishedTimeText),
+                likes: txt(p.voteCount), text: txt(p.contentText).slice(0, 150)}); }
+    for (const v of Object.values(o)) walk(v); };
+  walk(d); return out.slice(0, 20);
+}"""
+
 JS_PAGE_TEXT = r"""() => ({title: document.title,
   text: document.body ? document.body.innerText.slice(0, 6000) : '',
   links: [...document.querySelectorAll('a[href^="http"]')].map(a => a.href).filter((v, i, a) => a.indexOf(v) === i).slice(0, 40)})"""
@@ -140,6 +168,9 @@ def collect_one(page, url):
             page.goto(f"https://www.youtube.com/watch?v={vid.group(1)}", wait_until="domcontentloaded")
             pause(3, 4); hook_shot(page, vid.group(1))
             return {"platform": "youtube", "kind": "video", **d}
+        if re.search(r"/(posts|community)/?$", u):
+            page.goto(u, wait_until="domcontentloaded"); pause(3, 4)
+            return {"platform": "youtube", "kind": "channel_posts", "recent_posts": page.evaluate(JS_YT_POSTS_TAB)}
         page.goto(u.rstrip("/") + "/videos", wait_until="networkidle"); pause(2, 3)
         return {"platform": "youtube", "kind": "channel", "recent": page.evaluate(JS_YT_CHANNEL)}
     if "instagram.com" in u:
@@ -153,13 +184,15 @@ def collect_one(page, url):
                 shot(page, code.group(1) + "_cover")
             return {"platform": "instagram", "kind": "post", **d}
         acct = u.rstrip("/").split("/")[-1]
+        page.goto(f"https://www.instagram.com/{acct}/", wait_until="domcontentloaded"); pause(4, 5)
+        grid = page.evaluate(JS_IG_GRID)
         page.goto(f"https://www.instagram.com/{acct}/reels/", wait_until="domcontentloaded"); pause(4, 5)
         reels = page.evaluate(JS_IG_REELS_TAB)
         try:
             prof = page.evaluate(JS_IG_PROFILE, [acct, IG_APP_ID])
         except Exception as e:
             prof = {"profile_err": str(e)[:100]}
-        return {"platform": "instagram", "kind": "account", "user": acct, **prof, "recent_reels": reels,
+        return {"platform": "instagram", "kind": "account", "user": acct, **prof, "recent_posts": grid, "recent_reels": reels,
                 "note": "앞 3개는 고정 게시물일 수 있음"}
     if "tiktok.com" in u:
         page.goto("https://www.tiktok.com/", wait_until="domcontentloaded"); pause(2, 3)

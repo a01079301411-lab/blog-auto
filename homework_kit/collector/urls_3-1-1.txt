@@ -1,10 +1,44 @@
-# 3-1-1 수집 목록 (시작용) — 성민 PC: python collector/collector.py collect collector/urls_3-1-1.txt collector/results.json
-# hw.py plan을 실행하면 이 파일이 '지정 5개 + 분류별 후보 + 계정 + 랜딩'으로 다시 만들어집니다
-# [양식 지정 레퍼런스 — 2026-11-07 클라우드 수치는 폐기, 재측정]
+# 3-1-1 수집 목록 1차 (2026-11-07) — 성민 PC:
+#   python collector/collector.py collect collector/urls_3-1-1.txt collector/results.json
+# 1차 수집이 끝나면 results.json·shots를 푸시 → 계정·커뮤니티 목록에서 카드뉴스·이미지·숏폼·글 게시물을 골라 2차 목록을 만듭니다
+# 이 목록에는 수치가 없습니다. 후보는 웹 검색으로 찾은 것이고, 반응·랜딩·최신성은 수집 결과로 다시 걸러냅니다
+
+# [양식 지정 레퍼런스 5개 — 2026-11-07 클라우드 수치는 폐기, 재측정]
 https://www.instagram.com/p/DdBfondCQsX/
 https://www.instagram.com/p/Da_0c8RCVcc/
 https://www.instagram.com/nobrain._.girl/reel/DcTS-BPpbNh
 https://www.youtube.com/watch?v=014MXDS1CB0
 https://www.youtube.com/post/UgkxrpgiWw4hgNpsVyh12JNo61C_oxYCa_bm
-# [계정: 프로필 링크(랜딩)·평소 대비 확인]
+
+# [계정: 프로필 링크(랜딩) + 최근 게시물 목록 → 카드뉴스·이미지·릴스 후보 고르기]
+# 리즈 소속·강의 레퍼런스 크리에이터 (가이드: "RIZZ 강의의 퍼포먼스 마케팅 콘텐츠도 찾아본다")
 https://www.instagram.com/nobrain._.girl/
+https://www.instagram.com/yeboring03/
+# 살림 커머스 계정 (해결 문서 실측 예시 계정)
+https://www.instagram.com/salim_station/
+
+# [유튜브 커뮤니티 탭 → 글 콘텐츠 후보]
+https://www.youtube.com/@heartHS/posts
+https://www.youtube.com/@NOBRAINGIRL/posts
+https://www.youtube.com/@yeboring/posts
+
+# [긴 영상 후보 — 설명란 구매링크 있는 살림·쿠팡 추천 롱폼 (검색 결과)]
+https://www.youtube.com/watch?v=ptY-k37UXK4
+https://www.youtube.com/watch?v=-EfaPYMzhq0
+https://www.youtube.com/watch?v=8b-DvqVFNJo
+https://www.youtube.com/watch?v=SYVrPa-KGs8
+https://www.youtube.com/watch?v=R91H8LRlKJ4
+https://www.youtube.com/watch?v=PaKCiolXgds
+https://www.youtube.com/watch?v=3KhUe7ljMTE
+
+# [짧은 영상 후보 — 쇼츠·틱톡]
+https://www.youtube.com/shorts/z4PAEEMLRKE
+https://www.tiktok.com/@soso_zip
+
+# [글 콘텐츠 후보 — 쿠팡 링크로 랜딩하는 스레드 게시물 (검색 결과)]
+https://www.threads.com/@goom_dool2/post/DbNJ87OE7zE
+https://www.threads.com/@goom_dool2/post/DaXZehuk2iG
+https://www.threads.com/@nursemom_note/post/DeRNPVfD41r
+https://www.threads.com/@cuty.etf/post/DdTvusIj-s7
+https://www.threads.com/@janeee247/post/DeN_FDxE0W4
+https://www.threads.com/@cek_86/post/DYqGhf1E-8X
