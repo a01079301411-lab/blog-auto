@@ -333,7 +333,7 @@ def instagram_media(url: str) -> dict:
 def instagram_media_public(url: str) -> dict:
     """로그인 없이: 게시물 페이지 og 메타('좋아요 1,234개, 댓글 56개 - 계정 날짜: 캡션')에서 좋아요·댓글·캡션."""
     code = re.search(r"/(?:p|reel|reels|tv)/([\w-]+)", url).group(1)
-    html = _get(f"https://www.instagram.com/p/{code}/", headers={"User-Agent": "facebookexternalhit/1.1"}, min_len=500).text
+    html = _get(f"https://www.instagram.com/p/{code}/", min_len=500).text
     m = re.search(r'<meta (?:property|name)="og:description" content="([^"]*)"', html) or \
         re.search(r'<meta (?:property|name)="description" content="([^"]*)"', html)
     if not m:
