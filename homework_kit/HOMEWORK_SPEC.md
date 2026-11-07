@@ -130,36 +130,21 @@ COSY 가이드(스크린샷)와 양식 xlsx를 받으면 → 가이드를 학습
 - 수익원 종류: 애드센스, 광고(BDC)·협찬, 커머스(제휴·공구·쇼핑 태그), 멤버십, PB, 후원
 
 ---------------------------------------------------------------------
-## 7. 데이터 수집 방법 (실측 원칙 · 브라우저 JS)
-### 유튜브
-- 영상: fetch('/watch?v=ID') → ytInitialPlayerResponse.videoDetails(viewCount, lengthSeconds, shortDescription), microformat.publishDate
-- 좋아요: 정규식 /다른 사용자 ([\d,.]+[만천]?)명/ · 댓글수: "contextualInfo":{"runs":[{"text":"…"}]}
-- 유료광고: paidContentOverlay 존재 / 쇼핑 태그: 'N개 제품' 스티커
-- 채널 목록: /@handle/videos, /shorts → lockupViewModel / shortsLockupViewModel 파싱
-- 자막 전문: 시청 페이지에서 '스크립트 표시' 클릭 → ytd-transcript-segment-renderer 텍스트 (timedtext API는 토큰 필요로 빈 응답)
-### 인스타그램 (성민 로그인 세션, 읽기 전용)
-- 숏코드→ID: 알파벳 A-Z a-z 0-9 - _ 를 64진수 BigInt로 변환
-- fetch('/api/v1/media/'+id+'/info/',{headers:{'X-IG-App-ID':'936619743392459'}}) → play_count(ig_play_count), like_count, comment_count, media_repost_count, taken_at, video_duration, caption
-- 릴스 탭 조회수: /{계정}/reels/ 스크롤 후 a[href*="/reel/"] innerText (처음 3개는 고정 게시물일 수 있음 → 제외하고 최근순 비교)
-- 공유수·캐러셀 조회수는 웹 비공개 → 앱 화면 확인 필요
-- web_profile_info API는 HTML 반환으로 실패 / 첫 실행에 링크 0개면 스크린샷 후 재실행
-### 틱톡 (비로그인)
-- 영상 상세: 페이지 HTML의 <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"> → __DEFAULT_SCOPE__['webapp.video-detail'].itemInfo.itemStruct (stats: play/digg/comment/share/collect, music, video.duration, createTime)
-- 사진 게시물: /photo/ → /video/ 로 바꿔 요청
-- 계정 최근 10~12개 조회수: fetch('/embed/@계정') HTML에서 "playCount":N 앞의 "id","desc" 매칭 (프로필 그리드는 비로그인 시 '문제가 발생' 오류)
-- 바이오 링크: webapp.user-detail.userInfo.user.bioLink / 팔로워: userInfo.stats
-- 레이트리밋: 병렬 요청 시 'Access Denied'(26바이트) → 순차 + 5~9초 간격 + 재시도, 한 번에 45초 넘는 스크립트 금지(백그라운드 실행 후 localStorage에 저장)
-- 댓글 읽기: 영상 페이지 '댓글' 탭 → [data-e2e="comment-level-1"]
-### 공통
-- 후킹 캡처: video.currentTime=0.5 → 스크린샷
-- 라이선스: 사이트 공식 라이선스/FAQ 페이지 직접 확인, 블로그 요약 금지
-- 확인 못 한 항목은 '미확인'으로 표시하고 다시 검증
+## 7. 데이터 수집 방법 (2026-11-07 개정: 성민 PC 수집기 + results.json)
+- 클라우드에서는 인스타(로그인 벽)·유튜브(봇 차단) 실측이 불가 → **수집은 성민 PC의 collector/collector.py만** 사용
+  (정식 크롬 + 성민이 직접 로그인한 전용 프로필, 읽기 전용, 요청 간격 6~10초, 하루 수십~100건 이내)
+- 지원 링크: 유튜브 영상·쇼츠·채널(최근 영상)·커뮤니티 글 / 인스타 게시물(좋아요·댓글·조회·캐러셀 장수·유료광고)·계정(소개글·프로필 링크·릴스 탭 최근 조회수) / 틱톡 영상·계정(최근 10개) / 그 밖의 페이지(스레드·네이버 블로그·링크트리·상품 페이지: 화면 글자·링크·캡처)
+- 결과: collector/results.json (링크별 수치 + collected_at), collector/shots/ (영상 0.5초 후킹 프레임, 카드뉴스 표지, 페이지 캡처)
+- 프로그램은 results.json에 없는 수치를 절대 추정하지 않는다 → missing_urls_{퀘스트}.txt로 넘겨 PC에서 재수집
+- 평소 대비: 계정 링크 수집 결과에서 릴스 탭 앞 3개(고정 가능)·대상 게시물을 빼고 최근 5~10개 평균 대비 배수
+- collected_at이 3일 넘으면 경고(수치 최신성). 공유 미리보기 봇 흉내 등 차단 우회는 금지(그렇게 얻은 수치는 폐기)
+- 상세: SOLUTION_차단문제해결.md
 
 ---------------------------------------------------------------------
 ## 8. 작성·검증 파이프라인
 1. 가이드 스크린샷 → 목적/칸/예시/금지 표현/제출물 추출
 2. 양식 xlsx → quests.json 형식으로 셀 맵 확인(이름·작성일 칸, 데이터 행, 최종 칸, 드롭다운)
-3. 레퍼런스 후보 수집(최신순) → 실측 → 평소 대비 계산
+3. hw.py plan으로 레퍼런스 후보(최신순)·계정·랜딩 링크 선정 → 성민 PC collector로 실측 → results.json
 4. openpyxl로 채우기(wrap_text, 행 높이 조정, 드롭다운 값은 목록 그대로)
 5. LibreOffice → PDF → pdftoppm 렌더로 잘림 확인
 6. 자체 검증: 빈칸 0, 금지 표현 0, 모든 수치·날짜·라이선스 출처 재확인

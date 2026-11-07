@@ -1,3 +1,3 @@
 # 선택 설치: 없어도 프로그램은 돌아감
-yt-dlp>=2025.1.1      # 후킹 0.5초 프레임 캡처 (ffmpeg 별도 설치)
 pymupdf>=1.24         # pdftoppm이 없는 Windows에서 PDF→PNG 렌더
+# 실측 수집기(성민 PC 전용)는 collector/requirements.txt

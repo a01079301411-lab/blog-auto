@@ -9,7 +9,7 @@ from types import SimpleNamespace as NS
 KIT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(KIT))
 
-from cosyhw import template, writer, checks, agent, prompts, report, paths, collectors  # noqa: E402
+from cosyhw import template, writer, checks, agent, prompts, report, paths, metrics  # noqa: E402
 from cosyhw.fmt import fmt_count, parse_count, vs_recent  # noqa: E402
 
 SUB = json.loads(paths.SUBMITTED.read_text(encoding="utf-8"))
@@ -52,13 +52,56 @@ def test_dropdown_check():
     assert any("드롭다운" in e for e in checks.check(out, cm).errors)
 
 
-def test_parsers():
-    assert collectors.youtube_id("https://youtu.be/znj8v8XY5js") == "znj8v8XY5js"
-    assert collectors.youtube_id("https://www.youtube.com/shorts/abcdefghijk") == "abcdefghijk"
-    assert collectors.ig_shortcode_to_id("B") == "1"
-    html = 'var ytInitialPlayerResponse = {"videoDetails":{"viewCount":"961000"}};var x'
-    assert collectors._json_after(html, "ytInitialPlayerResponse")["videoDetails"]["viewCount"] == "961000"
+def test_norm_url():
+    n = metrics.norm_url
+    assert n("youtube.com/watch?v=014MXDS1CB0") == n("https://www.youtube.com/watch?v=014MXDS1CB0&t=3") == "yt:014MXDS1CB0"
+    assert n("https://youtu.be/014MXDS1CB0") == "yt:014MXDS1CB0" == n("https://www.youtube.com/shorts/014MXDS1CB0")
+    assert n("instagram.com/nobrain._.girl/reel/DcTS-BPpbNh\n") == n("https://www.instagram.com/reel/DcTS-BPpbNh/") == "ig:DcTS-BPpbNh"
+    assert n("https://www.youtube.com/post/Ugkx_1") == "ytpost:Ugkx_1"
+    assert n("https://www.tiktok.com/@a.b/photo/123") == "tt:123" and n("https://www.tiktok.com/@A.b") == "tt:@a.b"
     assert paths.norm_id("2-1_q1") == "2-1-q1" and paths.norm_id("2-4퀘스트2") == "2-4-q2"
+
+
+def _store(tmp, now="2026-11-07 10:00", old="2026-11-01 10:00"):
+    data = {
+        "https://www.instagram.com/reel/AAA/": {"platform": "instagram", "kind": "post", "views": 100000, "likes": 3000,
+                                                "comments": 40, "collected_at": now},
+        "https://www.instagram.com/acct/": {"platform": "instagram", "kind": "account", "collected_at": now,
+            "recent_reels": [{"href": "/acct/reel/P1/", "views": "900만"}, {"href": "/acct/reel/P2/", "views": "800만"},
+                             {"href": "/acct/reel/P3/", "views": "700만"}, {"href": "/acct/reel/AAA/", "views": "10만"}]
+                            + [{"href": f"/acct/reel/R{i}/", "views": "1만"} for i in range(6)]},
+        "https://www.youtube.com/watch?v=014MXDS1CB0": {"platform": "youtube", "views": 18813, "collected_at": old},
+        "https://www.instagram.com/p/BAD/": {"err": "timeout", "collected_at": now},
+    }
+    p = Path(tmp) / "results.json"
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return metrics.Store.load(p)
+
+
+def test_store_and_baseline():
+    st = _store(tempfile.mkdtemp())
+    assert st.has("instagram.com/reel/AAA") and not st.has("https://www.instagram.com/p/BAD/")
+    assert st.error_of("https://www.instagram.com/p/BAD/") == "timeout"
+    b = st.baseline("https://www.instagram.com/reel/AAA/", "instagram.com/acct")
+    assert b["n"] == 6 and b["avg"] == "1만" and b["multiple"] == 10.0, b      # 고정 3개·대상 제외
+    assert "error" in st.baseline("https://www.instagram.com/reel/AAA/", "instagram.com/none")
+    assert any("014MXDS1CB0" in o for o in st.stale())                           # 3일 경과 경고
+    miss = st.write_missing(Path(tempfile.mkdtemp()) / "m.txt")
+    assert miss and "instagram.com/none" in miss.read_text(encoding="utf-8")
+
+
+def test_check_requires_results():
+    tp = str(KIT / "templates" / "3-1-1_template.xlsx")
+    cm = template.analyze(tp)
+    st = _store(tempfile.mkdtemp())
+    cells = {c: "문장으로 채운 내용" for c in cm.fillable}
+    cells.update({cm.name_cell: "성민", cm.date_cell: "2026-11-07", "C13": "https://www.instagram.com/reel/AAA/",
+                  "C14": "https://www.instagram.com/p/NOTCOLLECTED/"})
+    out = str(Path(tempfile.mkdtemp()) / "x.xlsx")
+    writer.fill(tp, out, cells, keep_prefilled=cm.prefilled)
+    errs = " ".join(checks.check(out, cm, store=st).errors)
+    assert "NOTCOLLECTED" in errs and "AAA" not in errs and "DdBfondCQsX" in errs   # 지정 링크도 미수집이면 오류
+    assert checks.check(out, cm).ok                                               # store 없이는 형식 검사만
 
 
 # ---------------------------------------------------------- 가짜 Claude로 에이전트 루프 검증
@@ -103,16 +146,20 @@ def test_agent_loop():
                 sources=[{"item": "Pexels", "url": "https://www.pexels.com/license/", "checked": "2026-11-04"}],
                 learning_points=["상업적 이용과 출처 표기 두 가지만 본다"], unverified=[], todo_for_user=["즐겨찾기 캡처"])
     script = [
-        _msg([NS(type="thinking", thinking="가이드 분석"), _tool(1, "compare_vs_recent", {"target": 100000, "recent": [10000, 20000]})], "tool_use"),
+        _msg([NS(type="thinking", thinking="가이드 분석"), _tool(1, "get_metrics", {"url": "https://www.instagram.com/p/NOPE/"})], "tool_use"),
         _msg([_tool(2, "submit_homework", {**meta, "cells": full[:-1]})], "tool_use"),       # 한 칸 빠짐 → 오류
         _msg([_tool(3, "submit_homework", {**meta, "cells": full})], "tool_use"),            # 통과
         _msg([NS(type="text", text="완료")], "end_turn"),
     ]
     fake = FakeClient(script)
     out = Path(tempfile.mkdtemp())
-    job = agent.Job(quest_id="2-3-q1", template=tp, out_dir=out, cm=cm, today="2026-11-04")
+    job = agent.Job(quest_id="2-3-q1", template=tp, out_dir=out, cm=cm, today="2026-11-04", store=_store(tempfile.mkdtemp()))
     agent.run(job, prompts.system_prompt(), "brief", [], client=fake, verbose=False)
     assert job.submits == 2 and job.report.ok
+    first = fake.calls[1]["messages"][-1]["content"][0]
+    assert first["is_error"] and "results.json에 실측 없음" in first["content"] and job.store.missing   # 추정 대신 수집 요청
+    assert {t.get("name") for t in fake.calls[0]["tools"]} >= {"get_metrics", "compare_vs_recent", "submit_homework"}
+    assert not {"collect_url", "instagram_account_recent"} & {t.get("name") for t in fake.calls[0]["tools"]}
     # 두 번째 제출 결과는 is_error=True 였어야 함
     tr = fake.calls[2]["messages"][-1]["content"][0]
     assert tr["is_error"] is True and "빈칸" in tr["content"][0]["text"]
@@ -120,6 +167,30 @@ def test_agent_loop():
     assert Path(job.xlsx).name == "2-3_q1_무료소스정리표_성민.xlsx"
     rpt = Path(report.write_report(job)).read_text(encoding="utf-8")
     assert "성민이 지금 할 일" in rpt and "즐겨찾기 캡처" in rpt
+
+
+def test_plan_mode():
+    tp = str(KIT / "templates" / "3-1-1_template.xlsx")
+    cm = template.analyze(tp)
+    plan = {"items": [{"category": "카드뉴스", "url": "https://www.instagram.com/p/X1/", "why": "최근·랜딩 있음"}],
+            "accounts": ["https://www.instagram.com/acct/"], "extra_pages": ["https://linktr.ee/acct"], "notes": ""}
+    fake = FakeClient([_msg([_tool(1, "save_url_plan", plan)], "tool_use"), _msg([NS(type="text", text="저장")], "end_turn")])
+    job = agent.Job(quest_id="3-1-1", template=tp, out_dir=Path(tempfile.mkdtemp()), cm=cm, today="2026-11-07",
+                    store=metrics.Store.load(Path(tempfile.mkdtemp()) / "none.json"))
+    agent.run(job, prompts.PLAN_ROLE, "brief", [], client=fake, verbose=False, mode="plan")
+    assert job.url_plan == plan
+    names = {t.get("name") for t in fake.calls[0]["tools"]}
+    assert "save_url_plan" in names and "submit_homework" not in names
+
+
+def test_collector_js_parses():
+    import re, shutil, subprocess
+    if not shutil.which("node"):
+        return
+    src = (KIT / "collector" / "collector.py").read_text(encoding="utf-8")
+    for name, body in re.findall(r'(JS_[A-Z_]+) = r"""(.*?)"""', src, re.S):
+        r = subprocess.run(["node", "-e", f"const f = ({body}); if (typeof f !== 'function') throw 1;"], capture_output=True)
+        assert r.returncode == 0, name
 
 
 def test_register_new_quest():

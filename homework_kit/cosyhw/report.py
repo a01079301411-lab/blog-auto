@@ -43,6 +43,10 @@ def write_report(job) -> str:
     lines += ["", "## 6. 미확인·주의"] + [f"- {u}" for u in s.get("unverified", [])]
     if rep:
         lines += [f"- [검증 오류] {e}" for e in rep.errors] + [f"- [검증 주의] {w}" for w in rep.warnings]
+    if getattr(job, "store", None) is not None and job.store.missing:
+        lines += ["", "## 6-1. 실측 수집 필요 (추정하지 않음)",
+                  f"성민 PC: `python collector/collector.py collect collector/missing_urls_{job.quest_id}.txt collector/results.json` 후 run 재실행"]
+        lines += [f"- {u} — {why}" for u, why in job.store.missing.values()]
     if job.pngs:
         lines += ["", "## 7. 렌더 미리보기"] + [f"![page]({Path(p).relative_to(job.out_dir).as_posix()})" for p in job.pngs]
     out = job.out_dir / "보고서.md"

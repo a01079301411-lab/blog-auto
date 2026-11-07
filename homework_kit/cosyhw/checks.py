@@ -36,7 +36,11 @@ class Report:
         return "\n".join(lines)
 
 
-def check(xlsx: str, cm: CellMap, fixed: dict | None = None, extra_forbidden: list | None = None) -> Report:
+REF_URL = re.compile(r"(?:https?://)?(?:www\.|m\.)?(?:instagram\.com|youtube\.com|youtu\.be|tiktok\.com|threads\.(?:com|net)|blog\.naver\.com)/[^\s,)'\"]+")
+
+
+def check(xlsx: str, cm: CellMap, fixed: dict | None = None, extra_forbidden: list | None = None,
+          store=None) -> Report:
     wb = openpyxl.load_workbook(xlsx)
     ws = pick_sheet(wb, cm.sheet)
     rep = Report(total=len(cm.fillable))
@@ -81,4 +85,20 @@ def check(xlsx: str, cm: CellMap, fixed: dict | None = None, extra_forbidden: li
         got = ws[coord].value
         if str(got or "").strip() != str(want).strip():
             rep.errors.append(f"{coord} 지정 값이 바뀜: '{str(want)[:30]}' → '{str(got)[:30]}'")
+    # 실측 근거: 데이터 행의 레퍼런스 링크는 모두 results.json(성민 PC 수집)에 있어야 함 — 추정 금지
+    if store is not None:
+        from openpyxl.utils import get_column_letter
+        for r in cm.data_rows:
+            for ci in range(1, ws.max_column + 1):
+                v = ws.cell(r, ci).value
+                for m in REF_URL.finditer(str(v or "")):
+                    u = m.group(0).strip()
+                    if not store.has(u):
+                        store.need(u, f"{get_column_letter(ci)}{r} 레퍼런스 실측")
+                        rep.errors.append(f"{get_column_letter(ci)}{r} 링크의 실측이 results.json에 없음 → PC 수집 필요: {u}")
+                    else:
+                        rep.filled_sources = getattr(rep, "filled_sources", 0) + 1
+        old = store.stale()
+        if old:
+            rep.warnings.append(f"수집 후 3일 넘은 수치 {len(old)}건 — 재수집 권장 (예: {old[0]})")
     return rep

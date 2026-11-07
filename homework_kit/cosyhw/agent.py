@@ -10,8 +10,9 @@ from pathlib import Path
 
 import anthropic
 
-from . import collectors, checks, render, writer
-from .fmt import fmt_count, vs_recent
+from . import checks, render, writer
+from .fmt import fmt_count
+from .metrics import Store, norm_url
 from .paths import KIT, MODEL, USER_NAME
 from .template import CellMap
 
@@ -29,22 +30,18 @@ def _tool(name, desc, props, required):
 TOOLS = [
     {"type": "web_search_20260209", "name": "web_search", "max_uses": 60},
     {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 80},
-    _tool("collect_url", "유튜브·틱톡·인스타 게시물(또는 채널/계정) 주소의 실측 수치를 원본에서 수집한다. "
-          "영상: 조회·좋아요·댓글·공유·게시일·길이·설명/캡션·유료광고·쇼핑태그. 계정 주소면 최근 게시물 목록.",
+    _tool("get_metrics", "성민 PC 수집기(collector.py)가 만든 results.json에서 링크 1개의 실측 결과를 가져온다. "
+          "유튜브 영상·커뮤니티 글, 인스타 게시물·계정(소개글·링크·최근 릴스), 틱톡, 그 밖의 페이지(스레드·블로그·랜딩) 모두. "
+          "없으면 오류가 나고 그 링크는 '수집 필요' 목록에 자동으로 올라간다. 수치는 반드시 이 도구 결과만 쓴다.",
           {"url": {"type": "string"}}, ["url"]),
-    _tool("youtube_channel_recent", "유튜브 채널의 최근 영상(videos) 또는 쇼츠(shorts) 목록과 조회수(최신순).",
-          {"channel": {"type": "string", "description": "@핸들 또는 채널 주소"},
-           "tab": {"type": "string", "enum": ["videos", "shorts"]},
-           "limit": {"type": "integer"}}, ["channel", "tab"]),
-    _tool("tiktok_account_recent", "틱톡 계정의 팔로워·바이오 링크·최근 영상 재생수.",
-          {"handle": {"type": "string"}, "limit": {"type": "integer"}}, ["handle"]),
-    _tool("instagram_account_recent", "인스타 계정의 팔로워·소개글·링크·최근 게시물(릴스 조회수 포함). 로그인 세션 필요.",
-          {"username": {"type": "string"}, "limit": {"type": "integer"}}, ["username"]),
-    _tool("hook_frame", "영상의 지정 시점(기본 0.5초) 프레임 이미지를 가져온다. 첫 3초 후킹 자막을 그대로 인용할 때 사용.",
-          {"url": {"type": "string"}, "seconds": {"type": "number"}}, ["url"]),
-    _tool("compare_vs_recent", "평소 대비 계산: 대상 수치와 최근 N개 수치로 평균·중앙값·배수 문장을 만든다.",
-          {"target": {"type": "integer"}, "recent": {"type": "array", "items": {"type": "integer"}}},
-          ["target", "recent"]),
+    _tool("list_collected", "results.json에 들어 있는 링크 목록(종류·수집 시각·성공/실패)을 본다. 어떤 레퍼런스를 쓸 수 있는지 고를 때 사용.",
+          {"filter": {"type": "string", "description": "링크에 포함된 글자로 거르기(선택)"}}, []),
+    _tool("compare_vs_recent", "평소 대비: 대상 게시물과 그 계정 링크의 수집 결과로, 고정·대상 게시물을 빼고 최근 5~10개 평균 대비 배수를 계산한다.",
+          {"target_url": {"type": "string"}, "account_url": {"type": "string"}}, ["target_url", "account_url"]),
+    _tool("view_shot", "수집기가 찍은 화면 캡처(영상 0.5초 후킹 프레임, 카드뉴스 표지, 글·랜딩 페이지)를 본다. 없으면 '캡처 필요'.",
+          {"url": {"type": "string"}}, ["url"]),
+    _tool("request_collection", "실측이 필요한데 results.json에 없는 링크를 '수집 필요' 목록에 올린다(새 레퍼런스 후보, 랜딩 페이지, 계정 링크 등).",
+          {"urls": {"type": "array", "items": {"type": "string"}}, "reason": {"type": "string"}}, ["urls", "reason"]),
     _tool("format_counts", "정수들을 표기 규칙(1만 이상 '3.4만', 미만 '9,627')으로 바꾼다.",
           {"numbers": {"type": "array", "items": {"type": "integer"}}}, ["numbers"]),
     _tool("read_kit_file", "homework_kit 안의 자료 파일(docs/…, quests.json 등)을 읽는다.",
@@ -74,7 +71,26 @@ TOOLS = [
           },
           ["quest_title", "file_topic", "cells", "guide_analysis", "sources", "learning_points", "unverified", "todo_for_user"]),
 ]
-_SCHEMAS = {t["name"]: t["input_schema"] for t in TOOLS if "input_schema" in t}
+PLAN_TOOLS = [
+    {"type": "web_search_20260209", "name": "web_search", "max_uses": 80},
+    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 60},
+    _tool("read_kit_file", "homework_kit 안의 자료 파일(docs/…, quests.json 등)을 읽는다.",
+          {"path": {"type": "string"}}, ["path"]),
+    _tool("save_url_plan",
+          "가이드에 맞는 레퍼런스 후보와 수집할 링크 목록을 저장한다(성민 PC 수집기 입력 파일). 분류마다 필요한 개수보다 넉넉히(1.5~2배) 고른다.",
+          {"items": {"type": "array", "items": {
+              "type": "object", "additionalProperties": False,
+              "properties": {"category": {"type": "string"}, "url": {"type": "string"},
+                             "why": {"type": "string", "description": "고른 이유(최신성·반응·랜딩 근거)"}},
+              "required": ["category", "url", "why"]}},
+           "accounts": {"type": "array", "items": {"type": "string"},
+                        "description": "평소 대비·프로필 링크(랜딩) 확인용 계정 링크"},
+           "extra_pages": {"type": "array", "items": {"type": "string"},
+                           "description": "랜딩 확인용 페이지(링크트리·상품 페이지 등)"},
+           "notes": {"type": "string"}},
+          ["items", "accounts", "extra_pages", "notes"]),
+]
+_SCHEMAS = {t["name"]: t["input_schema"] for t in TOOLS + PLAN_TOOLS if "input_schema" in t}
 
 
 def _validate(name: str, args) -> str | None:
@@ -123,6 +139,9 @@ class Job:
     pngs: list = field(default_factory=list)
     submits: int = 0
     log: list = field(default_factory=list)
+    store: Store | None = None
+    url_plan: dict | None = None
+    plan_path: Path | None = None
 
     def logf(self, kind: str, data) -> None:
         rec = {"t": time.strftime("%H:%M:%S"), "kind": kind, "data": data}
@@ -146,7 +165,7 @@ def do_submit(job: Job, args: dict) -> list:
     qid = job.quest_id.replace("-q", "_q")
     out = job.out_dir / f"{qid}_{_safe_name(args['file_topic'])}_{USER_NAME}.xlsx"
     warns = writer.fill(job.template, str(out), cells, sheet=job.cm.sheet, keep_prefilled=job.cm.prefilled)
-    rep = checks.check(str(out), job.cm, fixed=job.fixed)
+    rep = checks.check(str(out), job.cm, fixed=job.fixed, store=job.store)
     rep.warnings = warns + rep.warnings
     pdf, pngs, note = render.render(str(out), str(job.out_dir / "render"))
     job.submission, job.xlsx, job.report, job.pngs = args, str(out), rep, pngs
@@ -171,19 +190,37 @@ def run_tool(job: Job, name: str, args: dict) -> tuple[list | str, bool]:
     if err:
         return err, True
     try:
-        if name == "collect_url":
-            return _jtext(collectors.collect(args["url"])), False
-        if name == "youtube_channel_recent":
-            return _jtext(collectors.youtube_channel(args["channel"], args["tab"], args.get("limit", 12))), False
-        if name == "tiktok_account_recent":
-            return _jtext(collectors.tiktok_user(args["handle"], args.get("limit", 12))), False
-        if name == "instagram_account_recent":
-            return _jtext(collectors.instagram_user(args["username"], args.get("limit", 12))), False
-        if name == "hook_frame":
-            p = collectors.hook_frame(args["url"], args.get("seconds", 0.5), str(job.out_dir / "hooks"))
-            return [{"type": "text", "text": f"{args.get('seconds', 0.5)}초 프레임: {p}"}, _img_block(p)], False
+        if name == "get_metrics":
+            st = job.store
+            r = st.get(args["url"])
+            if r is None:
+                why = st.error_of(args["url"])
+                st.need(args["url"], "레퍼런스 실측" + (f" (지난 수집 실패: {why})" if why else ""))
+                return (f"results.json에 실측 없음{' (수집 실패: ' + why + ')' if why else ''} → '수집 필요' 목록에 올림. "
+                        "이 링크의 수치는 추정하지 말고, 다른 수집된 레퍼런스를 쓰거나 PC 재수집 후 진행"), True
+            return _jtext(r), False
+        if name == "list_collected":
+            f = (args.get("filter") or "").lower()
+            rows = [{"url": k, "platform": v.get("platform"), "kind": v.get("kind"),
+                     "collected_at": v.get("collected_at"), "ok": "err" not in v,
+                     "hint": (v.get("title") or v.get("caption") or v.get("text") or v.get("desc") or v.get("err") or "")[:60]}
+                    for k, v in job.store.data.items() if f in k.lower()]
+            return _jtext({"count": len(rows), "items": rows}), False
         if name == "compare_vs_recent":
-            return _jtext(vs_recent(args["target"], args["recent"])), False
+            res = job.store.baseline(args["target_url"], args["account_url"])
+            return _jtext(res), "error" in res
+        if name == "view_shot":
+            p = job.store.shot(args["url"])
+            if not p:
+                return "캡처 필요 — shots/에 이 링크의 캡처가 없음(PC에서 collect 시 자동 저장). 화면 문구는 캡션·본문 텍스트로만 인용", True
+            return [{"type": "text", "text": f"캡처: {p.name}"}, _img_block(str(p))], False
+        if name == "request_collection":
+            for u in args["urls"]:
+                job.store.need(u, args["reason"])
+            return f"{len(args['urls'])}개를 '수집 필요' 목록에 올림(이미 수집된 것은 제외)", False
+        if name == "save_url_plan":
+            job.url_plan = args
+            return "저장함. 짧게 요약하고 마무리해.", False
         if name == "format_counts":
             return _jtext({str(n): fmt_count(n) for n in args["numbers"]}), False
         if name == "read_kit_file":
@@ -217,7 +254,9 @@ def _guide_blocks(paths: list[str]) -> list:
 
 
 def run(job: Job, system: str, briefing: str, guides: list[str], effort: str = "high",
-        max_turns: int = 80, client: anthropic.Anthropic | None = None, verbose: bool = True) -> Job:
+        max_turns: int = 80, client: anthropic.Anthropic | None = None, verbose: bool = True,
+        mode: str = "run") -> Job:
+    """mode='plan': 레퍼런스 후보·수집 목록만 만든다(수치 없음). mode='run': results.json으로 숙제를 완성한다."""
     client = client or anthropic.Anthropic()
     content = _guide_blocks(guides) + [{"type": "text", "text": briefing}]
     messages: list = [{"role": "user", "content": content}]
@@ -230,7 +269,7 @@ def run(job: Job, system: str, briefing: str, guides: list[str], effort: str = "
             max_tokens=64000,
             system=system,
             messages=messages,
-            tools=TOOLS,
+            tools=PLAN_TOOLS if mode == "plan" else TOOLS,
             thinking={"type": "adaptive", "display": "summarized"},
             output_config={"effort": effort},
             cache_control={"type": "ephemeral"},
@@ -281,13 +320,23 @@ def run(job: Job, system: str, briefing: str, guides: list[str], effort: str = "
             messages.append({"role": "user", "content": "잘렸어. 이어서 진행해."})
             continue
         # end_turn
+        if mode == "plan":
+            if job.url_plan is None and nudged < 2:
+                nudged += 1
+                messages.append({"role": "user", "content": "save_url_plan으로 후보·계정·랜딩 페이지 목록을 저장해."})
+                continue
+            break
+        if (job.report is None or not job.report.ok) and job.store is not None and job.store.missing and nudged >= 1:
+            print("[보류] 실측이 없는 링크가 있어 완성하지 못했습니다(추정 금지) → 수집 필요 목록을 만듭니다.")
+            break
         if job.report is None or not job.report.ok:
             if nudged >= 2:
                 print("[중단] 검증을 통과한 제출 없이 끝났습니다.")
                 break
             nudged += 1
             messages.append({"role": "user", "content":
-                             "아직 검증을 통과한 제출이 없어. 빈칸 없이 모든 칸을 채워 submit_homework로 제출해."})
+                             "아직 검증을 통과한 제출이 없어. results.json에 수집된 레퍼런스로 빈칸 없이 모든 칸을 채워 submit_homework로 제출해. "
+                             "수집된 레퍼런스가 모자라면 request_collection으로 필요한 링크를 올리고 마무리해(수치 추정 금지)."})
             continue
         break
 
