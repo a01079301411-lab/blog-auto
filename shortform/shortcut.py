@@ -16,7 +16,15 @@ ICON = os.path.join(ROOT, "shortform", "assets", "app_v2.ico")
 # 경로는 환경 변수로 넘겨 PowerShell 따옴표 문제를 피한다
 _PS = (
     "$d=[Environment]::GetFolderPath('Desktop');"
-    "$p=Join-Path $d $env:SF_NAME;"
+    "$name=$env:SF_NAME;"
+    # 바탕화면이 원드라이브로 여러 컴퓨터에 동기화되면 아이콘 하나를 같이 쓰게 되어, 다른 컴퓨터에서는
+    # 프로그램을 못 찾는다(흰 종이 아이콘). 그럴 땐 컴퓨터마다 이름이 다른 아이콘을 따로 만든다
+    "if ($d -like '*OneDrive*') {"
+    " $name='숏폼 자동 편집기 (' + $env:COMPUTERNAME + ').lnk';"
+    " $old=Join-Path $d $env:SF_NAME;"
+    " if (Test-Path $old) { $o=(New-Object -ComObject WScript.Shell).CreateShortcut($old);"
+    "  if (-not (Test-Path $o.TargetPath) -or -not (Test-Path $o.WorkingDirectory)) { Remove-Item $old -Force } } };"
+    "$p=Join-Path $d $name;"
     "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p);"
     # 이미 있어도 다른 컴퓨터 경로(바탕화면이 원드라이브로 동기화된 경우)나 예전 설정이면 고친다
     "if ((Test-Path $p) -and ($env:SF_FORCE -ne '1') -and ($s.TargetPath -eq $env:SF_TARGET)"
