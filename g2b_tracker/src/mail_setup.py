@@ -22,7 +22,7 @@ def main():
     print("먼저 네이버 메일 > 환경설정 > POP3/IMAP 설정 > 'POP3/SMTP 사용' 을 '사용함' 으로 바꿔 주세요.")
     print("2단계 인증을 쓰면: 네이버 내정보 > 보안설정 > 애플리케이션 비밀번호 만들기 → 그 비밀번호를 쓰세요.\n")
     uid = input("네이버 아이디 (예: noblesse0913) > ").strip().replace("@naver.com", "")
-    pw = input("비밀번호 (또는 애플리케이션 비밀번호) > ").strip()
+    pw = input("비밀번호 (또는 애플리케이션 비밀번호) > ").strip().replace(" ", "")
     if not (uid and pw):
         print("비어 있어서 저장하지 않았어요.")
         return

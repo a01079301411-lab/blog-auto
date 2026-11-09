@@ -48,7 +48,15 @@ def attachments():
     if BROCHURE.exists():
         files.append(BROCHURE)
     if ATTACH_DIR.is_dir():
-        files += sorted(p for p in ATTACH_DIR.iterdir() if p.is_file() and not p.name.startswith(("~", ".", "여기에")))
+        for p in sorted(ATTACH_DIR.iterdir()):
+            if not p.is_file() or p.name.startswith(("~", ".", "여기에")):
+                continue
+            if p.name == BROCHURE.name and BROCHURE.exists():
+                continue  # 제안서는 이미 붙음 (중복 방지)
+            if "통장" in p.name:
+                print(f"  ※ {p.name} 은(는) 첨부하지 않아요 (통장 사본은 계약 단계에서만 제출)")
+                continue
+            files.append(p)
     return files
 
 
@@ -117,9 +125,13 @@ def run(test=False):
     msgs = [build(t["이메일"], t["기관"], subject, body, files, sender) for t in targets]
     try:
         send_all(msgs)
-    except smtplib.SMTPAuthenticationError:
-        print("네이버 로그인 실패: 네이버 메일 > 환경설정 > POP3/SMTP 사용 '사용함' 확인, "
-              "2단계 인증 중이면 '애플리케이션 비밀번호'를 NAVER_APP_PW 에 넣어 주세요.")
+    except smtplib.SMTPAuthenticationError as e:
+        detail = e.smtp_error.decode("utf-8", "ignore") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+        print(f"네이버 로그인 실패 (코드 {e.smtp_code}: {detail.strip()[:120]})")
+        print("확인 순서: ① 네이버 메일 > 환경설정 > POP3/IMAP 설정 > POP3/SMTP 사용 '사용함' + 저장"
+              " ② 2단계 인증을 쓰면 '애플리케이션 비밀번호'(12자리, 띄어쓰기 없이)"
+              " ③ 아이디는 로그인 아이디(noblesse0913)만, @naver.com 빼고"
+              " → 7_메일설정.bat 다시 실행")
         notifier.notify("[나라장터] 메일 발송 실패: 네이버 로그인 (7_메일설정.bat 확인)")
         return 0
     if not test:
