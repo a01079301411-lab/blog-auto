@@ -11,3 +11,4 @@ __pycache__/
 data/contacts.json
 data/contacts_v2.json
 data/schools.json
+data/my_contacts.csv

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로젠이사 기관 이전 제안서</title>
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#14324f;--blue:#2c6aa0;--ink:#1b2430;--sub:#4a5866;--line:#d7dfe8;--gold:#f2b33d;--cream:#fff8e8;--pale:#eef3f8;--red:#c0392b}
+body{font-family:"Noto Sans KR",sans-serif;color:var(--ink);font-size:9.6pt;line-height:1.5;background:#fff}
+.page{width:210mm;height:297mm;position:relative;overflow:hidden;page-break-after:always}
+.page:last-child{page-break-after:auto}
+.pad{padding:11mm 13mm 0}
+.pnum{position:absolute;bottom:6mm;right:13mm;font-size:7.5pt;color:#9aa6b2}
+.brand{position:absolute;bottom:6mm;left:13mm;font-size:7.5pt;color:#9aa6b2}
+h2{font-size:15pt;font-weight:900;color:var(--navy);line-height:1.3;margin-bottom:2mm}
+h3{font-size:11pt;font-weight:900;color:var(--navy);margin:0 0 2mm;padding-left:2.5mm;border-left:1.2mm solid var(--gold)}
+.lead{color:var(--sub);font-size:9.8pt;margin-bottom:5mm}
+b{font-weight:700}
+.em{color:var(--blue);font-weight:900}
+/* cover */
+.cover-top{background:var(--navy);color:#fff;padding:12mm 13mm 9mm}
+.kicker{font-size:9pt;color:#b9d2ea;font-weight:500;letter-spacing:.3px}
+.cover-top h1{font-size:25pt;font-weight:900;line-height:1.28;margin:3mm 0 3mm}
+.cover-top h1 span{color:var(--gold)}
+.cover-top .sub{font-size:11pt;color:#e6eef7;font-weight:500}
+.badges{display:flex;gap:2mm;flex-wrap:wrap;margin-top:5mm}
+.badge{background:#fff;color:var(--navy);border-radius:3mm;padding:1.3mm 3.2mm;font-weight:700;font-size:8.8pt}
+.badge.o{background:var(--gold);color:#2b1d00}
+.hero{display:grid;grid-template-columns:1.25fr 1fr;gap:3mm;padding:5mm 13mm 0}
+.hero img{width:100%;height:62mm;object-fit:cover;border-radius:2.5mm}
+.nums{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;padding:5mm 13mm 0}
+.num{border:.4mm solid var(--line);border-radius:2.5mm;padding:3mm 2mm;text-align:center}
+.num b{display:block;font-size:17pt;font-weight:900;color:var(--navy);line-height:1.15}
+.num span{font-size:8.2pt;color:var(--sub)}
+.worry{margin:5mm 13mm 0;display:grid;grid-template-columns:repeat(3,1fr);gap:3mm}
+.w{background:var(--pale);border-radius:2.5mm;padding:3.5mm}
+.w .q{font-size:9pt;color:var(--red);font-weight:700}
+.w .a{font-size:9pt;margin-top:1.5mm}
+.cta{position:absolute;left:13mm;right:13mm;bottom:14mm;background:var(--gold);border-radius:3mm;padding:4mm 5mm;display:flex;justify-content:space-between;align-items:center;color:#2b1d00}
+.cta .t{font-size:12pt;font-weight:900;line-height:1.35}
+.cta .t small{display:block;font-size:8.6pt;font-weight:500}
+.cta .p{font-size:17pt;font-weight:900;text-align:right;line-height:1.2}
+.cta .p small{display:block;font-size:8.5pt;font-weight:500}
+/* why */
+.why{margin:5mm 13mm 0;display:grid;grid-template-columns:44mm 1fr;gap:4mm;border:.5mm solid var(--navy);border-radius:3mm;padding:4mm}
+.why .k{font-size:8.5pt;color:var(--blue);font-weight:700}
+.why .big{font-size:28pt;font-weight:900;color:var(--navy);line-height:1.1}
+.why .s{font-size:8.6pt;color:var(--sub)}
+.why .row{display:flex;gap:3mm;align-items:baseline;padding:1mm 0;border-bottom:.3mm dashed var(--line)}
+.why .row:last-child{border:0}
+.why .row b{font-size:13pt;color:var(--blue);min-width:17mm}
+.why .row span{font-size:8.8pt}
+.chk{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3mm;margin-top:4mm}
+.chk div{border:.4mm solid var(--line);border-radius:2.5mm;padding:3mm;font-size:8.6pt}
+.chk div b{display:block;color:var(--navy);font-size:9.2pt;margin-bottom:1mm}
+.chk li{list-style:none;padding-left:4mm;position:relative;margin:.6mm 0}
+.chk li:before{content:"□";position:absolute;left:0;color:var(--blue)}
+.split{width:100%;margin-top:4mm}
+.split td{font-size:8.8pt}
+/* page 2 */
+.pain{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-bottom:5mm}
+.pain div{border:.4mm solid #f0c9c4;background:#fdf3f2;border-radius:2.5mm;padding:3mm 3.5mm;font-size:9pt}
+.pain div b{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:8.9pt}
+th{background:var(--navy);color:#fff;font-weight:700;padding:2mm;text-align:left}
+td{border-bottom:.3mm solid var(--line);padding:2mm;vertical-align:top}
+td.s{width:10mm;text-align:center;font-weight:900;color:var(--blue)}
+td.you{width:42mm;color:var(--sub)}
+td.us b{color:var(--navy)}
+.note{background:var(--cream);border:.4mm solid #f2d48f;border-radius:2.5mm;padding:3mm 4mm;margin-top:4mm;font-size:9pt}
+/* page 3 */
+.proof{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-bottom:4mm}
+.card{border:.4mm solid var(--line);border-radius:2.5mm;padding:3.5mm}
+.card .big{font-size:15pt;font-weight:900;color:var(--navy);line-height:1.2}
+.card .k{font-size:8pt;color:var(--blue);font-weight:700;margin-bottom:1mm}
+.card p{font-size:8.8pt;color:var(--sub);margin-top:1mm}
+.gal{display:grid;grid-template-columns:repeat(4,1fr);gap:2.5mm;margin-bottom:4mm}
+.gal figure{margin:0}
+.gal img{width:100%;height:37mm;object-fit:cover;border-radius:2mm;display:block}
+.gal figcaption{font-size:7.6pt;color:var(--sub);text-align:center;margin-top:.8mm}
+.wh{display:grid;grid-template-columns:58mm 24mm 1fr;gap:3mm}
+.wh img{width:100%;height:40mm;object-fit:cover;border-radius:2mm}
+.wh .box{background:var(--cream);border:.4mm solid #f2d48f;border-radius:2.5mm;padding:3mm 3.5mm;font-size:8.8pt}
+.team{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;margin-top:4mm}
+.team div{background:var(--pale);border-radius:2.5mm;padding:3mm;font-size:8.8pt}
+/* page 4 */
+.faq{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm 4mm;margin-bottom:4mm}
+.faq div{border-bottom:.3mm solid var(--line);padding-bottom:2mm}
+.faq .q{font-weight:900;color:var(--navy);font-size:9.3pt}
+.faq .a{font-size:8.9pt;color:#2b3742;margin-top:.8mm}
+.docs{display:grid;grid-template-columns:1fr 1fr;gap:1mm 4mm;background:var(--pale);border-radius:2.5mm;padding:3.5mm 4mm;font-size:8.9pt;margin-bottom:4mm}
+.docs div:before{content:"☑ ";color:var(--blue);font-weight:900}
+.steps{display:flex;gap:2mm;margin-bottom:4mm}
+.st{flex:1;border:.5mm solid var(--navy);border-radius:2.5mm;padding:3mm;text-align:center}
+.st b{display:block;font-size:8pt;color:var(--blue)}
+.st div{font-weight:900;font-size:10pt;color:var(--navy)}
+.st span{font-size:8pt;color:var(--sub)}
+.final{background:var(--navy);color:#fff;border-radius:3mm;padding:5mm 6mm;display:grid;grid-template-columns:1fr auto;gap:4mm;align-items:center}
+.final .t{font-size:13pt;font-weight:900;line-height:1.35}
+.final .t span{color:var(--gold)}
+.final .t small{display:block;font-size:8.8pt;font-weight:500;color:#cfe0f0;margin-top:1.5mm}
+.final .r{text-align:right}
+.final .r .p{font-size:19pt;font-weight:900;color:var(--gold)}
+.final .r .m{font-size:9pt;color:#cfe0f0}
+.qr{display:flex;gap:2mm;align-items:center;justify-content:flex-end;margin-top:2mm;font-size:7.5pt;color:#cfe0f0}
+.qr img{width:16mm;height:16mm;background:#fff;padding:1mm;border-radius:1mm}
+.biz{font-size:7.8pt;color:var(--sub);margin-top:3mm;line-height:1.6}
+</style></head><body>
+
+<!-- 1. 표지: 후킹 + 본능 + 핵심 증거 + CTA -->
+<section class="page">
+  <div class="cover-top">
+    <div class="kicker">학교 행정실 · 관공서 계약·시설 담당자님께 드리는 제안</div>
+    <h1>공사 전 반출부터 준공 후 제자리까지,<br><span>담당자님은 배치도 한 장만</span> 주세요.</h1>
+    <div class="sub">이사·집기 이전 + 공사기간 실내보관을 한 업체가 끝까지 책임집니다.</div>
+    <div class="badges">
+      <span class="badge o">여성기업 확인</span><span class="badge o">장애인기업 확인</span>
+      <span class="badge">중소기업(소기업·소상공인) 확인</span><span class="badge">화물자동차 운송주선사업 허가</span>
+    </div>
+  </div>
+  <div class="hero">
+    <img src="photos/s4.jpg"><img src="photos/s7.jpg">
+  </div>
+  <div class="nums">
+    <div class="num"><b>3만 권</b><span>법원 문서고 이전<br>2일 완료</span></div>
+    <div class="num"><b>200평</b><span>공공기관 사무실<br>30개 공간 재편 · 2일</span></div>
+    <div class="num"><b>100평</b><span>직영 실내창고<br>20ft 분리 9칸</span></div>
+    <div class="num"><b>11년</b><span>대구·경북<br>이전 전문 운영</span></div>
+  </div>
+  <div class="worry">
+    <div class="w"><div class="q">"공사 끝났는데 짐이 엉뚱한 교실에…"</div><div class="a">부서·교실·책상마다 <b>색상·번호 라벨</b>, 반출·반입 때 <b>인수인계표</b>로 같이 확인합니다.</div></div>
+    <div class="w"><div class="q">"공사가 늦어지면 짐은 어디에 두죠?"</div><div class="a"><b>100평 직영 실내창고</b>에 보관했다가, 준공 날짜에 맞춰 다시 들여옵니다. 컨테이너처럼 습기 걱정 없습니다.</div></div>
+    <div class="w"><div class="q">"수의계약 서류, 또 챙겨야 하나요?"</div><div class="a">확인서 3종과 사업자·허가 서류를 <b>한 번에</b> 드립니다. <b>여성·장애인기업 공공구매 실적</b> 대상 업체입니다.</div></div>
+  </div>
+  <div class="why">
+    <div class="wl"><div class="k">왜 지금 연락드리나요?</div>
+      <div class="big">12월</div><div class="s">대구·경북 기관 이사·집기이전 계약이<br>가장 많이 몰리는 달</div></div>
+    <div class="wr">
+      <div class="row"><b>340건</b><span>2023~2026년 대구·경북 기관 이사·집기이전 계약 (나라장터 공개 계약정보 기준)</span></div>
+      <div class="row"><b>96%</b><span>수의계약으로 진행 — 견적 받을 업체를 미리 정해 두시면 일정이 급해져도 바로 진행됩니다</span></div>
+      <div class="row"><b>29%</b><span>12월 계약 — 겨울방학 공사 전 반출, 준공 후 재반입이 몰리는 시기입니다</span></div>
+    </div>
+  </div>
+  <div class="cta">
+    <div class="t">무료 현장 실사 신청 (10~15분)<small>전화·문자 한 통이면 실사 날짜를 잡고, 실사 후 항목별 견적서를 보내 드립니다.</small></div>
+    <div class="p">010-2243-7924<small>영업 담당 서성민</small></div>
+  </div>
+  <div class="brand">대구토탈홈서비스 로젠이사</div><div class="pnum">1 / 4</div>
+</section>
+
+<!-- 2. 문제 공감 → 해결: 담당자가 할 일 vs 우리가 할 일 -->
+<section class="page"><div class="pad">
+  <h2>공사 이사에서 담당자님이 가장 힘든 순간</h2>
+  <div class="lead">공사는 시공사가 하지만, 짐은 결국 행정실과 담당 부서의 일이 됩니다.</div>
+  <div class="pain">
+    <div><b>공정과 이사 날짜가 어긋날 때</b><br>반출은 끝났는데 공사가 1~2주 밀리면, 짐을 둘 곳이 없습니다.</div>
+    <div><b>준공 후 재배치 민원</b><br>"내 책상, 내 캐비닛은 어디 갔어요?" 개학·업무 첫날 전화가 몰립니다.</div>
+    <div><b>문서·기록물 분실 걱정</b><br>박스 수백 개 중 하나만 없어져도 담당자가 찾아다녀야 합니다.</div>
+    <div><b>업체마다 다른 견적·서류</b><br>범위가 애매한 견적은 나중에 추가 비용 얘기가 나옵니다.</div>
+  </div>
+
+  <h3>로젠이사는 이렇게 끝까지 갑니다</h3>
+  <table>
+    <tr><th></th><th>단계</th><th>담당자님이 하실 일</th><th>로젠이사가 하는 일</th></tr>
+    <tr><td class="s">1</td><td><b>현장 실사</b></td><td class="you">일정 한 번 잡아 주기</td><td class="us">교실·층·부서별 물량 확인, 공사 일정표와 맞춤 <b>(무료, 10~15분)</b></td></tr>
+    <tr><td class="s">2</td><td><b>견적·작업계획</b></td><td class="you">검토</td><td class="us">포장·운반·보관·재배치·폐기 <b>항목별 견적서</b>와 날짜별 작업계획</td></tr>
+    <tr><td class="s">3</td><td><b>라벨링·포장</b></td><td class="you">배치도(현재·변경) 1장</td><td class="us">부서·교실·책상별 <b>색상·번호 라벨</b>, 새 바구니·포장재, 보안문서 밀봉</td></tr>
+    <tr><td class="s">4</td><td><b>반출</b></td><td class="you">반출 목록 확인</td><td class="us"><b>인수인계표</b> 작성, 주말·야간·방학 작업으로 업무·수업 공백 최소화</td></tr>
+    <tr><td class="s">5</td><td><b>공사기간 보관</b></td><td class="you">없음</td><td class="us"><b>직영 실내창고</b>: 제습·보안·방역, 공사 지연 시 일 단위로 연장</td></tr>
+    <tr><td class="s">6</td><td><b>재반입·원위치</b></td><td class="you">준공일 알려 주기</td><td class="us">배치도대로 <b>제자리 배치</b>, 가구 조립·파티션 재설치</td></tr>
+    <tr><td class="s">7</td><td><b>마무리</b></td><td class="you">인수인계표 서명</td><td class="us">반입 수량 대조, 빈 박스·폐기물 정리, 다음 날 불편 사항 확인 전화</td></tr>
+  </table>
+  <div class="note"><b>정리하면</b> — 담당자님은 <b>실사 일정, 배치도 1장, 준공일</b> 세 가지만 알려 주시면 됩니다. 나머지는 운송·보관·재배치를 모두 저희 한 업체가 책임지기 때문에, 공사업체·이사업체·보관업체 사이에서 연락을 주고받을 일이 없습니다.</div>
+  <h3 style="margin-top:5mm">행정실 공사 이사 준비 체크리스트 <span style="font-weight:500;font-size:8.5pt;color:#4a5866">(저희와 하지 않으셔도 그대로 쓰세요)</span></h3>
+  <div class="chk">
+    <div><b>D-30 · 공사 일정 확정 전</b><li>공사 구역·층·교실 목록</li><li>반출·반입 예정일과 준공일</li><li>남길 것 / 폐기할 것 구분</li><li>보관 장소(교내·외부) 결정</li></div>
+    <div><b>D-14 · 실사·견적</b><li>현재·변경 배치도 1장</li><li>전산기기·보안문서 따로 표시</li><li>견적서 항목(포장·운반·보관·재배치·폐기) 비교</li><li>주말·방학 작업 가능일</li></div>
+    <div><b>D-day ~ D+1</b><li>반출 인수인계표 확인·서명</li><li>준공 후 재반입 날짜 통보</li><li>배치도대로 원위치 확인</li><li>수량 대조 후 최종 서명</li></div>
+  </div>
+</div><div class="brand">대구토탈홈서비스 로젠이사</div><div class="pnum">2 / 4</div></section>
+
+<!-- 3. 가치 입증: 실적·현장·창고·팀 -->
+<section class="page"><div class="pad">
+  <h2>말이 아니라 해 온 일로 보여 드립니다</h2>
+  <div class="lead">대구·경북에서 11년, 관공서·기업·학교 이전과 보관을 직접 해 왔습니다.</div>
+  <div class="proof">
+    <div class="card"><div class="k">법원 문서고 이전</div><div class="big">약 3만 권 · 2일</div><p>1바구니 1칸 원칙, 서가 순서 그대로 라벨링, 모빌랙 이전·경량랙 철거까지 한 번에.</p></div>
+    <div class="card"><div class="k">공공기관 사무실 재편</div><div class="big">약 200평 · 30개 공간 · 2일</div><p>부서별 가구 해체·재조립·재배치를 6명 이상 투입해 이틀 만에 마무리.</p></div>
+    <div class="card"><div class="k">대형 건설사 사무실 이전</div><div class="big">1톤 약 60대 분량 · 15명</div><p>대규모 물량도 차량·인력을 한 번에 동원해 일정 안에 처리.</p></div>
+    <div class="card"><div class="k">가구 해체·설치</div><div class="big">침대 이전설치 5,200벌+</div><p>책상·파티션·캐비닛·시스템 가구 분해·조립을 직원이 직접 합니다.</p></div>
+  </div>
+  <div class="gal">
+    <figure><img src="photos/s3.jpg"><figcaption>사무 파티션 해체</figcaption></figure>
+    <figure><img src="photos/s2.jpg"><figcaption>문서·비품 바구니 포장</figcaption></figure>
+    <figure><img src="photos/s1.jpg"><figcaption>엘리베이터 동선 운반</figcaption></figure>
+    <figure><img src="photos/s8.jpg"><figcaption>재배치 완료 회의실</figcaption></figure>
+  </div>
+  <h3>공사기간 보관: 100평 직영 실내창고</h3>
+  <div class="wh">
+    <img src="photos/s5.jpg"><img src="photos/s6.jpg">
+    <div class="box"><b>컨테이너가 아니라 실내 창고입니다.</b><br>· CAPS 보안 · 공업용 제습기 24시간<br>· 환기창 6개 이상 · 약 2주 1회 방역<br>· 차량이 창고 안까지 진입 (비·눈에도 젖지 않게)<br>· 20ft 분리 칸 9개 (1칸 1,940×6,000×2,000mm)<br>· 기관별 칸 분리 보관, 출고·재입고 같은 팀이 담당</div>
+  </div>
+  <div class="team">
+    <div><b>정직원 팀</b><br>외주 일용직 중심이 아닌 회사 직원이 작업, 소통이 원활하고 책임 소재가 분명합니다.</div>
+    <div><b>장비</b><br>25톤 차량, 지게차, 파렛트·랩핑으로 중량 집기·대량 문서도 안전하게.</div>
+    <div><b>허가 업체</b><br>화물자동차 운송주선사업 허가(칠곡군). 허가증 사본을 함께 드립니다.</div>
+  </div>
+  <h3 style="margin-top:5mm">작업 구분 (현장 상황에 따라 실사 때 조정)</h3>
+  <table class="split">
+    <tr><th>구분</th><th>기관(교직원)</th><th>로젠이사</th></tr>
+    <tr><td><b>PC·개인 물품</b></td><td>직접 포장·정리 (포장 자재는 저희가 드림)</td><td>박스 번호·라벨 부착, 운반·배치</td></tr>
+    <tr><td><b>공용 문서·집기</b></td><td>배치도 확인</td><td>포장·운반·배치 전부 (책상, 캐비닛, 회의 테이블, 서가 등)</td></tr>
+    <tr><td><b>가구 해체·조립</b></td><td>—</td><td>파티션·시스템 가구·모빌랙 해체·재조립</td></tr>
+    <tr><td><b>보양·청소</b></td><td>—</td><td>엘리베이터·복도·바닥 보양, 작업 후 빈 박스·포장재 수거</td></tr>
+  </table>
+</div><div class="brand">대구토탈홈서비스 로젠이사</div><div class="pnum">3 / 4</div></section>
+
+<!-- 4. 반박 제거 + 서류 + CTA -->
+<section class="page"><div class="pad">
+  <h2>계약 전에 많이 물어보시는 것</h2>
+  <div class="lead">결정하시기 전에 걸리는 부분을 먼저 답해 드립니다.</div>
+  <div class="faq">
+    <div><div class="q">Q. 작은 업체 아닌가요? 큰 물량도 되나요?</div><div class="a">문서고 3만 권 2일, 200평 사무실 2일, 1톤 60대 분량 현장을 직접 했습니다. 물량에 맞춰 차량·인원을 실사 때 확정합니다.</div></div>
+    <div><div class="q">Q. 견적이 나중에 늘어나지 않나요?</div><div class="a">실사 후 포장·운반·보관·재배치·폐기를 <b>항목별로 나눠</b> 견적서에 적습니다. 범위가 문서로 남아 있어 비교·검토가 쉽습니다.</div></div>
+    <div><div class="q">Q. 문서나 집기가 없어지면요?</div><div class="a">반출·반입 때 <b>인수인계표</b>로 수량을 같이 대조하고 서명합니다. 보안문서는 밀봉해 담당자 확인 후 개봉합니다.</div></div>
+    <div><div class="q">Q. 공사가 늦어지면 보관비가 많이 나오나요?</div><div class="a">직영 창고라 <b>일 단위</b>로 연장됩니다. 반출 → 보관 → 재반입을 한 업체가 하니 중간 운송비가 따로 들지 않습니다.</div></div>
+    <div><div class="q">Q. 수업·업무 중에 작업하면 시끄럽지 않나요?</div><div class="a">주말·야간·방학에 작업할 수 있습니다. 민원 업무와 수업을 멈추지 않도록 일정을 맞춥니다.</div></div>
+    <div><div class="q">Q. 수의계약 서류는 어떻게 되나요?</div><div class="a">아래 서류를 바로 드립니다. 여성기업·장애인기업 확인서는 공공구매종합정보망에서도 확인하실 수 있습니다.</div></div>
+  </div>
+
+  <h3>바로 제출 가능한 서류</h3>
+  <div class="docs">
+    <div>여성기업 확인서</div><div>장애인기업 확인서</div>
+    <div>중소기업(소기업·소상공인) 확인서</div><div>사업자등록증</div>
+    <div>화물자동차 운송주선사업 허가증</div><div>항목별 견적서 · 작업계획서</div>
+  </div>
+
+  <h3>진행은 세 단계면 끝납니다</h3>
+  <div class="steps">
+    <div class="st"><b>STEP 1</b><div>전화 · 문자</div><span>공사·이전 시기만 알려 주세요</span></div>
+    <div class="st"><b>STEP 2</b><div>무료 현장 실사</div><span>10~15분, 물량·일정 확인</span></div>
+    <div class="st"><b>STEP 3</b><div>견적서 · 서류 제출</div><span>항목별 견적 + 확인서 일체</span></div>
+  </div>
+
+  <div class="final">
+    <div class="t">다음 이사·집기 이전 견적 때<br><span>'로젠이사'를 견적 업체에 넣어 주세요.</span>
+      <small>공사 일정이 아직 정해지지 않았어도 괜찮습니다. 미리 실사해 두면 일정이 확정됐을 때 바로 움직입니다.</small></div>
+    <div class="r">
+      <div class="m">영업 담당 서성민</div>
+      <div class="p">010-2243-7924</div>
+      <div class="m">noblesse0913@naver.com</div>
+      <div class="qr"><span>문서고 이전<br>현장 사례 보기</span><img src="photos/qr.png"></div>
+    </div>
+  </div>
+  <div class="biz">대구토탈홈서비스 로젠이사 (서류상 상호: 티에이치에스 로젠이사) · 대표 이원주 · 사업자등록번호 108-34-91493<br>경상북도 칠곡군 지천면 낙산로1길 161 · 대구·경북 전역 출장 실사</div>
+</div><div class="brand">대구토탈홈서비스 로젠이사</div><div class="pnum">4 / 4</div></section>
+</body></html>

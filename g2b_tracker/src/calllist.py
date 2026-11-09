@@ -104,10 +104,38 @@ def build():
                          "전화": t.get("알려진 연락처(재확인 필요)", "") or "대표번호 검색", "이메일": "",
                          "근거": t["영업 포인트"], "최근 이사계약": "", "이사계약 횟수": 0, "대본": "4-1 계약부서",
                          "영업 타이밍": "상시"})
+    _merge_mine(rows)
     rows.sort(key=lambda r: -r["_score"])
     for i, r in enumerate(rows, 1):
         r["순위"] = i
     return rows
+
+
+def _merge_mine(rows):
+    """data/my_contacts.csv: 사장님이 통화로 직접 받은 메일·담당자. 프로그램이 절대 덮어쓰지 않는다.
+    열: 기관(찾을 글자), 이메일, 담당자, 전화, 메모"""
+    path = DATA / "my_contacts.csv"
+    if not path.exists():
+        return
+    for m in csv.DictReader(path.open(encoding="utf-8-sig")):
+        key = (m.get("기관") or "").strip()
+        if not key:
+            continue
+        hits = [r for r in rows if key in r["기관"] or key in _norm(r["기관"])]
+        if not hits:
+            hits = [{"등급": "S", "_score": 0, "기관": key, "기관유형": "", "지역": "", "연락할 곳": "", "전화": "",
+                     "이메일": "", "근거": "직접 확보한 연락처", "최근 이사계약": "", "이사계약 횟수": 0,
+                     "대본": _script(key, ""), "영업 타이밍": _timing(key, "")}]
+            rows.append(hits[0])
+        for r in hits[:1]:
+            r["이메일"] = m.get("이메일") or r.get("이메일", "")
+            if m.get("담당자"):
+                r["연락할 곳"] = m["담당자"]
+            if m.get("전화"):
+                r["전화"] = m["전화"]
+            r["메모"] = " · ".join(x for x in (r.get("메모", ""), m.get("메모", "")) if x)
+            r["_score"] += 1000  # 직접 통화해서 메일까지 받은 곳은 맨 위로 (후속 연락 우선)
+            r["등급"] = "★" + r["등급"]
 
 
 def write():
@@ -137,8 +165,10 @@ def write():
             for r in rows:
                 old = keep.get((r["기관"], str(r["전화"])))
                 if old:
-                    for k in ("통화결과", "다음연락일", "메모"):
+                    for k in ("통화결과", "다음연락일"):
                         r[k] = old.get(k) or ""
+                    if old.get("메모") and old["메모"] not in (r.get("메모") or ""):
+                        r["메모"] = " · ".join(x for x in (r.get("메모", ""), old["메모"]) if x)
             _sheet(wb.create_sheet(SHEET, 0), rows, COLS)
             wb.active = 0
             wb.save(db)
