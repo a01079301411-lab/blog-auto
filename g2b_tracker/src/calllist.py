@@ -106,6 +106,7 @@ def build():
                          "근거": t["영업 포인트"], "최근 이사계약": "", "이사계약 횟수": 0, "대본": "4-1 계약부서",
                          "영업 타이밍": "상시"})
     _merge_mine(rows)
+    _mark_sent(rows)
     rows.sort(key=lambda r: -r["_score"])
     for i, r in enumerate(rows, 1):
         r["순위"] = i
@@ -186,6 +187,27 @@ def _merge_mine(rows):
     print(f"내 연락처 {done}곳 반영 (파일 {len(files)}개: {', '.join(f.name for f in files[:3])}{' …' if len(files) > 3 else ''})")
 
 
+def _mark_sent(rows):
+    """메일을 보낸 곳: 통화결과 'C 메일발송', 다음연락일 = 발송 이틀 뒤 (평일 기준)."""
+    from datetime import timedelta
+    try:
+        sent = json.loads((DATA / "sent.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    for r in rows:
+        info = sent.get((r.get("이메일") or "").lower())
+        if not info:
+            continue
+        d = datetime.strptime(info["발송일"][:10], "%Y-%m-%d")
+        nxt, added = d, 0
+        while added < 2:
+            nxt += timedelta(days=1)
+            if nxt.weekday() < 5:
+                added += 1
+        r["통화결과"] = f"C 메일발송 {d:%m/%d}"
+        r["다음연락일"] = f"{nxt:%Y-%m-%d}"
+
+
 def write():
     from report import _sheet
     rows = build()
@@ -217,7 +239,10 @@ def write():
                     if old.get("이메일") and not r.get("이메일"):  # 엑셀에 직접 적은 이메일은 지우지 않는다
                         r["이메일"] = old["이메일"]
                     for k in ("통화결과", "다음연락일"):
-                        r[k] = old.get(k) or ""
+                        if old.get(k) and not str(r.get(k, "")).startswith("C 메일발송"):
+                            r[k] = old.get(k)
+                        elif old.get(k) and str(old.get(k)).startswith(("A", "B")):  # 견적요청·명단등록이 더 앞선 단계
+                            r[k] = old.get(k)
                     if old.get("메모") and old["메모"] not in (r.get("메모") or ""):
                         r["메모"] = " · ".join(x for x in (r.get("메모", ""), old["메모"]) if x)
             _sheet(wb.create_sheet(SHEET, 0), rows, COLS)

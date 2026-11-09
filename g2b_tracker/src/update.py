@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ZIP_URL = "https://github.com/a01079301411-lab/blog-auto/archive/refs/heads/claude/magical-darwin-l927px.zip"
 SUB = "g2b_tracker/"
 STATE = ROOT / ".update_state.json"
-NEVER = {".env", "output", "logs", "backup", "영업DB.xlsx", "data/seen.json", "data/state.json", "data/contacts.json", "data/contacts_v2.json", "data/schools.json", "data/my_contacts.csv", ".update_state.json"}
+NEVER = {".env", "output", "logs", "backup", "영업DB.xlsx", "data/seen.json", "data/state.json", "data/contacts.json", "data/contacts_v2.json", "data/schools.json", "data/my_contacts.csv", "data/sent.json", ".update_state.json"}
 
 
 def fp(b):

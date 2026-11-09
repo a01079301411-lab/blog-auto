@@ -8,6 +8,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -69,6 +70,12 @@ def run_daily():
     added, total = contacts.update([r for r in recs if r["등급"] != "마감"])
     a2, total = contacts.update(moves, move_contract=True)
     added += a2
+    try:
+        import mailer
+        if os.getenv("NAVER_APP_PW"):
+            mailer.run()
+    except Exception as e:  # 메일이 실패해도 추적은 계속
+        logging.warning("메일 발송 건너뜀: %s", e)
     cpath, cn = calllist.write()
     all_keys = {r["_key"] for r in recs} | {k for r in recs for k in r.get("_dupkeys", [])}
     SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
@@ -203,11 +210,18 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--calllist", action="store_true")
+    ap.add_argument("--mail", action="store_true")
+    ap.add_argument("--mailtest", action="store_true")
     a = ap.parse_args()
     setup_log(a.quiet)
     try:
         if a.selftest:
             run_selftest()
+        elif a.mail or a.mailtest:
+            import mailer
+            n = mailer.run(test=a.mailtest)
+            if n and not a.mailtest:
+                calllist.write()
         elif a.calllist:
             import neis
             neis.load(force=True)

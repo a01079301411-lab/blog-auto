@@ -37,5 +37,5 @@ BASES = {
     "contract": os.getenv("CONTRACT_BASE") or "https://apis.data.go.kr/1230000/ao/CntrctInfoService",
 }
 
-for d in (OUTPUT, LOGS):
+for d in (OUTPUT, LOGS, ROOT / "첨부"):
     d.mkdir(exist_ok=True)
