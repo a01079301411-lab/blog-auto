@@ -114,10 +114,28 @@ def build():
 def _merge_mine(rows):
     """data/my_contacts.csv: 사장님이 통화로 직접 받은 메일·담당자. 프로그램이 절대 덮어쓰지 않는다.
     열: 기관(찾을 글자), 이메일, 담당자, 전화, 메모"""
-    path = DATA / "my_contacts.csv"
-    if not path.exists():
+    path = next((p for p in (DATA / "my_contacts.csv", ROOT / "my_contacts.csv") if p.exists()), None)
+    if not path:
+        print("내 연락처 파일(data\\my_contacts.csv)이 없어요. 통화로 받은 메일을 넣으려면 이 파일을 만들어 주세요.")
         return
-    for m in csv.DictReader(path.open(encoding="utf-8-sig")):
+    text = None
+    for enc in ("utf-8-sig", "cp949", "euc-kr"):  # 엑셀에서 저장하면 cp949 가 됨
+        try:
+            text = path.read_text(encoding=enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        print(f"{path.name} 글자 형식을 읽지 못했어요. 엑셀에서 'CSV UTF-8' 로 다시 저장해 주세요.")
+        return
+    lines = [l for l in text.splitlines() if l.strip()]
+    if lines and "\t" in lines[0] and "," not in lines[0]:
+        reader = csv.DictReader(lines, delimiter="\t")
+    else:
+        reader = csv.DictReader(lines)
+    done = 0
+    for m in reader:
+        m = {(k or "").strip(): (v or "").strip() for k, v in m.items()}
         key = (m.get("기관") or "").strip()
         if not key:
             continue
@@ -135,7 +153,9 @@ def _merge_mine(rows):
                 r["전화"] = m["전화"]
             r["메모"] = " · ".join(x for x in (r.get("메모", ""), m.get("메모", "")) if x)
             r["_score"] += 1000  # 직접 통화해서 메일까지 받은 곳은 맨 위로 (후속 연락 우선)
-            r["등급"] = "★" + r["등급"]
+            r["등급"] = "★" + r["등급"].lstrip("★")
+            done += 1
+    print(f"내 연락처 {done}건 반영 ({path})")
 
 
 def write():
@@ -153,18 +173,21 @@ def write():
     if db.exists():
         try:
             wb = load_workbook(db)
-            keep = {}
+            keep, keep_by_org = {}, {}
             if SHEET in wb.sheetnames:  # 사장님이 적은 통화결과·다음연락일·메모는 살린다
                 ws = wb[SHEET]
                 hdr = [c.value for c in ws[1]]
                 for row in ws.iter_rows(min_row=2, values_only=True):
                     d = dict(zip(hdr, row))
-                    if any(d.get(k) for k in ("통화결과", "다음연락일", "메모")):
+                    if any(d.get(k) for k in ("통화결과", "다음연락일", "메모", "이메일")):
                         keep[(d.get("기관"), str(d.get("전화")))] = d
                 del wb[SHEET]
+            keep_by_org = {k[0]: v for k, v in keep.items() if not v.get("전화")}  # 전화 없는 줄만 이름으로 맞춤
             for r in rows:
-                old = keep.get((r["기관"], str(r["전화"])))
+                old = keep.get((r["기관"], str(r["전화"]))) or keep_by_org.get(r["기관"])
                 if old:
+                    if old.get("이메일") and not r.get("이메일"):  # 엑셀에 직접 적은 이메일은 지우지 않는다
+                        r["이메일"] = old["이메일"]
                     for k in ("통화결과", "다음연락일"):
                         r[k] = old.get(k) or ""
                     if old.get("메모") and old["메모"] not in (r.get("메모") or ""):
