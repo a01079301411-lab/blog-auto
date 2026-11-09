@@ -188,24 +188,32 @@ def _merge_mine(rows):
 
 
 def _mark_sent(rows):
-    """메일을 보낸 곳: 통화결과 'C 메일발송', 다음연락일 = 발송 이틀 뒤 (평일 기준)."""
-    from datetime import timedelta
+    """메일 보낸 곳: 통화결과 'C 메일발송 MM/DD', 다음연락일 = 다음 분기 소식 예정월 (회신 없다고 따로 연락하지 않음).
+    수신거부: 'E 수신거부'."""
     try:
         sent = json.loads((DATA / "sent.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
+    from datetime import timedelta
+
+    def next_quarter(first):
+        base = max(datetime.now(), datetime.strptime(first[:10], "%Y-%m-%d") + timedelta(days=45))
+        for y in (base.year, base.year + 1):
+            for m in (3, 6, 9, 11):
+                if datetime(y, m, 10) >= base:
+                    return f"{y}-{m:02d} 분기 소식"
+        return ""
     for r in rows:
         info = sent.get((r.get("이메일") or "").lower())
         if not info:
             continue
-        d = datetime.strptime(info["발송일"][:10], "%Y-%m-%d")
-        nxt, added = d, 0
-        while added < 2:
-            nxt += timedelta(days=1)
-            if nxt.weekday() < 5:
-                added += 1
-        r["통화결과"] = f"C 메일발송 {d:%m/%d}"
-        r["다음연락일"] = f"{nxt:%Y-%m-%d}"
+        if info.get("수신거부"):
+            r["통화결과"], r["다음연락일"] = "E 수신거부", ""
+            continue
+        if not info.get("발송일"):
+            continue
+        r["통화결과"] = f"C 메일발송 {info['발송일'][5:10].replace('-', '/')}"
+        r["다음연락일"] = next_quarter(info["발송일"])
 
 
 def write():
