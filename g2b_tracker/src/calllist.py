@@ -10,6 +10,7 @@ import csv
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
@@ -111,51 +112,78 @@ def build():
     return rows
 
 
-def _merge_mine(rows):
-    """data/my_contacts.csv: 사장님이 통화로 직접 받은 메일·담당자. 프로그램이 절대 덮어쓰지 않는다.
-    열: 기관(찾을 글자), 이메일, 담당자, 전화, 메모"""
-    path = next((p for p in (DATA / "my_contacts.csv", ROOT / "my_contacts.csv") if p.exists()), None)
-    if not path:
-        print("내 연락처 파일(data\\my_contacts.csv)이 없어요. 통화로 받은 메일을 넣으려면 이 파일을 만들어 주세요.")
-        return
-    text = None
-    for enc in ("utf-8-sig", "cp949", "euc-kr"):  # 엑셀에서 저장하면 cp949 가 됨
+def _contact_files():
+    """내 연락처 파일 전부: data\\my_contacts.csv + 구글 드라이브 '나라장터추적_연락처' 폴더의 모든 csv.
+    드라이브 폴더는 Claude 가 메일 주소를 받을 때마다 새 csv 를 추가한다 (PC 구글 드라이브 동기화로 내려옴)."""
+    import os
+    import string
+    files = [p for p in (DATA / "my_contacts.csv", ROOT / "my_contacts.csv") if p.exists()]
+    dirs = []
+    if os.getenv("MY_CONTACTS_DIR"):
+        dirs.append(Path(os.getenv("MY_CONTACTS_DIR")))
+    home = Path(os.environ.get("USERPROFILE", str(Path.home())))
+    roots = [Path(f"{d}:/") for d in string.ascii_uppercase[3:]] + [home, home / "Google Drive"]
+    for r in roots:
+        for sub in ("내 드라이브", "My Drive", ""):
+            dirs.append(r / sub / "나라장터추적_연락처")
+    seen = set()
+    for d in dirs:
+        try:
+            if d.is_dir() and d.resolve() not in seen:
+                seen.add(d.resolve())
+                files += sorted(d.glob("*.csv"))
+        except OSError:
+            continue
+    return files
+
+
+def _read_csv(path):
+    for enc in ("utf-8-sig", "cp949", "euc-kr"):  # 엑셀에서 저장하면 cp949
         try:
             text = path.read_text(encoding=enc)
             break
-        except UnicodeDecodeError:
-            continue
-    if text is None:
-        print(f"{path.name} 글자 형식을 읽지 못했어요. 엑셀에서 'CSV UTF-8' 로 다시 저장해 주세요.")
-        return
+        except (UnicodeDecodeError, OSError):
+            text = None
+    if not text:
+        return []
     lines = [l for l in text.splitlines() if l.strip()]
-    if lines and "\t" in lines[0] and "," not in lines[0]:
-        reader = csv.DictReader(lines, delimiter="\t")
-    else:
-        reader = csv.DictReader(lines)
+    delim = "\t" if lines and "\t" in lines[0] and "," not in lines[0] else ","
+    return [{(k or "").strip(): (v or "").strip() for k, v in m.items()} for m in csv.DictReader(lines, delimiter=delim)]
+
+
+def _merge_mine(rows):
+    """통화로 받은 메일·담당자 (열: 기관, 이메일, 담당자, 전화, 메모). 같은 기관은 나중 파일이 이김."""
+    files = _contact_files()
+    if not files:
+        print("내 연락처 파일이 없어요 (data\\my_contacts.csv 또는 구글 드라이브 '나라장터추적_연락처' 폴더).")
+        return
+    mine = {}
+    for f in files:
+        for m in _read_csv(f):
+            key = m.get("기관", "")
+            if key:
+                cur = mine.setdefault(key, {})
+                cur.update({k: v for k, v in m.items() if v})
     done = 0
-    for m in reader:
-        m = {(k or "").strip(): (v or "").strip() for k, v in m.items()}
-        key = (m.get("기관") or "").strip()
-        if not key:
-            continue
+    for key, m in mine.items():
         hits = [r for r in rows if key in r["기관"] or key in _norm(r["기관"])]
         if not hits:
             hits = [{"등급": "S", "_score": 0, "기관": key, "기관유형": "", "지역": "", "연락할 곳": "", "전화": "",
                      "이메일": "", "근거": "직접 확보한 연락처", "최근 이사계약": "", "이사계약 횟수": 0,
                      "대본": _script(key, ""), "영업 타이밍": _timing(key, "")}]
             rows.append(hits[0])
-        for r in hits[:1]:
-            r["이메일"] = m.get("이메일") or r.get("이메일", "")
-            if m.get("담당자"):
-                r["연락할 곳"] = m["담당자"]
-            if m.get("전화"):
-                r["전화"] = m["전화"]
-            r["메모"] = " · ".join(x for x in (r.get("메모", ""), m.get("메모", "")) if x)
-            r["_score"] += 1000  # 직접 통화해서 메일까지 받은 곳은 맨 위로 (후속 연락 우선)
-            r["등급"] = "★" + r["등급"].lstrip("★")
-            done += 1
-    print(f"내 연락처 {done}건 반영 ({path})")
+        r = hits[0]
+        r["이메일"] = m.get("이메일") or r.get("이메일", "")
+        if m.get("담당자"):
+            r["연락할 곳"] = m["담당자"]
+        if m.get("전화"):
+            r["전화"] = m["전화"]
+        if m.get("메모") and m["메모"] not in (r.get("메모") or ""):
+            r["메모"] = " · ".join(x for x in (r.get("메모", ""), m["메모"]) if x)
+        r["_score"] += 1000  # 직접 통화해서 메일까지 받은 곳은 맨 위로
+        r["등급"] = "★" + r["등급"].lstrip("★")
+        done += 1
+    print(f"내 연락처 {done}곳 반영 (파일 {len(files)}개: {', '.join(f.name for f in files[:3])}{' …' if len(files) > 3 else ''})")
 
 
 def write():
