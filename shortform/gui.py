@@ -287,12 +287,17 @@ class App:
         self.stopping = False
 
         root.title(APP_TITLE)
+        if sys.platform == "win32":  # 바탕화면 아이콘이 다른 컴퓨터 경로거나 예전 것이면 고친다
+            from . import shortcut
+            threading.Thread(target=shortcut.create, daemon=True).start()
         try:
-            root.iconbitmap(os.path.join(ROOT, "shortform", "assets", "app.ico"))
+            root.iconbitmap(os.path.join(ROOT, "shortform", "assets", "app_v2.ico"))
         except tk.TclError:
             pass  # 아이콘을 못 읽어도 창은 그대로
-        root.geometry("1500x900")
-        root.minsize(1200, 720)
+        # 노트북 화면(1366x768, 배율 125~150%)에서도 창이 화면을 넘지 않게
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"{min(1500, sw - 40)}x{min(900, sh - 80)}+10+10")
+        root.minsize(min(960, sw - 40), min(560, sh - 80))
         if sys.platform == "win32":
             try:
                 root.state("zoomed")  # 화면 가득 (진행 기록이 크게 보이게)
@@ -1469,7 +1474,7 @@ class App:
     def _restart(self) -> None:
         """프로그램 코드가 바뀌었으면 새 코드로 창을 다시 연다."""
         videos = list(self.videos.get(0, "end"))
-        subprocess.Popen([sys.executable, "-m", "shortform.gui", *videos], cwd=ROOT,
+        subprocess.Popen([sys.executable, "-m", "shortform.start", *videos], cwd=ROOT,
                          creationflags=NO_WINDOW)
         self.root.destroy()
 
@@ -1882,13 +1887,42 @@ class LongReviewDialog:
         self.win.destroy()
 
 
+def _start_error(text: str) -> None:
+    """창 없이(pythonw) 켜다가 실패하면 아무것도 안 보이고 끝나므로, 이유를 파일과 알림 창으로 남긴다."""
+    try:
+        os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+        with open(os.path.join(ROOT, "logs", "시작_오류.txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        pass
+    msg = ("프로그램을 여는 중에 문제가 생겼어요.\n\n" + text[-900:] +
+           "\n\n프로그램 폴더의 install.bat을 한 번 실행한 뒤 다시 열어 보세요. "
+           "그래도 안 되면 이 창을 캡처해서 보내 주세요.")
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, msg, "숏폼·롱폼 자동 편집기", 0x10)
+    except Exception:
+        print(msg)
+
+
 def main() -> None:
+    if sys.platform == "win32":
+        try:  # 작업 표시줄에 파이썬 아이콘 대신 이 프로그램 아이콘이 보이게
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("shortform.autoeditor")
+        except Exception:
+            pass
     try:
         root = tk.Tk()
     except tk.TclError as e:
-        print(f"프로그램 창을 열 수 없어요: {e}\nrun.bat에 영상을 끌어다 놓는 방식으로 써 주세요.")
+        _start_error(f"프로그램 창을 열 수 없어요: {e}")
         sys.exit(1)
-    App(root, [a for a in sys.argv[1:] if os.path.isfile(a)])
+    try:
+        App(root, [a for a in sys.argv[1:] if os.path.isfile(a)])
+    except Exception:
+        import traceback
+        _start_error(traceback.format_exc())
+        sys.exit(1)
     root.mainloop()
 
 

@@ -1,6 +1,6 @@
 """바탕화면에 '숏폼 자동 편집기' 아이콘을 만든다 (Windows).
 
-아이콘을 더블클릭하면 콘솔 창 없이 프로그램 창(pythonw -m shortform.gui)이 뜨고,
+아이콘을 더블클릭하면 콘솔 창 없이 프로그램 창(pythonw -m shortform.start)이 뜨고,
 영상 파일을 아이콘 위로 끌어다 놓으면 그 영상이 목록에 들어간 채로 열린다.
 """
 from __future__ import annotations
@@ -11,20 +11,24 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "숏폼 자동 편집기.lnk"
-ICON = os.path.join(ROOT, "shortform", "assets", "app.ico")
+ICON = os.path.join(ROOT, "shortform", "assets", "app_v2.ico")
 
 # 경로는 환경 변수로 넘겨 PowerShell 따옴표 문제를 피한다
 _PS = (
     "$d=[Environment]::GetFolderPath('Desktop');"
     "$p=Join-Path $d $env:SF_NAME;"
-    "if ((Test-Path $p) -and ($env:SF_FORCE -ne '1')) { exit 0 };"
     "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p);"
+    # 이미 있어도 다른 컴퓨터 경로(바탕화면이 원드라이브로 동기화된 경우)나 예전 설정이면 고친다
+    "if ((Test-Path $p) -and ($env:SF_FORCE -ne '1') -and ($s.TargetPath -eq $env:SF_TARGET)"
+    " -and ($s.Arguments -eq '-m shortform.start') -and ($s.WorkingDirectory -eq $env:SF_ROOT)"
+    " -and ($s.IconLocation -like ($env:SF_ICON + '*'))) { exit 0 };"
     "$s.TargetPath=$env:SF_TARGET;"
-    "$s.Arguments='-m shortform.gui';"
+    "$s.Arguments='-m shortform.start';"
     "$s.WorkingDirectory=$env:SF_ROOT;"
-    "$s.IconLocation=$env:SF_ICON;"
+    "$s.IconLocation=$env:SF_ICON + ',0';"
     "$s.Description='롱폼 영상으로 숏폼을 자동으로 만들어요';"
     "$s.Save();"
+    "try { ie4uinit.exe -show } catch {};"  # 바뀐 아이콘이 바로 보이게 아이콘 캐시 새로 고침
     "Write-Host 'created'"
 )
 
