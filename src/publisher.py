@@ -668,9 +668,37 @@ def _link_card_by_toolbar(page, editor, url):
         page.wait_for_timeout(500)
         if editor.locator(LINK_CARD_COMPONENT).count() > before:
             return True, "링크 버튼"
+        if _link_failed(editor):
+            # 지워진 글 등: '링크 정보를 불러오는 데 실패했습니다'. 창을 닫고 이 링크는 넣지 않는다.
+            close_popups(page, editor)
+            return False, "dead"
         click_first(editor, OGLINK_CONFIRM, timeout=300)
-    page.keyboard.press("Escape")
+    close_popups(page, editor)
     return False, "확인 후에도 카드 없음"
+
+
+LINK_FAIL_TEXT = re.compile(r"링크 정보를 불러오는 데 실패|불러오지 못|존재하지 않")
+POPUP_X = [".se-popup-close-button", "button.se-popup-close", ".se-popup button[class*='close']",
+           "[class*='popup'] button[aria-label*='닫기']"]
+
+
+def _link_failed(editor):
+    try:
+        layer = editor.locator(".se-popup, [class*='popup']").filter(has_text=LINK_FAIL_TEXT)
+        return layer.count() > 0 and layer.first.is_visible()
+    except Exception:
+        return False
+
+
+def close_popups(page, editor):
+    """링크 창 같은 작은 창이 떠 있으면 닫는다. 떠 있으면 발행 버튼을 못 누른다."""
+    for _ in range(3):
+        box = _visible(editor, OGLINK_INPUT)
+        if box is None:
+            return
+        if not click_first(editor, POPUP_X, timeout=800):
+            page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
 
 
 def _link_card_by_paste(page, editor, url):
@@ -703,6 +731,12 @@ def insert_link(page, editor, url):
             log.info("내부링크: 카드 생성됨 (%s) %s", how, url)
             move_below(page, editor, editor.locator(LINK_CARD_COMPONENT).last)
             return True
+        if how == "dead":
+            import links
+            links.mark_dead(url)
+            log.info("내부링크: 없는 글이라 넣지 않아요 (다음부터 후보에서 뺍니다) %s", url)
+            close_popups(page, editor)
+            return False
         reasons.append(how)
     shot = screenshot(page, "link_fail")
     log.info("내부링크: 카드를 못 만들었어요 (%s) %s 화면: %s", " / ".join(reasons), url, shot)
@@ -710,10 +744,36 @@ def insert_link(page, editor, url):
     return False
 
 
+MARKER_RE = re.compile(r"\[\[[PL]\d+\]\]")
+
+
+def _clear_marker(page, editor, marker):
+    """자리 표시 글자([[P3]] 같은 것)가 있는 줄을 눌러 그 글자를 지운다. 그 줄에 커서가 남는다. 찾으면 True."""
+    spot = editor.locator(BODY_PARAGRAPH).filter(has_text=marker).first
+    try:
+        if not spot.count():
+            return False
+        if not click_text(spot):
+            return False
+    except Exception:
+        return False
+    page.keyboard.press("End")
+    page.keyboard.press("Shift+Home")
+    page.wait_for_timeout(200)
+    page.keyboard.press("Backspace")
+    page.wait_for_timeout(400)
+    return True
+
+
 def type_blocks(page, editor, blocks, photo_paths, captions):
-    """formatter가 만든 블록을 차례로 입력한다.
-    실패는 건너뛰고 (넣지 못한 사진, 전화 링크를 못 건 줄) 목록으로 돌려준다."""
-    failed_photos, failed_phone_links = [], []
+    """formatter가 만든 블록을 입력한다. 실패는 건너뛰고 (넣지 못한 사진, 전화 링크를 못 건 줄) 목록으로 돌려준다.
+
+    1단계: 글을 처음부터 끝까지 친다. 사진, 링크 카드 자리에는 [[P1]], [[L1]] 같은 표시 글자만 한 줄 친다.
+    2단계: 표시 글자가 있는 줄을 하나씩 직접 눌러서 지우고, 그 자리에 사진(링크 카드)을 넣는다.
+    네이버 에디터는 사진을 '마지막으로 누른 자리'에 넣기 때문에, 글을 치면서 바로 사진을 넣으면
+    사진이 앞 사진 밑에 붙는 일이 있었다 (2026-11-03, 11-10 확인). 자리를 직접 눌러 넣으면 그 일이 없다.
+    """
+    failed_photos, failed_phone_links, objects = [], [], []
     for i, block in enumerate(blocks):
         kind = block["type"]
         if kind == "blank":
@@ -722,18 +782,11 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             if i + 1 < len(blocks) and blocks[i + 1]["type"] == "photo":
                 continue  # 사진은 지금 줄 아래에 들어가므로 빈 줄을 더 만들지 않는다
             page.keyboard.press("Enter")
-        elif kind == "link":
-            go_to_end(page, editor)  # 아래 사진 설명 참고
-            insert_link(page, editor, block["url"])
-        elif kind == "photo":
-            # 네이버 에디터는 사진을 '마지막으로 누른 자리' 뒤에 넣는다. 사진 아래 칸에 글을 키보드로만 쳤으면
-            # 에디터는 아직 앞 사진을 가리키고 있어서, 다음 사진이 앞 사진 바로 밑에 붙어 버린다 (2026-11-03 확인).
-            # 그래서 사진을 넣기 전에 지금 쓰고 있는 맨 끝 줄을 한 번 눌러 자리를 알려 준다.
-            go_to_end(page, editor)
-            path = photo_paths.get(block["file"])
-            if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):
-                failed_photos.append(block["file"])
-                go_to_end(page, editor)
+        elif kind in ("photo", "link"):
+            marker = f"[[{'P' if kind == 'photo' else 'L'}{len(objects) + 1}]]"
+            objects.append((marker, block))
+            type_line(page, marker)
+            page.keyboard.press("Enter")
         else:
             bold = kind == "heading" or bool(block.get("bold"))
             before = set_bold(page, editor, bold)  # 이 줄에 맞게 굵게를 켜거나 끈다
@@ -747,6 +800,30 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
             page.keyboard.press("Enter")
         if i % 8 == 7:
             pause(page, 0.5, 2.0)  # 가끔 쉬어 가며 입력
+
+    for marker, block in objects:
+        if not _clear_marker(page, editor, marker):
+            log.info("자리 표시 %s 를 찾지 못해 글 끝에 넣어요.", marker)
+            go_to_end(page, editor)
+        if block["type"] == "link":
+            insert_link(page, editor, block["url"])
+            continue
+        path = photo_paths.get(block["file"])
+        if not path or not insert_photo(page, editor, path, captions.get(block["file"], "")):
+            failed_photos.append(block["file"])
+
+    # 지우지 못한 표시 글자가 글에 남지 않게 한 번 더 확인한다
+    for _ in range(len(objects)):
+        left = editor.locator(BODY_PARAGRAPH).filter(has_text=MARKER_RE)
+        try:
+            if not left.count():
+                break
+            found = MARKER_RE.search(left.first.inner_text())
+        except Exception:
+            break
+        if not found or not _clear_marker(page, editor, found.group(0)):
+            log.info("표시 글자를 지우지 못했어요. 화면: %s", screenshot(page, "marker_left"))
+            break
     return failed_photos, failed_phone_links
 
 
@@ -777,9 +854,14 @@ def type_tags_in_body(page, editor, tags):
 
 
 def open_publish_layer(page, editor):
-    if not click_first(editor, PUBLISH_BUTTON):
-        raise PublishError(f"발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_publish')}")
-    pause(page)  # 발행 설정 창이 뜰 때까지 대기
+    close_popups(page, editor)  # 남은 링크 창이 발행 버튼을 가리지 않게
+    for attempt in range(2):
+        if click_first(editor, PUBLISH_BUTTON):
+            pause(page)  # 발행 설정 창이 뜰 때까지 대기
+            return
+        page.keyboard.press("Escape")  # 다른 창이 가리고 있으면 닫고 한 번 더
+        page.wait_for_timeout(500)
+    raise PublishError(f"발행 버튼을 찾지 못했어요. 화면: {screenshot(page, 'no_publish')}")
 
 
 def select_category(page, editor, category):

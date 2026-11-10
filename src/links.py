@@ -16,6 +16,7 @@ from config import BLOG_ID, DATA_DIR
 
 log = logging.getLogger(__name__)
 
+DEAD_FILE = DATA_DIR / "dead_links.json"  # 지워진 글 (링크 카드가 '불러오기 실패'한 주소)
 CACHE_FILE = DATA_DIR / "links_cache.json"  # RSS를 못 읽을 때 마지막으로 읽은 목록을 쓴다
 MANUAL_FILE = DATA_DIR / "links.md"
 MAX_CANDIDATES = 5
@@ -75,6 +76,25 @@ def _from_history():
     ]
 
 
+def _dead():
+    """넣으면 안 되는 주소: 링크 카드가 실패한 글, 다시 올리면서 바뀐 예전 주소."""
+    dead = set(json.loads(DEAD_FILE.read_text(encoding="utf-8"))) if DEAD_FILE.exists() else set()
+    dead |= {r["replaced_url"] for r in history.load() if r.get("replaced_url")}
+    return {_number(u) for u in dead if _number(u)}
+
+
+def _number(url):
+    match = re.search(r"(\d{9,})", url or "")
+    return match.group(1) if match else ""
+
+
+def mark_dead(url):
+    dead = json.loads(DEAD_FILE.read_text(encoding="utf-8")) if DEAD_FILE.exists() else []
+    if url not in dead:
+        dead.append(url)
+        DEAD_FILE.write_text(json.dumps(dead, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _words(text):
     """관련도를 재기 위한 두 글자 묶음. (실내보관이사 → 실내, 내보, 보관, 관이, 이사)"""
     grams = set()
@@ -85,8 +105,10 @@ def _words(text):
 
 def related(topic):
     """이번 주제와 관련 있는 기존 글을 최대 5개 돌려준다. [{'title', 'url'}, ...]"""
-    posts, seen = [], set()
+    posts, seen, dead = [], set(), _dead()
     for post in _from_manual_file() + _from_rss() + _from_history():
+        if _number(post["url"]) in dead:
+            continue
         if post["url"] not in seen:
             seen.add(post["url"])
             posts.append(post)

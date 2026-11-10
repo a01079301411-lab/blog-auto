@@ -10,6 +10,7 @@ data/history.json
 data/links_cache.json
 data/seo_status.json
 data/manager_notes.md
+data/dead_links.json
 backup/
 .update_state.json
 *.새버전

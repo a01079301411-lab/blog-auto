@@ -95,7 +95,7 @@ def write_with_check(topic, photo_set, related):
         log.info("AI 검토:\n- %s", "\n- ".join(reviewer.as_feedback(issues)))
     # 다시 쓰기는 발행을 막는 문제나 편집장이 꼭 고치라는 문제가 있을 때만 한다.
     # (권장 기준까지 다 고치게 하면 글이 누더기처럼 어색해진다)
-    # 분량(1,700자에서 2,000자)이 벗어난 것도 다시 쓴다. 다시 써도 벗어나면 그대로 발행은 한다.
+    # 분량(2,000자에서 2,500자)이 벗어난 것도 다시 쓴다. 다시 써도 벗어나면 그대로 발행은 한다.
     length = [f for f in fails if f.startswith(checker.SOFT + "본문이")]
     redo = checker.rewrite_fails(fails)
     if redo or must or length:

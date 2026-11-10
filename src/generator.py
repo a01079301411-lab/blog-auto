@@ -59,12 +59,29 @@ def system_prompt():
     )
 
 
+def recent_headings(limit=5):
+    """최근 미리보기 파일(output/*.md)에서 소제목을 모은다. 글이 매번 같은 모양이 되지 않게 AI에게 보여 준다."""
+    from config import OUTPUT_DIR
+    found = []
+    for md in sorted(OUTPUT_DIR.glob("20*_*.md"), reverse=True)[:limit]:
+        try:
+            text = md.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        found += [l[len("[소제목] "):].strip() for l in text.splitlines()
+                  if l.startswith("[소제목] ") and "자주 묻는" not in l]
+    return list(dict.fromkeys(found))[:25]
+
+
 def recent_posts_text(limit=10):
     """최근 글의 제목과 첫 문장. AI가 이것과 다르게 쓰도록 보여준다."""
     records = history.load()[-limit:]
     if not records:
         return "(아직 없음)"
     lines = [f"- 제목: {r['title']} / 첫 문장: {r.get('opening', '')}" for r in reversed(records)]
+    headings = recent_headings()
+    if headings:
+        lines.append("최근 5개 글의 소제목 (같은 질문, 같은 각도로 쓰지 않는다): " + " / ".join(headings))
     facts = [f for r in records[-3:] for f in r.get("facts", [])]
     if facts:
         lines.append("최근 3개 글에서 이미 쓴 회사 팩트 (이번 주제에 꼭 필요한 게 아니면 다른 팩트를 쓴다): "
