@@ -299,6 +299,66 @@ def insert_quote(page, editor, text):
     return "ok" if _plain(text)[:5] in _plain(quote.inner_text()) else "no_text"
 
 
+def _bold_first_line(page, editor, text):
+    """본문 맨 위에 굵은 글씨 한 줄과 빈 줄을 넣는다 (인용구 상자 대신)."""
+    if not click_text(editor.locator(BODY_PARAGRAPH).first):
+        return False
+    page.keyboard.press("Home")
+    before = set_bold(page, editor, True)
+    type_line(page, f'"{text.strip(chr(34))}"')
+    if before is None:
+        page.keyboard.press("Control+b")
+    else:
+        set_bold(page, editor, False)
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    return True
+
+
+def add_quote_on_top(page, editor, text):
+    """다 쓴 본문의 맨 위에 인용구 상자를 넣는다. 돌려주는 값: 'ok', 'bold'(굵은 글씨로 대신), 'fail'.
+    인용구 상자에 본문 글이 딸려 들어가면 되돌리고 굵은 글씨 한 줄로 넣는다."""
+    body_before = "".join(p["text"] for p in (layout(editor) or []) if p["kind"] == "text")
+    first = editor.locator(BODY_PARAGRAPH).first
+    if click_text(first):
+        page.keyboard.press("Home")
+        page.keyboard.press("Enter")  # 첫 줄 위에 빈 줄을 만들고
+        page.keyboard.press("ArrowUp")  # 그 빈 줄로 올라가서 인용구로 바꾼다
+        count = editor.locator(QUOTE_COMPONENT).count()
+        if click_first(editor, QUOTE_BUTTON, timeout=2000):
+            for _ in range(10):
+                page.wait_for_timeout(300)
+                if editor.locator(QUOTE_COMPONENT).count() > count:
+                    break
+            if editor.locator(QUOTE_COMPONENT).count() > count:
+                page.wait_for_timeout(300)
+                type_line(page, text)
+                page.wait_for_timeout(500)
+                parts = layout(editor) or []
+                quotes = [p for p in parts if p["kind"] == "quote"]
+                inside = _plain(quotes[0]["text"]) if quotes else ""
+                if quotes and _plain(text)[:5] in inside and len(inside) <= len(_plain(text)) + 10:
+                    return "ok"
+                # 인용구 상자에 본문이 딸려 들어갔거나 글자가 안 들어갔다 → 되돌린다
+                log.info("인용구 모양이 이상해서 되돌려요. 순서: %s / 화면: %s", describe_layout(editor),
+                         screenshot(page, "quote_bad"))
+                for _ in range(8):
+                    page.keyboard.press("Control+z")
+                    page.wait_for_timeout(400)
+                    now = layout(editor) or []
+                    if not [p for p in now if p["kind"] == "quote"]:
+                        break
+        else:
+            page.keyboard.press("Backspace")  # 인용구 버튼이 없으면 만든 빈 줄을 지운다
+    now = layout(editor) or []
+    if [p for p in now if p["kind"] == "quote"]:
+        return "fail"
+    body_now = "".join(p["text"] for p in now if p["kind"] == "text")
+    if _plain(body_now) != _plain(body_before):
+        log.info("인용구를 되돌린 뒤 본문이 달라졌어요. 화면: %s", screenshot(page, "quote_undo"))
+    return "bold" if _bold_first_line(page, editor, text) else "fail"
+
+
 def align_center(page, editor):
     """지금 커서가 있는 줄부터 가운데 정렬로 바꾼다. 성공하면 True."""
     if not click_first(editor, ALIGN_BUTTON, timeout=1500):
@@ -745,11 +805,13 @@ def insert_link(page, editor, url):
 
 
 MARKER_RE = re.compile(r"\[\[[PL]\d+\]\]")
+# 표시 글자는 어느 글 칸에 들어가 있어도 찾는다 (인용구 안에 들어간 적이 있다). 제목 칸은 뺀다.
+MARKER_AREA = ".se-component:not(.se-documentTitle) .se-text-paragraph"
 
 
 def _clear_marker(page, editor, marker):
     """자리 표시 글자([[P3]] 같은 것)가 있는 줄을 눌러 그 글자를 지운다. 그 줄에 커서가 남는다. 찾으면 True."""
-    spot = editor.locator(BODY_PARAGRAPH).filter(has_text=marker).first
+    spot = editor.locator(MARKER_AREA).filter(has_text=marker).first
     try:
         if not spot.count():
             return False
@@ -814,7 +876,7 @@ def type_blocks(page, editor, blocks, photo_paths, captions):
 
     # 지우지 못한 표시 글자가 글에 남지 않게 한 번 더 확인한다
     for _ in range(len(objects)):
-        left = editor.locator(BODY_PARAGRAPH).filter(has_text=MARKER_RE)
+        left = editor.locator(MARKER_AREA).filter(has_text=MARKER_RE)
         try:
             if not left.count():
                 break
@@ -926,29 +988,14 @@ def post(page, title, blocks, tags, photo_paths=None, captions=None, publish=Fal
     page.wait_for_timeout(1000)  # 칸을 누르자마자 치면 첫 글자가 빠질 수 있다
     if not align_center(page, editor):
         warnings.append("가운데 정렬 버튼을 찾지 못해 왼쪽 정렬로 썼어요.")
-    if quote:
-        status = insert_quote(page, editor, quote)
-        if status == "ok":
-            log.info("인용구를 넣었어요: %s", quote)
-        elif status == "no_text":
-            log.info("인용구 칸은 생겼는데 글자를 확인하지 못했어요. 화면: %s", screenshot(page, "quote_text"))
-            warnings.append("인용구 글자가 제대로 들어갔는지 확인해 주세요.")
-        else:
-            # 인용구 버튼을 못 찾으면 굵은 글씨 한 줄로라도 맨 위에 보여준다
-            shot = screenshot(page, "quote_fail")
-            log.info("인용구를 넣지 못해서 굵은 글씨로 넣어요. 화면: %s", shot)
-            warnings.append("인용구를 넣지 못해 제목 아래에 굵은 글씨로 넣었어요.")
-            go_to_end(page, editor)
-            before = set_bold(page, editor, True)
-            type_line(page, quote)
-            if before is None:
-                page.keyboard.press("Control+b")
-            else:
-                set_bold(page, editor, False)
-            page.keyboard.press("Enter")
-            page.keyboard.press("Enter")
-        page.wait_for_timeout(800)  # 인용구 아래 칸으로 옮긴 뒤 바로 치면 첫 글자가 빠질 수 있다
     failed, failed_phone_links = type_blocks(page, editor, blocks, photo_paths, captions)
+    if quote:
+        # 인용구는 본문과 사진을 다 넣은 뒤 마지막에 맨 위에 넣는다.
+        # 처음에 넣으면 그 뒤 본문 전체가 인용구 상자 안으로 들어가는 일이 있었다 (2026-11-10 확인).
+        status = add_quote_on_top(page, editor, quote)
+        log.info("인용구: %s", status)
+        if status != "ok":
+            warnings.append("인용구 상자를 넣지 못해 맨 위에 굵은 글씨로 넣었어요.")
     problems = check_layout(editor, blocks, quote, failed)
     if problems:
         log.info("글 모양 문제: %s / 순서: %s / 화면: %s", " / ".join(problems), describe_layout(editor),
