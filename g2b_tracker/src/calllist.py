@@ -164,7 +164,9 @@ def _merge_mine(rows):
             key = m.get("기관", "")
             if key:
                 cur = mine.setdefault(key, {})
+                mails = [x for x in (cur.get("이메일", "") + "," + m.get("이메일", "")).split(",") if x.strip()]
                 cur.update({k: v for k, v in m.items() if v})
+                cur["이메일"] = ", ".join(dict.fromkeys(x.strip() for x in mails))  # 한 기관에 메일 여러 개면 모두
     done = 0
     for key, m in mine.items():
         hits = [r for r in rows if key in r["기관"] or key in _norm(r["기관"])]
