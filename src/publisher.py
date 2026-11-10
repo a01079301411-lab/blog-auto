@@ -522,12 +522,33 @@ def _click_post_delete(page):
     return False
 
 
-def _is_gone(page, url):
-    """글이 지워졌는지: 글 주소를 다시 열면 '없는 글' 안내가 나오거나 글 번호가 안 보인다."""
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(3000)
+GONE_RE = re.compile(r"존재하지 않|삭제되었|삭제된 게시물|찾을 수 없|없는 게시물|비공개")
+
+
+def _is_gone(page, url, title=""):
+    """글이 지워졌는지 확인한다. 지운 글 주소를 열면 네이버가 '없는 글' 알림 창을 띄우고 블로그 첫 화면으로
+    보내기도 해서, 알림 창 글자와 화면 글자, 이동한 주소를 모두 본다."""
+    messages = []
+    grab = lambda dialog: messages.append(dialog.message)
+    page.on("dialog", grab)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(4000)
+    finally:
+        page.remove_listener("dialog", grab)
+    if any(GONE_RE.search(m) for m in messages):
+        return True
     text = " ".join(_frame_text(f) for f in page.frames)
-    return bool(re.search(r"존재하지 않|삭제되었|삭제된 게시물|찾을 수 없", text))
+    if GONE_RE.search(text):
+        return True
+    number = re.search(r"(\d{9,})", url)
+    still_there = number and any(number.group(1) in u for u in [page.url] + [f.url for f in page.frames])
+    if number and not still_there:
+        # 그 글 번호 화면으로 열리지 않고 다른 화면(블로그 첫 화면 등)으로 보내졌다.
+        # 제목으로는 확인하지 않는다: 같은 제목의 새 글이 첫 화면에 보이기 때문이다.
+        log.info("예전 글 주소가 다른 화면으로 넘어갔어요: %s", page.url)
+        return True
+    return False
 
 
 def _frame_text(frame):
@@ -537,8 +558,11 @@ def _frame_text(frame):
         return ""
 
 
-def delete_post(page, url):
+def delete_post(page, url, title=""):
     """발행한 글을 지운다. 지운 것을 확인하면 True. (확인 창은 자동으로 '확인')"""
+    number = re.search(r"(\d{9,})", url or "")
+    if number:  # 긴 글보기 주소 대신 기본 글 주소로 연다
+        url = f"https://blog.naver.com/{BLOG_ID}/{number.group(1)}"
     accept = lambda dialog: dialog.accept()
     page.on("dialog", accept)
     try:
@@ -559,7 +583,7 @@ def delete_post(page, url):
             page.wait_for_timeout(1500)
             _click_word(page, CONFIRM_WORDS)  # 확인 창이 화면 안 레이어로 뜨는 경우
             page.wait_for_timeout(3000)
-            if _is_gone(page, url):
+            if _is_gone(page, url, title):
                 log.info("예전 글을 지웠어요: %s", url)
                 return True
         log.info("예전 글이 지워졌는지 확인하지 못했어요. 화면: %s", screenshot(page, "delete_unsure"))

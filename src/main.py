@@ -323,7 +323,7 @@ def fix_last():
         if not re.search(r"/\d{9,}|logNo=\d+", new_url):
             found = find_on_blog(record["title"])
             new_url = found["url"] if found else new_url
-        deleted = publisher.delete_post(page, record["url"])
+        deleted = publisher.delete_post(page, record["url"], record["title"])
 
     # 기록의 주소를 새 글로 바꾼다 (검색 성과 확인, 내부링크가 새 글을 보게)
     old_url = record["url"]
