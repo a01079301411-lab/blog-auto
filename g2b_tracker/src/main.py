@@ -212,11 +212,16 @@ def main():
     ap.add_argument("--calllist", action="store_true")
     ap.add_argument("--mail", action="store_true")
     ap.add_argument("--mailtest", action="store_true")
+    ap.add_argument("--sentcheck", action="store_true")
     a = ap.parse_args()
     setup_log(a.quiet)
     try:
         if a.selftest:
             run_selftest()
+        elif a.sentcheck:
+            import mailer
+            mailer.check_sent_box(days=7)
+            calllist.write()
         elif a.mail or a.mailtest:
             import mailer
             n = mailer.run(test=a.mailtest)

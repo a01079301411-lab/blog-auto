@@ -33,6 +33,9 @@ QUARTER_MONTHS = (3, 6, 9, 11)
 WINDOW_DAYS = range(1, 11)
 MIN_GAP_DAYS = 45
 
+# 보낸메일함 확인(IMAP)
+IMAP_HOST = "imap.naver.com"
+
 
 # ---------- 기록 ----------
 def load_sent():
@@ -117,8 +120,8 @@ def _contacts():
         for m in calllist._read_csv(f):
             mail = (m.get("이메일") or "").strip().lower()
             if mail and "@" in mail:
-                cur = out.setdefault(mail, {"기관": "", "발송": "", "수신거부": ""})
-                for k in ("기관", "발송", "수신거부"):
+                cur = out.setdefault(mail, {"기관": "", "발송": "", "수신거부": "", "발송완료": ""})
+                for k in ("기관", "발송", "수신거부", "발송완료"):
                     if m.get(k):
                         cur[k] = m[k].strip()
     return out
@@ -126,6 +129,10 @@ def _contacts():
 
 def apply_optouts(sent, contacts):
     for mail, c in contacts.items():
+        if c.get("발송완료", "").lower() in YES and not sent.get(mail, {}).get("발송일"):
+            info = sent.setdefault(mail, {"기관": c.get("기관", ""), "발송일": "", "이력": []})
+            info["발송일"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            info.setdefault("이력", []).append({"날짜": info["발송일"], "종류": "첫 메일(확인 처리)"})
         if c.get("발송", "").lower() in NO or c.get("수신거부", "").lower() in YES | {"수신거부"}:
             sent.setdefault(mail, {"기관": c.get("기관", ""), "발송일": "", "이력": []})["수신거부"] = True
 
@@ -154,20 +161,41 @@ def quarter_targets(sent, today=None):
 
 
 # ---------- 발송 ----------
-def _send(batch):
-    """batch: [(target, EmailMessage)] → 실제로 보낸 target 목록."""
+PER_CONNECTION = 10   # 네이버는 한 연결에서 많이 보내면 452 Too many commands → 10통마다 다시 연결
+GAP_SECONDS = 6
+
+
+def _send(batch, on_sent):
+    """batch: [(target, EmailMessage)]. 한 통 보낼 때마다 on_sent(target) 로 즉시 기록.
+    네이버가 막으면(452 등) 거기서 멈추고 (보낸 목록, 남은 수, 이유) 를 돌려준다. 남은 건 다음 실행 때 보낸다."""
     uid, pw, _ = _account()
-    done = []
-    with smtplib.SMTP_SSL("smtp.naver.com", 465, timeout=60) as s:
-        s.login(uid, pw)
-        for t, m in batch:
-            try:
-                s.send_message(m)
-                done.append(t)
-            except smtplib.SMTPRecipientsRefused:
-                print(f"  ✕ 주소 거부: {t['이메일']}")
-            time.sleep(3)
-    return done
+    done, i = [], 0
+    while i < len(batch):
+        chunk = batch[i:i + PER_CONNECTION]
+        try:
+            with smtplib.SMTP_SSL("smtp.naver.com", 465, timeout=60) as s:
+                s.login(uid, pw)
+                for t, m in chunk:
+                    try:
+                        s.send_message(m)
+                    except smtplib.SMTPRecipientsRefused:
+                        print(f"  ✕ 주소 거부(없는 주소일 수 있음): {t['이메일']}")
+                        on_sent(dict(t, 종류="주소거부"))
+                        i += 1
+                        continue
+                    done.append(t)
+                    on_sent(t)
+                    i += 1
+                    time.sleep(GAP_SECONDS)
+        except smtplib.SMTPAuthenticationError:
+            raise
+        except (smtplib.SMTPSenderRefused, smtplib.SMTPDataError, smtplib.SMTPServerDisconnected,
+                smtplib.SMTPResponseException, OSError) as e:
+            reason = getattr(e, "smtp_error", b"")
+            reason = reason.decode("utf-8", "ignore") if isinstance(reason, bytes) else str(reason or e)
+            return done, len(batch) - i, reason.strip()[:120]
+        time.sleep(20)  # 연결 사이 쉬기
+    return done, 0, ""
 
 
 def _sent_today(sent):
@@ -206,8 +234,25 @@ def run(test=False):
         return 0
 
     batch = [(dict(t, 종류=k), build(t["이메일"], t["기관"], s_, b_, f, sender)) for t, k, s_, b_, f in jobs]
+    log_path = ROOT / "logs" / "mail_log.csv"
+
+    def on_sent(t):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        new_file = not log_path.exists()
+        with log_path.open("a", encoding="utf-8-sig") as fh:
+            if new_file:
+                fh.write("날짜,종류,기관,이메일\n")
+            fh.write(f"{now},{t['종류']},{t['기관']},{t['이메일']}\n")
+        if test:
+            return
+        info = sent.setdefault(t["이메일"], {"기관": t["기관"], "발송일": "", "이력": []})
+        info.setdefault("이력", []).append({"날짜": now, "종류": t["종류"]})
+        if t["종류"] == "첫 메일":
+            info["발송일"], info["기관"] = now, t["기관"] or info.get("기관", "")
+        save_sent(sent)  # 한 통마다 바로 저장 → 중간에 멈춰도 중복 발송 없음
+
     try:
-        done = _send(batch)
+        done, left, reason = _send(batch, on_sent)
     except smtplib.SMTPAuthenticationError as e:
         detail = e.smtp_error.decode("utf-8", "ignore") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
         print(f"네이버 로그인 실패 (코드 {e.smtp_code}: {detail.strip()[:120]})")
@@ -217,24 +262,72 @@ def run(test=False):
         notifier.notify("[나라장터] 메일 발송 실패: 네이버 로그인 (7_메일설정.bat 확인)")
         save_sent(sent)
         return 0
-
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    if not test:
-        for t in done:
-            info = sent.setdefault(t["이메일"], {"기관": t["기관"], "발송일": "", "이력": []})
-            info.setdefault("이력", []).append({"날짜": now, "종류": t["종류"]})
-            if t["종류"] == "첫 메일":
-                info["발송일"], info["기관"] = now, t["기관"] or info.get("기관", "")
     save_sent(sent)
     firsts = [t for t in done if t["종류"] in ("첫 메일", "시험")]
     quarters = [t for t in done if t["종류"].startswith("분기")]
     lines = []
     if firsts:
-        lines.append(f"[나라장터] 제안서 메일 {len(firsts)}건 발송 (첨부 {len(jobs[0][4])}개)")
+        lines.append(f"[나라장터] 제안서 메일 {len(firsts)}건 발송")
         lines += [f"  · {t['기관']} {t['이메일']}" for t in firsts]
     if quarters:
         lines.append(f"[나라장터] 분기 소식 {len(quarters)}건 발송 ({quarters[0]['종류']})")
+    if left:
+        lines.append(f"⏸ 네이버가 잠시 막아서 {left}건은 다음 실행(30분 뒤)에 이어서 보냅니다. ({reason})")
     msg = "\n".join(lines)
     print(msg)
     notifier.notify(msg)
     return len(done)
+
+
+def check_sent_box(days=3):
+    """네이버 보낸메일함(IMAP)에서 최근 N일 동안 로젠이사 제안서·소식 메일을 받은 주소를 읽어
+    data/sent.json 에 '보냄'으로 기록한다 (중간에 멈춰 기록이 빠진 경우 복구용). 결과는 output/보낸메일_확인.csv."""
+    import email
+    import imaplib
+    from email.header import decode_header, make_header
+    from email.utils import getaddresses
+    from datetime import timedelta
+    uid, pw, _ = _account()
+    try:
+        im = imaplib.IMAP4_SSL(IMAP_HOST, 993)
+        im.login(uid, pw)
+    except Exception as e:
+        print(f"보낸메일함에 접속하지 못했어요: {e}")
+        print("네이버 메일 > 환경설정 > POP3/IMAP 설정 > 'IMAP/SMTP 사용' 도 '사용함' + 저장 후 다시 실행해 주세요.")
+        return None
+    typ, boxes = im.list()
+    names = [b.decode("utf-8", "ignore") for b in boxes or []]
+    sent_box = next((n.split(' "/" ')[-1].strip('"') for n in names if "Sent" in n or "&vPSwuNO4ycDVaA-" in n), "Sent Messages")
+    im.select(f'"{sent_box}"', readonly=True)
+    since = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
+    typ, data = im.search(None, f'(SINCE "{since}")')
+    rows = []
+    for num in (data[0].split() if data and data[0] else []):
+        typ, msg_data = im.fetch(num, "(BODY.PEEK[HEADER.FIELDS (TO SUBJECT DATE)])")
+        msg = email.message_from_bytes(msg_data[0][1])
+        subj = str(make_header(decode_header(msg.get("Subject", ""))))
+        if "로젠이사" not in subj:
+            continue
+        for _, addr in getaddresses([msg.get("To", "")]):
+            rows.append((msg.get("Date", ""), addr.lower(), subj))
+    im.logout()
+    sent = load_sent()
+    added = 0
+    for date, addr, subj in rows:
+        if addr and addr != f"{uid}@naver.com" and not sent.get(addr, {}).get("발송일"):
+            info = sent.setdefault(addr, {"기관": "", "발송일": "", "이력": []})
+            info["발송일"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            info.setdefault("이력", []).append({"날짜": info["발송일"], "종류": "첫 메일(보낸메일함 확인)"})
+            added += 1
+    save_sent(sent)
+    out = ROOT / "output" / "보낸메일_확인.csv"
+    with out.open("w", encoding="utf-8-sig") as fh:
+        fh.write("보낸시각,받는주소,제목\n")
+        for date, addr, subj in rows:
+            fh.write(f"\"{date}\",{addr},\"{subj}\"\n")
+    others = sorted({a for _, a, _ in rows if a != f"{uid}@naver.com"})
+    print(f"보낸메일함 최근 {days}일: 로젠이사 메일 {len(rows)}통, 받은 주소 {len(others)}곳 (새로 '보냄' 기록 {added}곳)")
+    for a in others:
+        print("  ·", a)
+    print(f"전체 목록: {out}")
+    return others
