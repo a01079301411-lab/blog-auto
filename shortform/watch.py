@@ -27,6 +27,11 @@ ROOT = settings.ROOT
 VIDEO_EXT = (".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm")
 INBOX_NAME, OUTBOX_NAME = "숏폼_편집할영상", "숏폼_완성"
 SKIP = ("_처리중", "_완료", "_실패")
+# 드라이브에 미리 만들어 두는 영상 종류 폴더 (폴더 이름 → 편집기의 영상 종류)
+GUIDE_FOLDERS = {
+    "강의·인터뷰": "lecture", "브이로그": "vlog", "이사현장": "moving", "제품·광고": "commerce",
+    "웃긴장면": "funny", "감동·인생": "story", "꿀팁": "howto", "크로스핏 카드와드": "workout",
+}
 SETTLE = 120      # 마지막 영상이 들어오고 이만큼(초) 지나야 시작 (여러 개를 올리는 중일 수 있어서)
 SCAN = 15         # 폴더를 살펴보는 간격(초)
 
@@ -58,7 +63,9 @@ def folders(base: str | None = None) -> tuple[str, str]:
                     "- 몇 분 안에 함께 넣은 영상들은 하나로 이어서 만들어요.\n"
                     "- '지시.txt'를 같이 넣으면 그 내용을 편집 지시로 먼저 따라요 (예: 20초, 웃는 장면에서 끝).\n"
                     "- PC에서 프로그램이 켜져 있고 '폴더 지켜보기'가 켜져 있어야 해요.\n")
-    for name in _templates():  # 템플릿마다 하위 폴더를 만들어 둔다 (휴대폰에서 고르기 쉽게)
+    for name in GUIDE_FOLDERS:  # 영상 종류마다 하위 폴더 (휴대폰에서 고르기 쉽게)
+        os.makedirs(os.path.join(inbox, name), exist_ok=True)
+    for name in _templates():  # 저장한 템플릿마다 하위 폴더
         safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip()
         if safe:
             os.makedirs(os.path.join(inbox, safe), exist_ok=True)
@@ -137,8 +144,18 @@ class Watcher:
         rel = os.path.relpath(folder, self.inbox)
         template = "" if rel == "." else rel.split(os.sep)[0]
         values = {}
-        if template:
-            values.update(_templates().get(template, {}))
+        if template in _templates():
+            values.update(_templates()[template])
+        elif template in GUIDE_FOLDERS:  # 영상 종류 폴더: 그 종류의 설정(설명·인물·개수·길이 등)으로
+            from . import guides
+            key = GUIDE_FOLDERS[template]
+            g = guides.get(key)
+            values["guide"] = key
+            if g.get("context"):
+                values["context"] = g["context"]
+            values["speaker"] = g.get("speaker", "")
+            values["accounts"] = ""
+            values.update(g.get("settings", {}))
         values.update({"review": "no", "upload": "no",
                        "merge": "yes" if len(moved) > 1 else values.get("merge", "no")})
         if direction.strip():
