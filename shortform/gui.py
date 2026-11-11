@@ -611,6 +611,7 @@ class App:
         sf.outer.pack(fill="x")
         self.short_refs = self._ref_card(left)
         self.short_refs.master.outer.pack(fill="x", pady=(10, 0))
+        self._phone_card(left, c)
         row = self._row(sf, "템플릿")
         self.tpl_var = tk.StringVar()
         self.tpl_box = ttk.Combobox(row, textvariable=self.tpl_var, state="readonly", width=14,
@@ -1513,7 +1514,85 @@ class App:
                          creationflags=NO_WINDOW)
         self.root.destroy()
 
+    # ---------- 휴대폰 → 드라이브 폴더 → 자동 편집 ----------
+
+    def _phone_card(self, parent, c: dict) -> None:
+        from . import watch
+        pf = self._card(parent, "📱 휴대폰으로 편집", "드라이브 폴더에 넣으면 자동으로")
+        pf.outer.pack(fill="x", pady=(10, 0))
+        self.watch_proc: subprocess.Popen | None = None
+        try:
+            self.inbox, self.outbox = watch.folders()
+        except OSError as e:
+            ttk.Label(pf, text=f"드라이브 폴더를 만들 수 없어요: {e}", style="Sub.Card.TLabel").pack()
+            return
+        ttk.Label(pf, style="Sub.Card.TLabel", wraplength=430, justify="left", text=(
+            "휴대폰 갤러리에서 영상 고르기 → 공유 → 드라이브 → '숏폼_편집할영상' 폴더에 넣으면, "
+            "이 PC가 지금 설정(하위 폴더 이름이 템플릿 이름이면 그 템플릿)대로 만들어 '숏폼_완성' "
+            "폴더에 넣어요. 함께 넣은 영상은 하나로 이어서, '지시.txt'를 같이 넣으면 그 지시대로 "
+            "만들어요.")).pack(anchor="w", pady=(0, 6))
+        ttk.Label(pf, text=f"넣는 곳: {self.inbox}", style="Sub.Card.TLabel", wraplength=430,
+                  justify="left").pack(anchor="w")
+        ttk.Label(pf, text=f"완성본: {self.outbox}", style="Sub.Card.TLabel", wraplength=430,
+                  justify="left").pack(anchor="w", pady=(0, 6))
+        row = ttk.Frame(pf, style="Card.TFrame")
+        row.pack(fill="x")
+        self.watch_btn = ttk.Button(row, text="▶ 폴더 지켜보기 시작", style="Soft.TButton",
+                                    command=self._toggle_watch)
+        self.watch_btn.pack(side="left")
+        ttk.Button(row, text="넣는 폴더", command=lambda: _open_folder(self.inbox)).pack(
+            side="left", padx=6)
+        ttk.Button(row, text="완성 폴더", command=lambda: _open_folder(self.outbox)).pack(side="left")
+        self.watch_var = tk.BooleanVar(value=c.get("watch", "no").lower() == "yes")
+        ttk.Checkbutton(pf, text="프로그램을 켜면 자동으로 지켜보기", variable=self.watch_var,
+                        style="Card.TCheckbutton",
+                        command=lambda: settings.save({"watch": "yes" if self.watch_var.get() else "no"})
+                        ).pack(anchor="w", pady=(6, 0))
+        if self.watch_var.get():
+            self.root.after(1500, self._toggle_watch)
+
+    def _toggle_watch(self) -> None:
+        if self.watch_proc and self.watch_proc.poll() is None:
+            self._stop_watch()
+            self._append("[폴더 지켜보기] 멈췄어요.\n")
+            return
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+        env.pop("SHORTFORM_GUI", None)
+        kwargs = {"creationflags": NO_WINDOW} if sys.platform == "win32" else {"start_new_session": True}
+        self.watch_proc = subprocess.Popen(
+            [_python(), "-m", "shortform.watch"], cwd=ROOT, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+            errors="replace", **kwargs)
+        self.watch_btn.configure(text="■ 지켜보기 멈추기")
+
+        def read(proc):
+            for line in proc.stdout:
+                line = line.rstrip("\r\n")
+                if line and not line.startswith("@@"):
+                    self.queue.put(("log", line.split("\r")[-1] + "\n", False))
+            self.root.after(0, lambda: self.watch_btn.configure(text="▶ 폴더 지켜보기 시작"))
+
+        threading.Thread(target=read, args=(self.watch_proc,), daemon=True).start()
+
+    def _stop_watch(self) -> None:
+        p = self.watch_proc
+        if not p or p.poll() is not None:
+            return
+        if sys.platform == "win32":  # 만들고 있던 작업(FFmpeg 등)까지 같이 끈다
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                           creationflags=NO_WINDOW)
+        else:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
     def _on_close(self) -> None:
+        if getattr(self, "watch_proc", None) and self.watch_proc.poll() is None:
+            if not messagebox.askyesno("닫기", "휴대폰 폴더를 지켜보는 중이에요. 닫으면 휴대폰으로 넣은 영상은 "
+                                             "다음에 프로그램을 켤 때 만들어요. 닫을까요?"):
+                return
+            self._stop_watch()
         if self.proc and self.proc.poll() is None:
             if not messagebox.askyesno("닫기", "작업 중이에요. 멈추고 닫을까요?\n"
                                              "다음에 같은 영상으로 다시 하면 이어서 해요."):

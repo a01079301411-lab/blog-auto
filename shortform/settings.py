@@ -16,6 +16,7 @@ DEFAULTS = {
     "fillers": "yes", "voice_enhance": "yes", "inserts": "yes",
     "karaoke": "no", "sub_pop": "yes", "auto_color": "yes", "merge": "no",
     "capcut": "yes", "cover_intro": "yes", "direction": "",
+    "watch": "no", "watch_base": "",
 }
 
 
