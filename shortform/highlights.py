@@ -68,9 +68,19 @@ For each clip also write, in the transcript's language:
   "버피 {100개}"). Raising the degree a little is fine ("역대급", "폭주"), but every fact it
   states must really happen in the clip: no invented events, people or numbers. Not a
   topic label and not the same words as the title.
-- thumb_time: seconds from the clip start of the best thumbnail moment: the biggest,
-  clearest face with the strongest expression (a laugh, shock, struggle), matching
-  thumb_text. 0 if unsure.
+- thumb_time: the source time (as in the transcript and <frames>) of the thumbnail
+  moment. The frame there must SHOW what thumb_text says (if it says "드러누움", someone
+  is lying on the floor; if it says "표정 폭발", a face is visibly straining or laughing):
+  a big, clear person with a strong expression or action, not an empty room or a ceiling.
+  Pick it from <frames> when given. 0 if unsure.
+- thumb_focus_x, thumb_focus_y: where the main person is in that frame, 0-1 from the
+  left and from the top (e.g. 0.7, 0.6); the thumbnail zooms in there and circles it.
+  0.5, 0.5 if unsure.
+- beats: short on-screen captions that tell the story while it plays, so a viewer with
+  the sound off understands what is happening and why it is funny: [{time, text}], time
+  as source time inside the clip, text at most 14 characters, witty but true to the
+  frame (e.g. "1라운드: 물구나무", "벌써 다리 후들", "남은 카드 2장", "결국 바닥행").
+  One every 3-6 seconds for footage with little speech; empty for talk clips.
 - label: a short teaser shown in a small badge above the title, at most 10 characters,
   e.g. "당신만 몰랐던..".
 - speaker: who is talking, as "name / role" (e.g. "권기준 / 꼴통사장 대표"), using the
@@ -90,6 +100,16 @@ For each clip also write, in the transcript's language:
   time in seconds from the clip start when it appears (about 40-70% into the clip, a
   few seconds before the payoff). Empty text and 0 if the clip is short or needs none.
 - bgm_mood: background music mood for the clip: bright, calm, tension or funny.
+
+Story rules for clips that join several parts (montage):
+- One clip = one storyline with one main person or one challenge (e.g. "the man in the
+  red shirt from the first card to collapsing on the floor"). Write it down for yourself
+  first, then pick only parts that move that storyline forward.
+- Put the parts in the order they happened. The only exception: an optional hook of at
+  most 2 seconds taken from the climax and shown first, then the story from the start.
+- Different clips must not reuse the same moments or tell the same sequence; give each
+  clip its own storyline, main person or angle.
+- The title, thumb_text and beats must describe what the clip actually shows.
 - instruction_check: one Korean sentence on how this clip follows <creator_instructions>
   (which videos and moments it uses and why); empty if there are no instructions.
 
@@ -131,6 +151,12 @@ SCHEMA = {
                     "hook_text": {"type": "string"},
                     "thumb_text": {"type": "string"},
                     "thumb_time": {"type": "number"},
+                    "thumb_focus_x": {"type": "number"},
+                    "thumb_focus_y": {"type": "number"},
+                    "beats": {"type": "array", "items": {
+                        "type": "object",
+                        "properties": {"time": {"type": "number"}, "text": {"type": "string"}},
+                        "required": ["time", "text"], "additionalProperties": False}},
                     "rehook_text": {"type": "string"},
                     "rehook_time": {"type": "number"},
                     "bgm_mood": {"type": "string", "enum": ["bright", "calm", "tension", "funny"]},
@@ -139,7 +165,7 @@ SCHEMA = {
                               "description": "1-10, how well it would perform as a short"},
                 },
                 "required": ["start", "end", "parts", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
-                             "hook_text", "thumb_text", "thumb_time", "instruction_check", "rehook_text", "rehook_time", "bgm_mood",
+                             "hook_text", "thumb_text", "thumb_time", "thumb_focus_x", "thumb_focus_y", "beats", "instruction_check", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
             },
@@ -173,6 +199,8 @@ class Highlight:
     thumb_text: str = ""    # 썸네일 글자 ({강조})
     thumb_at: float = 0.0   # 썸네일로 쓸 순간 (원본 시간, 0이면 자동)
     instruction_note: str = ""  # 편집 지시를 어떻게 반영했는지 (AI가 쓴 한 줄)
+    thumb_focus: list[float] = field(default_factory=list)  # 썸네일에서 사람 위치 [x, y] (0~1)
+    beats: list[list] = field(default_factory=list)  # 상황 설명 글자 [[원본 시간, 글자], ...]
 
     def pieces(self) -> list[tuple[float, float]]:
         """숏폼에 들어갈 원본 구간들 (보여 줄 순서대로)."""
@@ -348,8 +376,14 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
         hl.thumb_text = clean_title(h.get("thumb_text", "") or "")
         hl.instruction_note = (h.get("instruction_check", "") or "").strip()
         tt = float(h.get("thumb_time", 0) or 0)
-        if tt > 0:
-            hl.thumb_at = _source_time(parts, tt) if len(parts) > 1 else hl.start + tt
+        if tt > 0:  # 원본 시간 (예전 응답처럼 숏폼 안 시간이면 원본 시간으로 바꾼다)
+            inside = any(a - 0.5 <= tt <= b + 0.5 for a, b in (parts or [(hl.start, hl.end)]))
+            hl.thumb_at = tt if inside else (_source_time(parts, tt) if len(parts) > 1 else hl.start + tt)
+        fx, fy = h.get("thumb_focus_x"), h.get("thumb_focus_y")
+        if fx is not None and fy is not None:
+            hl.thumb_focus = [min(max(float(fx), 0.0), 1.0), min(max(float(fy), 0.0), 1.0)]
+        hl.beats = [[float(b["time"]), str(b["text"]).strip()] for b in h.get("beats", [])
+                    if str(b.get("text", "")).strip()]
         if len(parts) > 1:
             hl.parts = [list(p) for p in parts]
             hl.start, hl.end = min(a for a, _ in parts), max(b for _, b in parts)

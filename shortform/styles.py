@@ -466,3 +466,30 @@ def add_retention(path: str, *, duration: float, font: str, hook: str = "", reho
     text = text.replace("\n[Events]", "\n" + "\n".join(styles) + "\n\n[Events]", 1)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text.rstrip("\n") + "\n" + "\n".join(events) + "\n")
+
+
+def add_beats(path: str, beats: list[tuple[float, str]], *, duration: float, font: str,
+              y: int, color: str = "#FFE600") -> None:
+    """상황 설명 글자 (말이 적은 영상도 소리 없이 무슨 상황인지 알게): 반투명 검은 띠 위 흰 글자,
+    숫자·핵심어는 노란색. 다음 설명이 나올 때까지(최대 3.5초) 보인다."""
+    beats = sorted((t, x) for t, x in beats if x.strip() and 0 <= t < duration - 0.3)
+    if not beats:
+        return
+    style = (f"Style: Beat,{font},64,{_c('#FFFFFF')},&H000000FF&,&H50000000&,&H00000000&,"
+             f"-1,0,0,0,100,100,0,0,3,14,0,5,40,150,0,1")
+    pop = r"{\fscx80\fscy80\t(0,120,\fscx100\fscy100)}"
+    events = []
+    for k, (t, text) in enumerate(beats):
+        nxt = beats[k + 1][0] if k + 1 < len(beats) else duration
+        end = min(nxt, t + 3.5, duration)
+        if end - t < 0.6:
+            continue
+        body = re.sub(r"(\d+\S*)", lambda m: f"{{\\c{_c(color)}}}{m.group(1)}{{\\c{_c('#FFFFFF')}}}",
+                      _esc(text.replace("{", "").replace("}", "")))
+        events.append(f"Dialogue: 3,{_ts(t)},{_ts(end)},Beat,,0,0,0,,{{\\pos({W // 2},{y})}}{pop}{body}")
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read()
+    text = text.replace("\n[Events]", "\n" + style + "\n\n[Events]", 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text.rstrip("\n") + "\n" + "\n".join(events) + "\n")
+

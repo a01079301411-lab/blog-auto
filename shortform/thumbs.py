@@ -70,12 +70,12 @@ def pick_frame(src: str, times: list[float], prefer: float | None = None, limit:
     큰 얼굴 + 크게 웃는 입 + (후보들 중에서) 덜 흔들린 장면 + 너무 어둡지 않은 장면.
     """
     cands = sorted(dict.fromkeys(round(t, 2) for t in times))
-    if len(cands) > limit:  # 고르게 줄인다 (AI가 고른 순간 근처는 꼭 넣는다)
+    if len(cands) > limit:  # 고르게 줄인다
         step = len(cands) / limit
-        keep = [cands[int(i * step)] for i in range(limit)]
-        if prefer is not None:
-            keep += [min(cands, key=lambda t: abs(t - prefer))]
-        cands = sorted(set(keep))
+        cands = [cands[int(i * step)] for i in range(limit)]
+    if prefer is not None:  # AI가 '문구가 보이는 장면'으로 고른 순간 둘레를 촘촘히 본다
+        cands = sorted(set(cands) | {round(prefer + d, 2) for d in (-0.8, -0.4, 0, 0.4, 0.8)
+                                     if prefer + d >= 0})
     shots = []
     for t in cands:
         img = _grab(src, t)
@@ -95,32 +95,48 @@ def pick_frame(src: str, times: list[float], prefer: float | None = None, limit:
         if face:
             area = face[2] * face[3] / (img.shape[0] * img.shape[1])
             s += min(area * 25, 2.0) + max(0.0, face[4] - 0.75) * 3
-        if prefer is not None and abs(t - prefer) < 1.5:
-            s += 0.8  # AI가 고른 순간
+        if prefer is not None and abs(t - prefer) <= 0.9:
+            s += 3.0  # AI가 고른 순간: 문구와 맞는 장면이 무엇보다 먼저 (흔들림·어둠만 비교)
         if s > best_s:
             best, best_s = (t, img, face), s
     return best
 
 
-def _canvas(img: np.ndarray, face):
-    """얼굴을 화면 30% 크기로 키워 세로(9:16)로 자르고 보정한다. (그림, 얼굴 가운데 y 비율)"""
+def _canvas(img: np.ndarray, face, focus=None):
+    """얼굴(없으면 AI가 알려 준 사람 위치)을 크게 키워 세로(9:16)로 자르고 보정한다.
+    (그림, 사람 가운데 y 비율, 강조 동그라미 (x, y, 반지름) 또는 None)"""
     from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
     ih, iw = img.shape[:2]
     # 자를 창 크기: 기본은 원본에서 9:16이 되는 가장 큰 창, 얼굴이 작으면 더 좁게(확대)
     cw = min(iw, ih * 9 / 16)
+    if face and focus:  # 얼굴이 AI가 말한 사람과 멀면(다른 사람) AI가 말한 사람을 따른다
+        fx_, fy_ = (face[0] + face[2] / 2) / iw, (face[1] + face[3] / 2) / ih
+        if abs(fx_ - focus[0]) > 0.25 or abs(fy_ - focus[1]) > 0.3:
+            face = None
     if face:
         cw = min(cw, max(face[2] / 0.30, cw * 0.55))
+    elif focus:
+        cw = cw * 0.62  # 멀리 찍힌 사람도 크게 보이게 확대
     ch = cw * 16 / 9
     if face:
         fx, fy = face[0] + face[2] / 2, face[1] + face[3] / 2
         x0 = fx - cw / 2
         y0 = fy - ch * 0.62  # 얼굴은 화면 가운데보다 아래 (위에는 글자)
+    elif focus:
+        fx, fy = focus[0] * iw, focus[1] * ih
+        x0, y0 = fx - cw / 2, fy - ch * 0.62
     else:
         x0, y0 = (iw - cw) / 2, (ih - ch) / 2
     x0 = min(max(x0, 0), iw - cw)
     y0 = min(max(y0, 0), ih - ch)
     face_y = ((face[1] + face[3] / 2) - y0) / ch if face else 0.6
+    ring = None
+    if face:
+        ring = ((face[0] + face[2] / 2 - x0) / cw * W, (face[1] + face[3] / 2 - y0) / ch * H,
+                face[2] / cw * W * 0.95)
+    elif focus:  # 얼굴이 안 보이면 동그라미는 치지 않는다 (엉뚱한 곳을 가리킬 수 있어서)
+        face_y = (focus[1] * ih - y0) / ch
     im = Image.fromarray(img).crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch)))
     im = im.resize((W, H), Image.LANCZOS)
     im = ImageOps.autocontrast(im, cutoff=1)
@@ -129,7 +145,21 @@ def _canvas(img: np.ndarray, face):
         im = ImageEnhance.Brightness(im).enhance(min(1.0 + (0.45 - mean) * 1.6, 1.45))
     im = ImageEnhance.Color(im).enhance(1.25)
     im = ImageEnhance.Contrast(im).enhance(1.1)
-    return im.filter(ImageFilter.UnsharpMask(radius=3, percent=90, threshold=2)), face_y
+    return im.filter(ImageFilter.UnsharpMask(radius=3, percent=90, threshold=2)), face_y, ring
+
+
+def draw_ring(im, ring):
+    """썸네일 클릭 요소: 사람(표정)을 빨간 동그라미로 강조."""
+    from PIL import ImageDraw
+
+    if not ring:
+        return im
+    x, y, r = ring
+    r = min(max(r, 120), W * 0.32)
+    d = ImageDraw.Draw(im)
+    for k, (col, w) in enumerate((((0, 0, 0), 22), ((235, 40, 50), 14))):
+        d.ellipse([x - r, y - r * 1.1, x + r, y + r * 1.1], outline=col, width=w)
+    return im
 
 
 def _lines(text: str) -> list[list[tuple[str, bool]]]:
@@ -210,14 +240,17 @@ def draw_text(im, text: str, label: str = "", where: str = "top"):
 
 
 def make(src: str, out_jpg: str, *, text: str, times: list[float], prefer: float | None = None,
-         label: str = "", base_png: str | None = None) -> float | None:
-    """썸네일을 만들고 고른 장면 시간을 돌려준다. base_png를 주면 글자 없는 바탕도 저장(캡컷용)."""
+         label: str = "", base_png: str | None = None, focus=None) -> float | None:
+    """썸네일을 만들고 고른 장면 시간을 돌려준다. base_png를 주면 글자 없는 바탕도 저장(캡컷용).
+    focus: AI가 알려 준 그 장면 속 사람 위치 (x, y, 0~1)."""
     t, img, face = pick_frame(src, times, prefer)
     if img is None:
         return None
-    base, face_y = _canvas(img, face)
+    use_focus = focus if (prefer is not None and abs(t - prefer) <= 0.9) else None
+    base, face_y, ring = _canvas(img, face, use_focus)
     if base_png:
         base.save(base_png)
+    base = draw_ring(base, ring if use_focus else None)
     # 얼굴이 화면 맨 위쪽에 있을 때만 글자를 아래로 (그 밖에는 위: 이마·머리는 가려져도
     # 표정이 사는 눈·입은 보이게)
     where = "bottom" if face and face_y < 0.36 else "top"

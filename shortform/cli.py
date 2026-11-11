@@ -14,7 +14,7 @@ from . import media
 from . import burnin, face, guides, review
 from .highlights import Highlight, parse_ranges, pick_highlights
 from .silence import detect_silences, drop_fillers, keep_segments
-from .styles import (PRESETS, account_box_style, add_retention, dump_style, load_style,
+from .styles import (PRESETS, account_box_style, add_beats, add_retention, dump_style, load_style,
                      video_filter, view_ratio, write_account_subs, write_ass)
 from .subfix import fix_cues
 from .subtitles import build_cues, remap, words_in_range, write_srt
@@ -61,6 +61,19 @@ def _to_output_time(t: float, keeps: list[media.Segment]) -> float | None:
             return offset + t - s
         offset += e - s
     return None
+
+
+def _beats(h, keeps, kept) -> list[tuple[float, str]]:
+    """AI가 쓴 상황 설명 글자를 숏폼 시간으로 (잘려 나간 곳의 것은 가장 가까운 남은 곳으로)."""
+    out = []
+    for t, text in h.beats or []:
+        ot = _to_output_time(t, keeps)
+        if ot is None:
+            near = min(((abs(s - t), s) for s, e in keeps), default=None)
+            ot = _to_output_time(near[1], keeps) if near and near[0] < 2 else None
+        if ot is not None and ot < kept - 0.3:
+            out.append((ot, text))
+    return out
 
 
 def _add_retention(args, subs, h, keeps, kept, font, style) -> None:
@@ -230,7 +243,7 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         base_png = os.path.splitext(out)[0] + ".cover_base.png" if getattr(args, "capcut", False) else None
         try:
             t = thumbs.make(src, cover, text=h.thumb_text or h.title, times=times, prefer=prefer,
-                            base_png=base_png)
+                            base_png=base_png, focus=h.thumb_focus or None)
             if t is None:
                 cover = None
             else:
@@ -245,6 +258,11 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
                   speaker=speaker if (cues or burned is None) else "", bottom=h.bottom,
                   keywords=h.keywords, karaoke=karaoke, pop=pop)
         _add_retention(args, subs, h, keeps, kept, style.font, style)
+        beats = _beats(h, keeps, kept)
+        if beats:
+            add_beats(subs, beats, duration=kept, font=style.font,
+                      y=style.sub_bottom - round(style.sub_size * 1.25) - 150)
+            print(f"  상황 설명 글자 {len(beats)}개: " + " / ".join(t for _, t in beats))
         media.render(src, keeps, out, video_filter=vf, srt=subs,
                      bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
                      insert_bottom=style.sub_bottom - round(style.sub_size * 2.6),
@@ -264,6 +282,11 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
         write_account_subs(subs, acct, cues, font_path=sub_font, karaoke=karaoke, pop=pop)
         from . import fonts as _fonts
         _add_retention(args, subs, h, keeps, kept, _fonts.family(sub_font), style)
+        beats = _beats(h, keeps, kept)
+        if beats:
+            add_beats(subs, beats, duration=kept, font=_fonts.family(sub_font),
+                      y=low_speaker_y(acct) - 110)
+            print(f"  상황 설명 글자 {len(beats)}개: " + " / ".join(t for _, t in beats))
         try:
             media.render(src, keeps, out, video_filter=vf, srt=subs, overlay=ov_path,
                          font_files=[sub_font], bgm=bgm, bgm_volume=args.bgm_volume,
@@ -312,7 +335,9 @@ def _export_capcut(args, src, keeps, kept, out, h, cues, speaker, style, acct, v
             bottom_y=bottom_y,
             bgm=bgm, bgm_volume=args.bgm_volume, inserts=cut_ins,
             cover=base_png or (cover if acct is not None else None),
-            cover_text=(h.thumb_text or h.title) if base_png else "", cover_dur=cover_dur)
+            cover_text=(h.thumb_text or h.title) if base_png else "", cover_dur=cover_dur,
+            extra_texts=[("상황 설명", text, t, min(t + 3.0, kept), 8, sub_y - 260)
+                         for t, text in _beats(h, keeps, kept)])
         print(f"  캡컷 프로젝트: {path}")
     except Exception as e:  # 캡컷 내보내기가 안 돼도 완성 영상은 이미 있다
         print(f"  (캡컷 프로젝트 만들기 실패: {type(e).__name__}: {e})")

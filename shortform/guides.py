@@ -167,19 +167,20 @@ BUILTIN: dict[str, dict] = {
         "speaker": "",
         "focus": (
             "Workout / CrossFit footage (here: a poker-card WOD where each flipped card's number "
-            "decides the movement and the reps). Montage is allowed and expected: build each "
-            "clip from 3-6 parts taken from anywhere in ALL the footage, judged mainly by the "
-            "frames. Structure that keeps people watching: (1) hook in the first 2 seconds: "
-            "the most intense moment, a card flip with a scary number, someone collapsing, or "
-            "the finish, shown first; (2) explain the rule in one quick beat (a card flip and "
-            "the movement it means); (3) escalating action: different movements, rising "
-            "fatigue, faces and reactions, cheering, the count; (4) end on the payoff: the last "
-            "card, the finish, lying on the floor, a funny or proud line, then stop. Each of "
-            "the clips must use different moments (no reused parts) and a different angle on "
-            "the story, e.g. 'the rule and the worst card', 'one person's struggle to the "
-            "finish', 'funniest reactions'. Use speech lines when they are good (counting, "
-            "jokes, reactions), but never pick a clip only because someone talks. Best hooks: "
-            "1, 10, 3, 4."),
+            "decides the movement and the reps). Montage is allowed: build each clip from 3-6 "
+            "parts of ALL the footage, judged mainly by the frames, following the story rules "
+            "(one storyline, parts in the order they happened). Give the clips different "
+            "storylines, for example: (A) one person's journey: first movement -> rising "
+            "fatigue -> collapse or finish, (B) the hardest single movement: the struggle, the "
+            "faces, the count, the moment someone fails or makes it, (C) the group: everyone "
+            "suffering on the last round, reactions and the end. Hook: a max 2 s flash of the "
+            "climax first (someone on the floor, a straining face), then the story from the "
+            "start. Every 3-6 s a beat caption says what is happening (which movement, how "
+            "many left, who is dying). End on the payoff (lying on the floor, the finish, a "
+            "laugh) and stop. Title, thumb_text and the thumbnail frame must show the same "
+            "moment (if the title says someone collapsed, the thumbnail shows him on the "
+            "floor). Use speech lines when they are good (counting, jokes, reactions). Best "
+            "hooks: 1, 10, 3, 4."),
         "title": ("숫자·반전·고통이 보이게. 예: 카드 한 장에\\n{버피 13개}; 포커로 운동하면\\n"
                   "{생기는 일}; 에이스 뜨면\\n{지옥 시작}"),
         "avoid": "Long stretches of the same movement; waiting or resting; setup talk with nothing happening.",
