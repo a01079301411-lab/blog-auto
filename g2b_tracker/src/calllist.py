@@ -152,41 +152,74 @@ def _read_csv(path):
     return [{(k or "").strip(): (v or "").strip() for k, v in m.items()} for m in csv.DictReader(lines, delimiter=delim)]
 
 
-def _merge_mine(rows):
-    """통화로 받은 메일·담당자 (열: 기관, 이메일, 담당자, 전화, 메모). 같은 기관은 나중 파일이 이김."""
+def _match(rows, key):
+    """기관 이름이 정확히 맞는 줄만 연결한다 (예: '경상북도' 가 '경상북도교육청 경주여고' 에 붙지 않게).
+    1) 이름이 같거나 2) 끝부분이 같거나 3) 학교 이름(…학교)이 같을 때만."""
+    k = re.sub(r"\s", "", key)
+    for r in rows:
+        name = re.sub(r"\s", "", r["기관"])
+        if name == k or _norm(r["기관"]) == k:
+            return r
+    for r in rows:
+        name = re.sub(r"\s", "", r["기관"])
+        if len(k) >= 4 and name.endswith(k):
+            return r
+    if re.search(r"(학교|대학교|병원|법원|센터)$", k):
+        for r in rows:
+            if _norm(r["기관"]).endswith(k) or k.endswith(_norm(r["기관"])) and len(_norm(r["기관"])) >= 5:
+                return r
+    return None
+
+
+def _mine():
+    """연락처 파일 전부 → 주소별 최신 정보 → 기관별로 묶음 (나중 파일이 이김: 기관 이름 정정 가능)."""
     files = _contact_files()
+    by_mail, order = {}, []
+    for f in files:
+        for m in _read_csv(f):
+            mail = (m.get("이메일") or "").strip().lower()
+            if not mail:
+                continue
+            cur = by_mail.setdefault(mail, {})
+            if mail not in order:
+                order.append(mail)
+            cur.update({k: v for k, v in m.items() if v})
+    groups = {}
+    for mail in order:
+        m = by_mail[mail]
+        key = m.get("기관", "").strip() or mail
+        g = groups.setdefault(key, {"이메일": [], "메모": [], "담당자": "", "전화": ""})
+        g["이메일"].append(mail)
+        if m.get("메모") and m["메모"] not in g["메모"]:
+            g["메모"].append(m["메모"])
+        g["담당자"] = m.get("담당자") or g["담당자"]
+        g["전화"] = m.get("전화") or g["전화"]
+    return files, groups, set(by_mail), {x for g in groups.values() for x in g["메모"]}
+
+
+def _merge_mine(rows):
+    """통화로 받은 메일·담당자 (열: 기관, 이메일, 담당자, 전화, 메모)."""
+    files, groups, _, _ = _mine()
     if not files:
         print("내 연락처 파일이 없어요 (data\\my_contacts.csv 또는 구글 드라이브 '나라장터추적_연락처' 폴더).")
         return
-    mine = {}
-    for f in files:
-        for m in _read_csv(f):
-            key = m.get("기관", "")
-            if key:
-                cur = mine.setdefault(key, {})
-                mails = [x for x in (cur.get("이메일", "") + "," + m.get("이메일", "")).split(",") if x.strip()]
-                cur.update({k: v for k, v in m.items() if v})
-                cur["이메일"] = ", ".join(dict.fromkeys(x.strip() for x in mails))  # 한 기관에 메일 여러 개면 모두
-    done = 0
-    for key, m in mine.items():
-        hits = [r for r in rows if key in r["기관"] or key in _norm(r["기관"])]
-        if not hits:
-            hits = [{"등급": "S", "_score": 0, "기관": key, "기관유형": "", "지역": "", "연락할 곳": "", "전화": "",
-                     "이메일": "", "근거": "직접 확보한 연락처", "최근 이사계약": "", "이사계약 횟수": 0,
-                     "대본": _script(key, ""), "영업 타이밍": _timing(key, "")}]
-            rows.append(hits[0])
-        r = hits[0]
-        r["이메일"] = m.get("이메일") or r.get("이메일", "")
-        if m.get("담당자"):
-            r["연락할 곳"] = m["담당자"]
-        if m.get("전화"):
-            r["전화"] = m["전화"]
-        if m.get("메모") and m["메모"] not in (r.get("메모") or ""):
-            r["메모"] = " · ".join(x for x in (r.get("메모", ""), m["메모"]) if x)
-        r["_score"] += 1000  # 직접 통화해서 메일까지 받은 곳은 맨 위로
+    for key, g in groups.items():
+        r = _match(rows, key)
+        if r is None:
+            r = {"등급": "S", "_score": 0, "기관": key, "기관유형": "", "지역": "", "연락할 곳": "", "전화": "",
+                 "이메일": "", "근거": "직접 확보한 연락처 (기존 거래·견적)", "최근 이사계약": "", "이사계약 횟수": 0,
+                 "대본": _script(key, ""), "영업 타이밍": _timing(key, "")}
+            rows.append(r)
+        r["이메일"] = ", ".join(g["이메일"])
+        if g["담당자"]:
+            r["연락할 곳"] = g["담당자"]
+        if g["전화"]:
+            r["전화"] = g["전화"]
+        if g["메모"]:
+            r["메모"] = " · ".join(g["메모"])
+        r["_score"] = r.get("_score", 0) + 1000
         r["등급"] = "★" + r["등급"].lstrip("★")
-        done += 1
-    print(f"내 연락처 {done}곳 반영 (파일 {len(files)}개: {', '.join(f.name for f in files[:3])}{' …' if len(files) > 3 else ''})")
+    print(f"내 연락처 {len(groups)}곳 반영 (파일 {len(files)}개)")
 
 
 def _mark_sent(rows):
@@ -234,6 +267,7 @@ def write():
         try:
             wb = load_workbook(db)
             keep, keep_by_org = {}, {}
+            _, _, managed_mails, managed_memos = _mine()
             if SHEET in wb.sheetnames:  # 사장님이 적은 통화결과·다음연락일·메모는 살린다
                 ws = wb[SHEET]
                 hdr = [c.value for c in ws[1]]
@@ -246,15 +280,19 @@ def write():
             for r in rows:
                 old = keep.get((r["기관"], str(r["전화"]))) or keep_by_org.get(r["기관"])
                 if old:
-                    if old.get("이메일") and not r.get("이메일"):  # 엑셀에 직접 적은 이메일은 지우지 않는다
-                        r["이메일"] = old["이메일"]
+                    typed = [x.strip() for x in str(old.get("이메일") or "").split(",")
+                             if x.strip() and x.strip().lower() not in managed_mails]
+                    if typed and not r.get("이메일"):  # 엑셀에 직접 적은 이메일만 살린다
+                        r["이메일"] = ", ".join(typed)
                     for k in ("통화결과", "다음연락일"):
                         if old.get(k) and not str(r.get(k, "")).startswith("C 메일발송"):
                             r[k] = old.get(k)
                         elif old.get(k) and str(old.get(k)).startswith(("A", "B")):  # 견적요청·명단등록이 더 앞선 단계
                             r[k] = old.get(k)
-                    if old.get("메모") and old["메모"] not in (r.get("메모") or ""):
-                        r["메모"] = " · ".join(x for x in (r.get("메모", ""), old["메모"]) if x)
+                    own = [x for x in str(old.get("메모") or "").split(" · ")
+                           if x and x not in managed_memos and x not in (r.get("메모") or "")]
+                    if own:
+                        r["메모"] = " · ".join(x for x in [r.get("메모", "")] + own if x)
             _sheet(wb.create_sheet(SHEET, 0), rows, COLS)
             wb.active = 0
             wb.save(db)
