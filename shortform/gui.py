@@ -629,6 +629,16 @@ class App:
                            state="readonly", width=26)
         box.pack(side="left", fill="x", expand=True)
         box.bind("<<ComboboxSelected>>", self._on_guide)
+        # 편집 지시: AI가 무엇보다 먼저 따르는 요청 (고급 설정의 '영상 설명'보다 앞)
+        ttk.Label(sf, text="편집 지시 (AI가 가장 먼저 따라요)", style="Card.TLabel").pack(
+            anchor="w", pady=(6, 2))
+        self.direction = tk.Text(sf, height=3, width=40, wrap="word")
+        style_field(self.direction)
+        self.direction.insert("1.0", c.get("direction", "").replace(" // ", "\n"))
+        self.direction.pack(fill="x")
+        ttk.Label(sf, style="Sub.Card.TLabel", wraplength=380, justify="left",
+                  text="예) 영상 2개를 다 보고 이어서 50초짜리 1개 / 웃긴 장면만 / "
+                       "첫 장면은 카드 뒤집는 순간으로").pack(anchor="w", pady=(2, 6))
         row = self._row(sf, "숏폼 개수")
         self.count_var = tk.StringVar(value=c["count"])
         self.count_box = ttk.Spinbox(row, from_=1, to=30, textvariable=self.count_var, width=5)
@@ -1037,6 +1047,8 @@ class App:
             "style": style, "count": self.count_var.get().strip(),
             "min_len": self.min_var.get().strip(), "max_len": self.max_var.get().strip(),
             "context": " ".join(self.context.get("1.0", "end").split()),
+            "direction": " // ".join(ln.strip() for ln in
+                                     self.direction.get("1.0", "end").splitlines() if ln.strip()),
             "speaker": self.speaker_var.get().strip(),
             "model": {v: k for k, v in MODELS}.get(self.model_var.get(), "small"),
             "focus": focus, "fix_subtitles": yes("fix_subtitles"), "review": yes("review"),
@@ -1075,6 +1087,9 @@ class App:
         if "context" in v:
             self.context.delete("1.0", "end")
             self.context.insert("1.0", v["context"])
+        if "direction" in v:
+            self.direction.delete("1.0", "end")
+            self.direction.insert("1.0", v["direction"].replace(" // ", "\n"))
         if "model" in v:
             self.model_var.set(dict(MODELS).get(v["model"], v["model"]))
         if "upload" in v:
@@ -1180,6 +1195,26 @@ class App:
         except ValueError:
             messagebox.showwarning("설정", "개수와 길이는 숫자로 적어 주세요.")
             return
+        if len(videos) > 1 and values.get("merge") != "yes":
+            # 영상이 여러 개인데 '합쳐서'가 꺼져 있으면, 영상마다 따로 만들게 되어 지시와 다를 수 있다
+            from .cli import CONNECT_WORDS
+            said = values.get("direction", "") + " " + values.get("context", "")
+            if any(w in said for w in CONNECT_WORDS):
+                merge = True
+                self._append("편집 지시에 영상을 잇는 말이 있어서 '영상 합쳐서 전체에서'를 켰어요.\n")
+            else:
+                ans = messagebox.askyesnocancel(
+                    "영상 여러 개", f"영상 {len(videos)}개를 어떻게 만들까요?\n\n"
+                    f"[예]  {len(videos)}개를 하나로 이어서, 전체를 다 보고 숏폼 "
+                    f"{values['count']}개 (영상끼리 장면을 연결할 수 있어요)\n"
+                    f"[아니오]  영상마다 따로 {values['count']}개씩 "
+                    f"(총 {len(videos) * int(values['count'])}개)")
+                if ans is None:
+                    return
+                merge = ans
+            if merge:
+                self.merge_var.set(True)
+                values["merge"] = "yes"
         if self.key_var is not None and self.key_var.get().strip() and \
                 not os.environ.get("ANTHROPIC_API_KEY"):
             self._save_key()

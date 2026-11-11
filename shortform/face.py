@@ -16,6 +16,24 @@ from dataclasses import dataclass, field
 import numpy as np
 
 MODEL = os.path.join(os.path.dirname(__file__), "models", "face_detection_yunet_2023mar.onnx")
+
+
+def model_path() -> str:
+    """얼굴 인식 모델 경로. OpenCV는 한글이 든 경로(예: C:\\영상편집기)의 모델 파일을 못 읽어서,
+    그럴 땐 한글 없는 작업 폴더에 복사해 둔 것을 쓴다."""
+    from . import winpath
+
+    if winpath._ascii(MODEL):
+        return MODEL
+    cache = winpath._cache_dir()
+    if not cache:
+        return MODEL
+    dst = os.path.join(cache, os.path.basename(MODEL))
+    if not os.path.exists(dst) or os.path.getsize(dst) != os.path.getsize(MODEL):
+        import shutil
+        shutil.copyfile(MODEL, dst + ".tmp")
+        os.replace(dst + ".tmp", dst)
+    return dst
 SAMPLE_FPS = 8
 DETECT_W = 640  # 인식용으로 줄인 프레임 가로 크기
 
@@ -72,7 +90,7 @@ def detect(src: str, start: float, end: float) -> list[Sample]:
     prev_gray = prev_hist = None
     for t, frame in _frames(src, start, end):
         if detector is None:
-            detector = cv2.FaceDetectorYN.create(MODEL, "", (frame.shape[1], frame.shape[0]),
+            detector = cv2.FaceDetectorYN.create(model_path(), "", (frame.shape[1], frame.shape[0]),
                                                  score_threshold=0.6)
         gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (32, 18)).astype(np.float32)
         small = cv2.resize(frame, (64, 36))

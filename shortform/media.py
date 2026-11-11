@@ -453,6 +453,8 @@ def merge_videos(inputs: list[str], out: str) -> list[tuple[str, float, float]]:
         spans.append((p, t, t + d))
         t += d
     stamp = out + ".json"
+    with open(out + ".sources.json", "w", encoding="utf-8") as f:  # AI에게 영상 구성을 알려 줄 때 쓴다
+        json.dump([(os.path.basename(p), a, b) for p, a, b in spans], f, ensure_ascii=False)
     sig = [[os.path.abspath(p), os.path.getmtime(p)] for p in inputs]
     try:
         with open(stamp, encoding="utf-8") as f:
@@ -491,3 +493,12 @@ def merge_videos(inputs: list[str], out: str) -> list[tuple[str, float, float]]:
     with open(stamp, "w", encoding="utf-8") as f:
         json.dump(sig, f)
     return spans
+
+
+def merged_sources(path: str) -> list[tuple[str, float, float]]:
+    """합친 영상이면 (원본 파일 이름, 시작, 끝)들. 아니면 빈 목록."""
+    try:
+        with open(path + ".sources.json", encoding="utf-8") as f:
+            return [tuple(x) for x in json.load(f)]
+    except (OSError, ValueError):
+        return []

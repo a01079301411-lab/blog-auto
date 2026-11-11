@@ -398,7 +398,8 @@ def _frames_for_ai(args, total: float, transcript) -> list[tuple[float, str]] | 
     g = guides.get(args.guide)
     words = len(transcript.words) if transcript else 0
     sparse = total > 0 and words / (total / 60) < 40  # 1분에 40단어도 안 되면 말이 적은 영상
-    if not (g.get("frames") or sparse) or total <= 0:
+    # 10분 이하 영상은 늘 장면도 보여 준다 (말보다 행동이 웃긴 장면을 대본만으론 못 고른다)
+    if not (g.get("frames") or sparse or 0 < total <= 600) or total <= 0:
         return None
     count = int(min(90, max(12, total / 4)))
     print(f"[장면 보기] 말보다 화면이 중요한 영상이라 장면 {count}장을 AI에게 보여 줘요...")
@@ -416,6 +417,31 @@ def _frames_for_ai(args, total: float, transcript) -> list[tuple[float, str]] | 
             except (RuntimeError, OSError):
                 continue
     return shots or None
+
+
+CONNECT_WORDS = ("연결", "이어", "합쳐", "합친", "섞어", "둘 다", "두 영상", "모든 영상", "전체 영상",
+                 "영상 전체", "영상들", "다 보고", "모두 보고", "전부")
+
+
+def _instructions(args) -> str:
+    """AI에게 줄 편집 지시: 사용자가 쓴 지시 + (합친 영상이면) 어떤 영상들로 이뤄졌는지."""
+    text = (getattr(args, "direction", "") or "").strip()
+    sources = media.merged_sources(args.input)
+    if sources:
+        rows = [f"영상{k}: '{name}' = {_hms(a)} ~ {_hms(b)} ({a:.1f}-{b:.1f}s)"
+                for k, (name, a, b) in enumerate(sources, 1)]
+        text += ("\n\n<sources> This footage is these videos joined in this order. Watch all of "
+                 "them, not only the first. You may join parts of different videos into one clip; "
+                 "when the instructions ask to connect them, build each clip from parts of every "
+                 "video.\n" + "\n".join(rows) + "\n</sources>")
+    return text.strip()
+
+
+def _where(t: float, sources) -> str:
+    for k, (_, a, b) in enumerate(sources, 1):
+        if a <= t < b:
+            return f"영상{k} {_hms(t - a)}"
+    return _hms(t)
 
 
 def _guide_text(args) -> str:
@@ -440,7 +466,8 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
                              exclude=[(h.start, h.end) for h in picked],
                              words=transcript.words, ref_blocks=args.ref_blocks,
                              guide=_guide_text(args), frames=getattr(args, "frames", None),
-                             check=guides.get(args.guide).get("check", True))
+                             check=guides.get(args.guide).get("check", True),
+                             instructions=_instructions(args))
         for h in hs:
             h.account = acct.no
         print(f"  {len(hs)}개")
@@ -463,6 +490,11 @@ def cmd_shorts(args) -> None:
               f"만들 수 없어서, 이 영상은 {max(5.0, total * 0.6):.0f}~{total:.0f}초로 맞춰요.")
         args.min_len, args.max_len = max(5.0, total * 0.6), max(total, 6.0)
     vertical = media.is_vertical(args.input)
+    if vertical and style.video_height < 1500:
+        # 세로로 찍은 영상을 가로 영상용 상자(디자인)에 넣으면 영상이 손바닥만 해진다: 화면을 꽉 채운다
+        from dataclasses import replace as _replace
+        style = _replace(style, video_top=0, video_height=1920, video_fit="fill")
+        print("[화면] 세로로 찍은 영상이라 디자인의 영상 상자 대신 화면을 꽉 채워요.")
     from . import performance, progress
 
     need_transcript = not args.no_subtitles or not args.ranges
@@ -475,8 +507,9 @@ def cmd_shorts(args) -> None:
     key = (f"v6:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
            else f"v6:{args.count}")
     key += f":len:{args.min_len:g}-{args.max_len:g}"
-    if args.context:  # 영상 설명(지시)이 바뀌면 다시 고른다
-        key += ":ctx:" + hashlib.md5(args.context.encode()).hexdigest()[:8]
+    if args.context or getattr(args, "direction", ""):  # 영상 설명·편집 지시가 바뀌면 다시 고른다
+        key += ":ctx:" + hashlib.md5(f"{args.context}|{getattr(args, 'direction', '')}".encode()
+                                     ).hexdigest()[:8]
     if args.guide != "lecture":  # 영상 종류가 바뀌면 다시 고른다
         key += f":guide:{args.guide}"
     if args.ref:  # 레퍼런스가 바뀌면 다시 고른다
@@ -509,10 +542,15 @@ def cmd_shorts(args) -> None:
             highlights = _pick_for_accounts(args, transcript, accts)
         else:
             print("[하이라이트 선정] Claude가 대본을 분석하는 중...")
+            if _instructions(args):
+                print("[편집 지시] 이 지시를 가장 먼저 따르게 해요:\n  "
+                      + (getattr(args, "direction", "") or "(영상 설명 안의 요청)").strip()
+                      .replace("\n", "\n  "))
             highlights = pick_highlights(transcript.sentences, count=args.count,
                                          min_len=args.min_len, max_len=args.max_len,
                                          context=args.context or "", words=transcript.words,
                                          ref_blocks=args.ref_blocks, frames=args.frames,
+                                         instructions=_instructions(args),
                                          check=guides.get(args.guide).get("check", True),
                                          guide=_guide_text(args))
         if not highlights and transcript is not None and not accts:
@@ -546,6 +584,11 @@ def cmd_shorts(args) -> None:
         score = f"  점수 {h.score}/10" if h.score else ""
         where = f" → {acct.no}번 {acct.name}" if acct else ""
         print(f"\n[{n}/{len(numbered)}] {name}  ({_hms(h.start)} ~ {_hms(h.end)}){score}{where}")
+        srcs = media.merged_sources(args.input)
+        if srcs:  # 합친 영상: 어느 영상의 어디를 썼는지
+            print("  쓴 장면: " + ", ".join(f"{_where(a, srcs)}({b - a:.0f}초)" for a, b in h.pieces()))
+        if h.instruction_note:
+            print(f"  지시 반영: {h.instruction_note}")
         if h.reason:
             print(f"  이유: {h.reason}")
         folder = os.path.join(args.output, acct.folder) if acct else args.output
@@ -635,6 +678,14 @@ def cmd_auto(args) -> None:
               "(전체에서 고르려고요. 한 번 합치면 다시 쓰지 않아요)...", flush=True)
         from . import progress
         progress.set_range(0.0, 0.1)
+        # 휴대폰·카톡 파일 이름에 찍힌 시각(예: 20261111_190655)이 있으면 찍은 순서대로 잇는다
+        stamps = [re.search(r"(\d{8})_(\d{6,9})", os.path.basename(p)) for p in args.inputs]
+        if all(stamps):
+            ordered = sorted(args.inputs, key=lambda p: re.search(r"(\d{8})_(\d{6,9})",
+                                                                   os.path.basename(p)).groups())
+            if ordered != list(args.inputs):
+                print("  파일 이름의 촬영 시각 순서대로 이어요.")
+            args.inputs = ordered
         spans = media.merge_videos(args.inputs, video)
         for k, (p, a, b) in enumerate(spans, 1):
             print(f"  영상{k} {os.path.basename(p)}: 합친 영상 {_hms(a)} ~ {_hms(b)}")
@@ -735,6 +786,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--style", default="green",
                    help="디자인: " + ", ".join(PRESETS) + " 또는 JSON 파일 (기본 green)")
     s.add_argument("--speaker", help="인물 소개 문구 직접 지정. 예: '권기준 / 꼴통사장 대표'")
+    s.add_argument("--direction", default="",
+                   help="편집 지시: AI가 가장 먼저 따르는 요청 (예: '영상 2개를 이어서 50초 1개')")
     s.add_argument("--focus", type=_focus, default="auto",
                    help="auto: 얼굴 따라가기 (기본) / 0~1: 고정 위치 (0.3이면 왼쪽)")
     s.add_argument("--no-subtitles", action="store_true", help="자막 안 넣음")

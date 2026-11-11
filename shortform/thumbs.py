@@ -19,7 +19,7 @@ import subprocess
 import numpy as np
 
 from . import media
-from .face import MODEL
+from .face import model_path
 
 W, H = 1080, 1920
 TOP = 300                    # 플랫폼 위쪽 메뉴를 피한 글자 시작 높이
@@ -53,7 +53,7 @@ def _faces(img: np.ndarray):
     bgr = cv2.cvtColor(cv2.resize(img, (640, int(img.shape[0] * small))), cv2.COLOR_RGB2BGR)
     key = (bgr.shape[1], bgr.shape[0])
     if key not in _DET:
-        _DET[key] = cv2.FaceDetectorYN.create(MODEL, "", key, score_threshold=0.6)
+        _DET[key] = cv2.FaceDetectorYN.create(model_path(), "", key, score_threshold=0.6)
     _, faces = _DET[key].detect(bgr)
     out = []
     for f in faces if faces is not None else []:

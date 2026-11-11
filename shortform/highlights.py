@@ -19,6 +19,14 @@ follow the guide.
 You receive a timestamped transcript of a long-form video and pick the moments that
 would work best as standalone vertical short clips.
 
+<creator_instructions>, when given, are the creator's direct orders for this edit. They
+outrank everything else in this prompt and in <video_type> (lengths, hooks, title style,
+montage limits, what to pick): follow them literally and completely. If the footage is
+several videos joined together (<sources>), use the videos the way the instructions say
+(e.g. connect scenes from every video into one clip). Only if an instruction is truly
+impossible with this footage, follow it as closely as possible and say why in
+instruction_check. Requests written inside <about_video> count as creator instructions too.
+
 A good clip:
 - makes sense on its own without the rest of the video (no dangling "as I said earlier")
 - has a hook in the first 3 seconds (see the hook types in the <video_type> guide)
@@ -34,8 +42,9 @@ show what is on screen at those times; footage with little speech (sports, worko
 action) is judged mainly by the frames, and any time may be used.
 
 parts: the pieces of the source played in this order to make the clip. Normally one
-piece equal to start-end. Only when the <video_type> guide says montage is allowed, a
-clip may join 2-6 pieces from anywhere in the footage (e.g. the most dramatic moment
+piece equal to start-end. When the <video_type> guide says montage is allowed, or the
+<creator_instructions> ask to connect or combine scenes or videos, a clip may join 2-8
+pieces from anywhere in the footage (e.g. the most dramatic moment
 first as the hook, then the setup, the action and the ending); each piece at least 2
 seconds, pieces never overlap, and the total of the pieces is the clip length. Then
 start is the earliest and end the latest time used.
@@ -81,6 +90,8 @@ For each clip also write, in the transcript's language:
   time in seconds from the clip start when it appears (about 40-70% into the clip, a
   few seconds before the payoff). Empty text and 0 if the clip is short or needs none.
 - bgm_mood: background music mood for the clip: bright, calm, tension or funny.
+- instruction_check: one Korean sentence on how this clip follows <creator_instructions>
+  (which videos and moments it uses and why); empty if there are no instructions.
 
 Retention (watch time) rules that proven Shorts and Reels follow; apply them:
 - Start on the strongest line or reaction, not on a greeting or setup. The first
@@ -123,11 +134,12 @@ SCHEMA = {
                     "rehook_text": {"type": "string"},
                     "rehook_time": {"type": "number"},
                     "bgm_mood": {"type": "string", "enum": ["bright", "calm", "tension", "funny"]},
+                    "instruction_check": {"type": "string"},
                     "score": {"type": "integer",
                               "description": "1-10, how well it would perform as a short"},
                 },
                 "required": ["start", "end", "parts", "title_options", "title", "label", "sub_title", "speaker", "bottom", "keywords",
-                             "hook_text", "thumb_text", "thumb_time", "rehook_text", "rehook_time", "bgm_mood",
+                             "hook_text", "thumb_text", "thumb_time", "instruction_check", "rehook_text", "rehook_time", "bgm_mood",
                              "caption", "reason", "score"],
                 "additionalProperties": False,
             },
@@ -160,6 +172,7 @@ class Highlight:
     parts: list[list[float]] = field(default_factory=list)  # 여러 장면을 이어 붙일 때 [시작, 끝]들
     thumb_text: str = ""    # 썸네일 글자 ({강조})
     thumb_at: float = 0.0   # 썸네일로 쓸 순간 (원본 시간, 0이면 자동)
+    instruction_note: str = ""  # 편집 지시를 어떻게 반영했는지 (AI가 쓴 한 줄)
 
     def pieces(self) -> list[tuple[float, float]]:
         """숏폼에 들어갈 원본 구간들 (보여 줄 순서대로)."""
@@ -279,11 +292,18 @@ def _source_time(h_parts: list[tuple[float, float]], t: float) -> float:
     return h_parts[-1][1]
 
 
+def _instructions_block(instructions: str) -> str:
+    return (f"<creator_instructions>\n{instructions.strip()}\n</creator_instructions>\n\n"
+            if instructions.strip() else "")
+
+
 def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, max_len: float,
                 context: str, account=None, exclude: list[tuple[float, float]] | None = None,
                 ref_blocks: list[dict] | None = None, guide: str = "",
-                frames: list[tuple[float, str]] | None = None) -> list[Highlight]:
-    about = f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
+                frames: list[tuple[float, str]] | None = None,
+                instructions: str = "") -> list[Highlight]:
+    about = _instructions_block(instructions)
+    about += f"<about_video>\n{context}\n</about_video>\n\n" if context else ""
     if guide:
         about += f"<video_type>\n{guide}\n</video_type>\n\n"
     # 레퍼런스와 대본은 계정마다 똑같이 보내므로 캐시해서 두 번째 계정부터 비용을 줄인다
@@ -326,6 +346,7 @@ def _ask_claude(client, sentences: list[Sentence], count: int, min_len: float, m
                  if float(p["end"]) - float(p["start"]) >= 1.0]
         hl = _make(h, account)
         hl.thumb_text = clean_title(h.get("thumb_text", "") or "")
+        hl.instruction_note = (h.get("instruction_check", "") or "").strip()
         tt = float(h.get("thumb_time", 0) or 0)
         if tt > 0:
             hl.thumb_at = _source_time(parts, tt) if len(parts) > 1 else hl.start + tt
@@ -363,11 +384,14 @@ range are marked with ">". Score 1-10:
 - payoff: does it deliver a clear point, punchline, lesson or turn that feels worth it?
 - standalone: fully understandable alone? No missing context, no references to earlier
   parts ("아까 말씀드린", "이거"), no unfinished thought at the end.
-- fit: fits the account concept and audience (if an account is given; otherwise how
-  well it fits the video's audience).
+- fit: follows the <creator_instructions> (when given; a clip that ignores them scores
+  at most 4) and fits the account concept and audience (if an account is given;
+  otherwise how well it fits the video's audience).
 
 Set keep=false if any score is below 6, or the clip is filler, small talk, logistics,
-an ad, repetitive, or only interesting with visuals the transcript does not show.
+an ad or repetitive. When <frames> are given, judge what happens on screen too: a clip
+whose fun is in the action (picking something up, a reaction, a face) is valid even with
+little speech; never reject it only because the transcript is short.
 
 Tighten the boundaries: start at the exact line where the hook begins (drop the
 preamble) and end right after the payoff line (drop trailing filler). Use only
@@ -423,11 +447,17 @@ def _excerpt(lines: list[Sentence], h: Highlight, pad: float = 20.0) -> str:
 
 
 def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_len: float,
-           max_len: float, context: str = "", account=None, guide: str = "") -> list[Highlight]:
-    """후보를 다시 엄격하게 평가해 경계를 다듬고, 통과한 것만 점수와 함께 돌려준다."""
+           max_len: float, context: str = "", account=None, guide: str = "",
+           instructions: str = "",
+           frames: list[tuple[float, str]] | None = None) -> list[Highlight]:
+    """후보를 다시 엄격하게 평가해 경계를 다듬고, 통과한 것만 점수와 함께 돌려준다.
+
+    frames를 주면 검증하는 AI도 장면을 본다 (말이 적고 행동이 웃긴 영상을 대본만 보고 떨어뜨리지 않게)."""
     if not candidates:
         return []
     parts = []
+    if instructions.strip():
+        parts.append(_instructions_block(instructions).strip())
     if context:
         parts.append(f"<about_video>\n{context}\n</about_video>")
     if guide:
@@ -439,7 +469,9 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
         nl = lambda t: t.replace(chr(10), chr(92) + "n")
         opts = [o for o in h.title_options if o != h.title]
         other = ("other title ideas: " + " | ".join(nl(o) for o in opts) + "\n") if opts else ""
-        parts.append(f"<candidate id=\"{i}\">\nproposed: {h.start:.1f}-{h.end:.1f}s\n"
+        pieces = (" + ".join(f"{a:.1f}-{b:.1f}s" for a, b in h.pieces())
+                  if len(h.parts) > 1 else f"{h.start:.1f}-{h.end:.1f}s")
+        parts.append(f"<candidate id=\"{i}\">\nproposed: {pieces}\n"
                      f"title: {nl(h.title)}{sub}\n{other}"
                      f"{_excerpt(lines, h)}\n</candidate>")
     with client.beta.messages.stream(
@@ -450,7 +482,8 @@ def verify(client, candidates: list[Highlight], lines: list[Sentence], *, min_le
         output_config={"effort": "high",
                        "format": {"type": "json_schema", "schema": VERIFY_SCHEMA}},
         system=VERIFY_PROMPT.format(min_len=min_len, max_len=max_len),
-        messages=[{"role": "user", "content": "\n\n".join(parts)}],
+        messages=[{"role": "user",
+                   "content": _frame_blocks(frames) + [{"type": "text", "text": "\n\n".join(parts)}]}],
     ) as stream:
         response = stream.get_final_message()
     if response.stop_reason != "end_turn":
@@ -490,6 +523,7 @@ def pick_highlights(
     guide: str = "",
     frames: list[tuple[float, str]] | None = None,
     check: bool = True,
+    instructions: str = "",
 ) -> list[Highlight]:
     """1) 후보를 넉넉히 뽑고 2) 엄격하게 다시 검증해서 통과한 것만 고른다.
 
@@ -507,7 +541,7 @@ def pick_highlights(
             print(f"  대본이 길어 나눠서 분석합니다 [{i}/{len(windows)}]")
         want = want_total if len(windows) == 1 else max(4, want_total // len(windows) + 2)
         candidates += _ask_claude(client, window, want, min_len, max_len, context, account,
-                                  exclude, ref_blocks, guide, frames)
+                                  exclude, ref_blocks, guide, frames, instructions)
     if exclude:  # 다른 계정이 이미 쓴 구간과 겹치면 뺀다
         candidates = [h for h in candidates if not _overlaps(h, exclude)]
     if not check:
@@ -516,7 +550,8 @@ def pick_highlights(
         print(f"  후보 {len(candidates)}개를 다시 꼼꼼히 검증하는 중...")
         try:
             picked = verify(client, candidates, lines, min_len=min_len, max_len=max_len,
-                            context=context, account=account, guide=guide)
+                            context=context, account=account, guide=guide,
+                            instructions=instructions, frames=frames)
         except Exception as e:  # 검증이 실패해도 1단계 결과로 계속
             print(f"  (검증 단계 건너뜀: {type(e).__name__}: {str(e)[:100]})")
             picked = sorted(candidates, key=lambda h: -h.score)

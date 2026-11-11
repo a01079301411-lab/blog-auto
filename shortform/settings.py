@@ -15,7 +15,7 @@ DEFAULTS = {
     "bgm_volume": "0.15", "bgm_source": "auto", "retention": "yes", "thumbnail": "yes", "upload": "no",
     "fillers": "yes", "voice_enhance": "yes", "inserts": "yes",
     "karaoke": "no", "sub_pop": "yes", "auto_color": "yes", "merge": "no",
-    "capcut": "yes", "cover_intro": "yes",
+    "capcut": "yes", "cover_intro": "yes", "direction": "",
 }
 
 
@@ -77,7 +77,7 @@ def to_argv(video: str, c: dict[str, str], out: str) -> list[str]:
             "--karaoke", c["karaoke"] or "no", "--sub-pop", c["sub_pop"] or "yes",
             "--auto-color", c["auto_color"] or "yes",
             "--capcut", c["capcut"] or "yes", "--cover-intro", c["cover_intro"] or "yes"]
-    for key in ("context", "speaker", "font"):
+    for key in ("context", "speaker", "font", "direction"):
         if c.get(key, "").strip():
             argv += [f"--{key}", c[key].strip()]
     return argv
