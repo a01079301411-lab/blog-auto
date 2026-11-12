@@ -105,12 +105,35 @@ def build():
                          "전화": t.get("알려진 연락처(재확인 필요)", "") or "대표번호 검색", "이메일": "",
                          "근거": t["영업 포인트"], "최근 이사계약": "", "이사계약 횟수": 0, "대본": "4-1 계약부서",
                          "영업 타이밍": "상시"})
+    _add_signals(rows)
     _merge_mine(rows)
     _mark_sent(rows)
-    rows.sort(key=lambda r: -r["_score"])
+    for r in rows:  # 1회성 과거 이사 기관은 뒤로 (현장 반응: '당분간 옮길 일 없다')
+        if r["등급"] == "S" and int(r.get("이사계약 횟수") or 0) < 2 and "조직개편" not in (r.get("최근 이사계약") or ""):
+            r["등급"] = "S1"
+    order = {"N": 0, "A": 1, "S": 2, "★S": 3, "★A": 3, "★B": 3, "★C": 3, "★N": 3, "S1": 4, "★S1": 3, "B": 5, "C": 6}
+    rows.sort(key=lambda r: (order.get(r["등급"], 5), -r["_score"]))
     for i, r in enumerate(rows, 1):
         r["순위"] = i
     return rows
+
+
+def _add_signals(rows):
+    """data/signals.csv: 뉴스·발표로 확인한 '곧 이사할' 기관 (학교 통합, 조직개편, 신청사 등) → 맨 위 N 등급."""
+    path = DATA / "signals.csv"
+    if not path.exists():
+        return
+    for t in _read_csv(path):
+        r = _match(rows, t["기관"])
+        if r is None:
+            r = {"기관": t["기관"], "기관유형": "", "지역": "", "연락할 곳": t.get("연락할 곳", ""), "전화": t.get("전화", "") or "대표번호 검색",
+                 "이메일": "", "최근 이사계약": "", "이사계약 횟수": 0, "_score": 0}
+            rows.append(r)
+        r["등급"] = "N"
+        r["_score"] = 5000
+        r["근거"] = f'[신호] {t["신호"]} ({t["근거"]})'
+        r["영업 타이밍"] = t.get("시기", "")
+        r["대본"] = "4-5 신호 대본"
 
 
 def _contact_files():
