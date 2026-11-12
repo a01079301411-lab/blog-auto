@@ -90,6 +90,15 @@ def recent_posts_text(limit=10):
 
 
 # 발행 전 검토에서 자주 걸린 것들. 프롬프트 파일을 사장님이 고쳐 써도 항상 지키게 여기에 둔다.
+def forbidden_rule():
+    """금지 표현 목록을 AI에게 미리 보여 준다. (모르고 쓰면 검사에서 글 전체가 막힌다)"""
+    import checker
+    _, phrases = checker.load_forbidden()
+    words = [p for p in phrases if not any(c in p for c in "{}[]")]
+    return ("- 아래 금지 표현은 제목, 인용구, 본문, 사진 캡션, 태그 어디에도 쓰지 않는다. "
+            "부정문이나 인용(예: '무조건 싼 곳은 아닙니다')으로도 쓰지 않는다: " + ", ".join(words))
+
+
 EXTRA_RULES = """추가 규칙 (꼭 지킨다)
 - 제목의 끝맺는 말(마지막 두 어절, 예: '손해 봅니다')과 시작하는 틀(예: '아직도 ~하세요?')이 recent_posts 제목과 겹치지 않게 쓴다. 같은 틀이 이어지면 독자가 광고로 보고 넘긴다.
 - 제목에 'N가지'를 쓰면 소제목도 '## 1. ~'부터 '## N. ~'까지 번호를 붙여 정확히 N개로 쓴다. 각 소제목이 그 기준 하나다. 자주 묻는 질문, 마무리 소제목은 번호 없이.
@@ -114,7 +123,7 @@ def request_text(topic, photo_set, related=None, feedback=None):
         f"- variant: {topic['variant']}\n"
         f"- 회사 전화번호: {COMPANY_PHONE}\n"
         f"- 오늘: {season.describe()}\n\n"
-        f"{EXTRA_RULES}\n"
+        f"{EXTRA_RULES}\n{forbidden_rule()}\n"
         f"photos\n{photos.describe(photo_set)}\n\n"
         f"related_posts\n{links.describe(related)}\n\n"
         f"recent_posts (이 제목, 첫 문장과 다르게 쓴다)\n{recent_posts_text()}\n"

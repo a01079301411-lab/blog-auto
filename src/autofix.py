@@ -4,6 +4,7 @@
 - 지금 계절과 안 맞는 말(10월의 장마 등) → 계절 없는 말로 바꾼다
 - 마무리에 전화번호가 없으면 → 마지막 줄에 회사 이름과 전화번호를 붙인다
 - 본문 가운데에 연락 유도가 없으면 → 두 번째 소제목의 첫 문단 뒤에 넣는다
+- 과장 금지 표현(무조건, 100% 보장 등) → 뜻이 같은 순한 말로 바꾼다 (이것 하나 때문에 발행이 멈추지 않게)
 """
 import difflib
 import re
@@ -17,6 +18,13 @@ SEASON_SWAP = {
     "장마철": "습한 날", "장마": "습한 날씨", "폭염": "더위", "무더위": "더위", "열대야": "더운 밤",
     "한여름": "여름", "한파": "추위", "한겨울": "겨울", "폭설": "눈 오는 날", "혹한": "추위",
     "동파": "배관 얼음", "벚꽃": "봄꽃", "황사": "미세먼지",
+}
+# 과장 금지 표현 → 바꿀 말 (긴 말부터 바꾼다. data/forbidden.md 의 과장·단정 표현과 맞춘다)
+EXAGGERATION_SWAP = {
+    "무조건적으로": "덮어놓고", "무조건적인": "덮어놓은", "무조건": "꼭",
+    "100% 보장": "확실한 약속", "100%보장": "확실한 약속",
+    "절대 안전": "안전하게", "곰팡이 절대": "곰팡이 걱정",
+    "최저가 보장": "합리적인 가격", "지금 바로 전화": "편하게 전화",
 }
 COMPANY_LINE = "대구토탈홈서비스 로젠이사 전화 상담 {phone}"
 MIDDLE_CTA = "방문견적은 무료이고 보통 10분에서 15분이면 끝납니다.\n전화 상담 {phone}"
@@ -40,6 +48,28 @@ def _fix_photos(post, photo_set, notes):
         return ""
 
     post["body"] = checker.PHOTO_RE.sub(swap, post["body"])
+
+
+def _fix_exaggeration(post, notes):
+    found = []
+    for word in sorted(EXAGGERATION_SWAP, key=len, reverse=True):
+        new = EXAGGERATION_SWAP[word]
+        hit = False
+        for key in ("title", "quote", "body"):
+            if word in post.get(key, ""):
+                post[key] = post[key].replace(word, new)
+                hit = True
+        captions = post.get("photo_captions") or {}
+        if any(word in c for c in captions.values()):
+            post["photo_captions"] = {f: c.replace(word, new) for f, c in captions.items()}
+            hit = True
+        if any(word in t for t in post.get("tags", [])):
+            post["tags"] = [t for t in post["tags"] if word not in t]
+            hit = True
+        if hit:
+            found.append(f"{word} → {new}")
+    if found:
+        notes.append("과장 표현 바꿈: " + ", ".join(found))
 
 
 def _fix_season(post, notes):
@@ -81,5 +111,6 @@ def fix(post, photo_set):
     notes = []
     _fix_photos(post, photo_set, notes)
     _fix_season(post, notes)
+    _fix_exaggeration(post, notes)
     _fix_phone(post, notes)
     return notes
