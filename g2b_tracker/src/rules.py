@@ -67,6 +67,28 @@ def _amount(v):
         return 0
 
 
+NOTICE_URL = "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo={no}&bidPbancOrd={ord}"
+PRESPEC_URL = "https://www.g2b.go.kr/link/PRVA004_02/?bfSpecRegNo={no}"
+
+
+def g2b_link(item):
+    """나라장터 상세화면 바로가기. API 가 준 상세주소가 있으면 그것, 없으면 공고번호·사전규격번호로 만든다."""
+    given = pick(item, ("bidNtceDtlUrl", "bidNtceUrl", "dtlUrl"))
+    if given.startswith("http"):
+        return given
+    src = item.get("_src")
+    if src == "pre" and item.get("bfSpecRgstNo"):
+        return PRESPEC_URL.format(no=str(item["bfSpecRgstNo"]).strip())
+    no = pick(item, ("bidNtceNo", "ntceNo"))
+    if not no:  # 발주계획·사전규격에 연결된 공고번호 목록 (쉼표로 여러 개)
+        no = (pick(item, ("bidNtceNoList",)).split(",") or [""])[0].strip()
+    if no:
+        no, _, ord_ = no.partition("-")
+        ord_ = str(item.get("bidNtceOrd") or ord_ or "000").zfill(3)
+        return NOTICE_URL.format(no=no.strip(), ord=ord_)
+    return ""
+
+
 def _corp(raw):
     """corpList '[1^주계약업체^단독^업체명^대표자^대한민국^…]' 에서 업체명만."""
     if not raw:
@@ -97,7 +119,7 @@ def normalize(item):
         "낙찰업체전화": pick(item, WINNER_TEL),
         "낙찰업체대표": pick(item, WINNER_CEO),
         "번호": pick(item, ID) + (("-" + str(item.get("bidNtceOrd"))) if item.get("bidNtceOrd") else ""),
-        "링크": pick(item, URL),
+        "링크": g2b_link(item),
         "낙찰금액": _amount(pick(item, ("sucsfbidAmt", "thtmCntrctAmt", "totCntrctAmt", "cntrctAmt")) or 0),
         "계약업체": _corp(pick(item, ("corpList", "cntrctCorpNm"))),
         "낙찰률": pick(item, ("sucsfbidRate",)),

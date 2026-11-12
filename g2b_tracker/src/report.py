@@ -1,5 +1,6 @@
 """엑셀·브리핑 파일 만들기."""
 import csv
+import re
 from collections import defaultdict
 
 from openpyxl import Workbook
@@ -8,9 +9,9 @@ from openpyxl.utils import get_column_letter
 
 from config import DATA, OUTPUT, ROOT
 
-COLS = ["신규", "등급", "점수", "출처", "구분", "지역", "제목", "수요기관", "공고기관", "공고일", "마감일", "금액",
-        "계약방법", "담당자", "담당전화", "담당메일", "낙찰업체", "낙찰업체전화", "낙찰업체대표", "이유", "다음행동", "번호", "링크"]
-WIDTH = {"제목": 48, "수요기관": 24, "공고기관": 20, "이유": 40, "다음행동": 60, "링크": 30, "낙찰업체": 18}
+COLS = ["신규", "등급", "점수", "출처", "구분", "지역", "링크", "제목", "수요기관", "공고기관", "공고일", "마감일", "금액",
+        "계약방법", "담당자", "담당전화", "담당메일", "낙찰업체", "낙찰업체전화", "낙찰업체대표", "이유", "다음행동", "번호"]
+WIDTH = {"링크": 11, "제목": 48, "수요기관": 24, "공고기관": 20, "이유": 40, "다음행동": 60, "링크": 30, "낙찰업체": 18}
 FILL = {"즉시": PatternFill("solid", fgColor="FFD6D6"), "추적": PatternFill("solid", fgColor="FFF3C4"),
         "마감": PatternFill("solid", fgColor="E6E6E6")}
 
@@ -20,8 +21,14 @@ def _sheet(ws, rows, cols):
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="2F4F6F")
+    link_col = cols.index("링크") + 1 if "링크" in cols else 0
     for r in rows:
         ws.append([r.get(c, "") for c in cols])
+        if link_col and str(r.get("링크", "")).startswith("http"):  # 클릭하면 나라장터 상세화면이 열림
+            cell = ws.cell(row=ws.max_row, column=link_col)
+            cell.hyperlink = r["링크"]
+            cell.value = "▶ 공고 열기"
+            cell.font = Font(color="0563C1", underline="single", bold=True)
         fill = FILL.get(r.get("등급"))
         if fill:
             for c in ws[ws.max_row]:
@@ -43,7 +50,7 @@ def write_daily(recs, errors, day, moves=()):
     _sheet(ws, main, COLS)
     _sheet(wb.create_sheet("원도급사(낙찰)"), [r for r in recs if r["출처"].startswith("낙찰")], COLS)
     _sheet(wb.create_sheet("사전규격·발주계획"), [r for r in recs if r["출처"] in ("사전규격", "발주계획")], COLS)
-    mcols = ["공고일", "지역", "제목", "수요기관", "공고기관", "낙찰금액", "계약방법", "계약업체", "담당부서", "담당자", "담당전화", "담당메일", "번호"]
+    mcols = ["공고일", "지역", "링크", "제목", "수요기관", "공고기관", "낙찰금액", "계약방법", "계약업체", "담당부서", "담당자", "담당전화", "담당메일", "번호"]
     _sheet(wb.create_sheet("이사계약 체결(수의 포함)"), list(moves), mcols)
     _sheet(wb.create_sheet("마감(원도급사로)"), [r for r in recs if r["등급"] == "마감"], COLS)
     _sheet(wb.create_sheet("전체"), recs, COLS)
@@ -54,6 +61,61 @@ def write_daily(recs, errors, day, moves=()):
             e.append([x])
     path = OUTPUT / f"나라장터_{day}.xlsx"
     wb.save(path)
+    return path
+
+
+def write_html(recs, errors, day, new_keys, moves=()):
+    """브라우저로 여는 브리핑: 제목을 누르면 나라장터 상세화면이 바로 열림."""
+    import html
+    def row(r):
+        new = '<span class="new">NEW</span> ' if r["_key"] in new_keys else ""
+        title = html.escape(r["제목"])
+        link = (f'<a href="{html.escape(r["링크"])}" target="_blank">{title}</a>' if r.get("링크")
+                else f'{title} <span class="muted">(번호 {html.escape(r.get("번호", ""))} · 나라장터 검색)</span>')
+        who = " ".join(x for x in (r.get("담당자"), r.get("담당전화")) if x) or " ".join(
+            x for x in (r.get("낙찰업체"), r.get("낙찰업체전화")) if x)
+        tel = re.sub(r"[^0-9]", "", who)
+        who_html = f'<a href="tel:{tel}">{html.escape(who)}</a>' if len(tel) >= 9 else html.escape(who or "-")
+        return (f'<tr class="g-{r["등급"]}"><td class="sc">{r["점수"]}</td><td>{html.escape(r["출처"])}</td>'
+                f'<td>{new}{link}<div class="muted">{html.escape(r["수요기관"] or r["공고기관"])}</div></td>'
+                f'<td>{html.escape(r["마감일"] or "-")}</td><td>{who_html}</td><td class="act">{html.escape(r["다음행동"])}</td></tr>')
+
+    def table(title, rows):
+        if not rows:
+            return ""
+        return (f"<h2>{title} <small>{len(rows)}건</small></h2><table><tr><th>점수</th><th>출처</th><th>공고 (누르면 나라장터)</th>"
+                f"<th>마감</th><th>담당</th><th>다음 행동</th></tr>{''.join(row(r) for r in rows)}</table>")
+
+    hot = [r for r in recs if r["등급"] == "즉시"]
+    track = [r for r in recs if r["등급"] == "추적"]
+    closed = [r for r in recs if r["등급"] == "마감"]
+    mv = ""
+    if moves:
+        items = "".join(
+            f'<tr><td>{html.escape(m.get("공고일", "")[:10])}</td><td>'
+            + (f'<a href="{html.escape(m["링크"])}" target="_blank">{html.escape(m["제목"])}</a>' if m.get("링크") else html.escape(m["제목"]))
+            + f'<div class="muted">{html.escape(m["수요기관"] or m["공고기관"])}</div></td><td>{html.escape(m.get("계약방법", ""))}</td>'
+            f'<td>{html.escape(m.get("계약업체", ""))}</td><td>{html.escape(" ".join(x for x in (m.get("담당부서"), m.get("담당자"), m.get("담당전화")) if x))}</td></tr>'
+            for m in moves)
+        mv = f"<h2>이사·이전 계약 체결 <small>{len(moves)}건 · 다른 업체가 따간 건 → 다음엔 견적 명단에</small></h2><table><tr><th>날짜</th><th>계약</th><th>방법</th><th>업체</th><th>기관 담당</th></tr>{items}</table>"
+    err = "".join(f"<li>{html.escape(e)}</li>" for e in errors)
+    page = f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>나라장터 브리핑 {day}</title><style>
+body{{font-family:"Malgun Gothic","Noto Sans KR",sans-serif;margin:0;padding:16px;color:#1b2430;background:#f6f8fa}}
+h1{{font-size:20px;margin:0 0 4px}} h2{{font-size:16px;margin:22px 0 8px;color:#14324f}} h2 small{{font-weight:400;color:#6b7785}}
+.sum{{color:#4a5866;margin-bottom:8px}} table{{width:100%;border-collapse:collapse;background:#fff;font-size:13.5px}}
+th{{background:#14324f;color:#fff;text-align:left;padding:7px;font-weight:600}} td{{border-bottom:1px solid #e3e8ee;padding:7px;vertical-align:top}}
+a{{color:#0b57d0;font-weight:600}} .muted{{color:#6b7785;font-size:12px;font-weight:400}} .sc{{font-weight:700;text-align:center}}
+.new{{background:#c0392b;color:#fff;border-radius:3px;padding:0 4px;font-size:11px}} .act{{color:#2b3742;font-size:12.5px}}
+tr.g-즉시 td:first-child{{border-left:4px solid #c0392b}} tr.g-추적 td:first-child{{border-left:4px solid #f2b33d}} tr.g-마감 td{{color:#8a96a3}}
+</style></head><body>
+<h1>나라장터 영업 브리핑 {day}</h1>
+<div class="sum">즉시 {len(hot)}건 · 추적 {len(track)}건 · 새로 뜬 것 {len(new_keys)}건 — 공고 제목을 누르면 나라장터 상세화면이 열립니다 (처음엔 나라장터 로그인이 필요할 수 있어요)</div>
+{table("즉시 연락 (60점 이상)", hot)}{table("추적 (40~59점)", track)}{mv}{table("마감 → 원도급사로", closed)}
+{f"<h2>조회 실패</h2><ul>{err}</ul>" if err else ""}
+</body></html>"""
+    path = OUTPUT / f"브리핑_{day}.html"
+    path.write_text(page, encoding="utf-8")
     return path
 
 
@@ -74,7 +136,8 @@ def write_brief(recs, errors, day, new_keys):
         for r in rows[:30]:
             new = "🆕 " if r["_key"] in new_keys else ""
             who = " ".join(x for x in (r["담당자"], r["담당전화"]) if x) or (r["낙찰업체"] + " " + r["낙찰업체전화"]).strip()
-            lines.append(f"| {r['점수']} | {r['출처']} | {new}{r['제목']} | {r['수요기관'] or r['공고기관']} | "
+            title = f"[{r['제목']}]({r['링크']})" if r.get("링크") else r["제목"]
+            lines.append(f"| {r['점수']} | {r['출처']} | {new}{title} | {r['수요기관'] or r['공고기관']} | "
                          f"{r['마감일'] or '-'} | {who or '-'} | {r['다음행동']} |")
         lines.append("")
 

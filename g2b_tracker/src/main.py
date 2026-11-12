@@ -25,6 +25,9 @@ import rules as R  # noqa: E402
 SEEN = config.DATA / "seen.json"
 
 
+QUIET = False
+
+
 def setup_log(quiet):
     handlers = [logging.FileHandler(config.LOGS / "tracker.log", encoding="utf-8")]
     if not quiet:
@@ -66,6 +69,7 @@ def run_daily():
     day = R.today()
     xlsx = report.write_daily(recs, errors, day, moves)
     md = report.write_brief(recs, errors, day, new_keys)
+    page = report.write_html(recs, errors, day, new_keys, moves)
     db = report.ensure_sales_db()
     added, total = contacts.update([r for r in recs if r["등급"] != "마감"])
     a2, total = contacts.update(moves, move_contract=True)
@@ -86,14 +90,16 @@ def run_daily():
     for r in hot[:12]:
         who = r["담당전화"] or r["낙찰업체전화"] or ""
         msg.append(f"\n■ {r['등급']} {r['점수']}점 [{r['출처']}] {r['제목']}\n  {r['수요기관'] or r['공고기관']}"
-                   f"{' · 마감 ' + r['마감일'] if r['마감일'] else ''}{' · ☎ ' + who if who else ''}\n  → {r['다음행동']}")
+                   f"{' · 마감 ' + r['마감일'] if r['마감일'] else ''}{' · ☎ ' + who if who else ''}\n  → {r['다음행동']}"
+                   + (f"\n  🔗 {r['링크']}" if r.get("링크") else ""))
     new_moves = [m for m in moves if m["_key"] not in seen]
     if new_moves:
         msg.append(f"\n📋 이사·이전 계약 체결 {len(new_moves)}건 (다른 업체가 따감 → 다음엔 우리 차례):")
         for m in new_moves[:5]:
             amt = f"{round((m['낙찰금액'] or m['금액']) / 10000):,}만원" if (m['낙찰금액'] or m['금액']) else ""
             msg.append(f"  · {m['수요기관'] or m['공고기관']} {m['제목'][:30]} {amt} {m['계약방법']}"
-                       f"{' ☎ ' + m['담당부서'] + ' ' + m['담당전화'] if m['담당전화'] else ''}")
+                       f"{' ☎ ' + m['담당부서'] + ' ' + m['담당전화'] if m['담당전화'] else ''}"
+                       + (f" 🔗 {m['링크']}" if m.get("링크") else ""))
     seen |= {m["_key"] for m in moves}
     if errors:
         msg.append(f"\n⚠ 조회 실패 {len(errors)}건 → 1_연결점검.bat 실행")
@@ -102,7 +108,10 @@ def run_daily():
     SEEN.write_text(json.dumps(sorted(seen | all_keys), ensure_ascii=False), encoding="utf-8")
     notifier.notify("\n".join(msg))
     print("\n".join(msg))
-    print(f"\n저장: {xlsx}\n      {md}" + (f"\n      {db} (영업DB 새로 만듦)" if db else ""))
+    if not QUIET:  # 직접 실행하면 브라우저로 바로 열기
+        import webbrowser
+        webbrowser.open(page.resolve().as_uri())
+    print(f"\n저장: {xlsx}\n      {page}  ← 브라우저로 열림, 제목 누르면 나라장터\n      {md}" + (f"\n      {db} (영업DB 새로 만듦)" if db else ""))
     print(f"      관공서 담당자 새로 {added}명 (누적 {total}명) → 영업DB '관공서담당자' 시트")
 
 
@@ -217,6 +226,8 @@ def main():
     ap.add_argument("--dmdone", type=int)
     a = ap.parse_args()
     setup_log(a.quiet)
+    global QUIET
+    QUIET = a.quiet
     try:
         if a.selftest:
             run_selftest()
