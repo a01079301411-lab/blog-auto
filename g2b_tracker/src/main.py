@@ -213,11 +213,20 @@ def main():
     ap.add_argument("--mail", action="store_true")
     ap.add_argument("--mailtest", action="store_true")
     ap.add_argument("--sentcheck", action="store_true")
+    ap.add_argument("--dm", action="store_true")
+    ap.add_argument("--dmdone", type=int)
     a = ap.parse_args()
     setup_log(a.quiet)
     try:
         if a.selftest:
             run_selftest()
+        elif a.dm:
+            import dm
+            dm.write()
+        elif a.dmdone:
+            import dm
+            dm.mark_sent(a.dmdone)
+            calllist.write()
         elif a.sentcheck:
             import mailer
             mailer.check_sent_box(days=7)

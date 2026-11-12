@@ -108,6 +108,7 @@ def build():
     _add_signals(rows)
     _merge_mine(rows)
     _mark_sent(rows)
+    _mark_dm(rows)
     for r in rows:  # 1회성 과거 이사 기관은 뒤로 (현장 반응: '당분간 옮길 일 없다')
         if r["등급"] == "S" and int(r.get("이사계약 횟수") or 0) < 2 and "조직개편" not in (r.get("최근 이사계약") or ""):
             r["등급"] = "S1"
@@ -243,6 +244,20 @@ def _merge_mine(rows):
         r["_score"] = r.get("_score", 0) + 1000
         r["등급"] = "★" + r["등급"].lstrip("★")
     print(f"내 연락처 {len(groups)}곳 반영 (파일 {len(files)}개)")
+
+
+def _mark_dm(rows):
+    """우편 DM 보낸 곳: 메모에 'DM 발송 MM/DD' 표시 (보낸 뒤 1~2주 사이 '우편 받으셨나요' 20초 전화 대상)."""
+    path = DATA / "dm_sent.csv"
+    if not path.exists():
+        return
+    sent = {}
+    for r in _read_csv(path):
+        sent[re.sub(r"\s", "", r.get("받는분", "").replace(" 행정실", ""))] = r.get("발송일", "")
+    for r in rows:
+        key = _norm(r["기관"])
+        if key in sent and "DM 발송" not in (r.get("메모") or ""):
+            r["메모"] = " · ".join(x for x in (r.get("메모", ""), f"DM 발송 {sent[key][5:].replace('-', '/')}") if x)
 
 
 def _mark_sent(rows):

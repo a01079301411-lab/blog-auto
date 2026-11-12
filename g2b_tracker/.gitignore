@@ -15,3 +15,6 @@ data/my_contacts.csv
 data/sent.json
 첨부/*
 !첨부/여기에_확인서_넣기.txt
+data/dm_sent.csv
+data/dm_exclude.csv
+data/dm_extra.csv

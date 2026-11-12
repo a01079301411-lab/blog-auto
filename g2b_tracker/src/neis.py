@@ -17,7 +17,9 @@ OFFICES = {"D10": "대구", "R10": "경북"}
 
 def load(force=False):
     if CACHE.exists() and not force and time.time() - CACHE.stat().st_mtime < 30 * 86400:
-        return json.loads(CACHE.read_text(encoding="utf-8"))
+        cached = json.loads(CACHE.read_text(encoding="utf-8"))
+        if not cached or "우편번호" in cached[0]:  # 예전 캐시(우편번호 없음)는 새로 받는다
+            return cached
     key = (os.getenv("NEIS_KEY") or "").strip()
     if not key:
         log.info("NEIS_KEY 없음: 학교 전체 목록은 건너뜀")
@@ -42,6 +44,7 @@ def load(force=False):
                 out.append({"학교명": s.get("SCHUL_NM", ""), "학교급": s.get("SCHUL_KND_SC_NM", ""),
                             "설립": s.get("FOND_SC_NM", ""), "시도": region,
                             "교육지원청": s.get("JU_ORG_NM", ""), "주소": s.get("ORG_RDNMA", ""),
+                            "상세주소": (s.get("ORG_RDNDA") or "").strip(), "우편번호": (s.get("ORG_RDNZC") or "").strip(),
                             "전화": s.get("ORG_TELNO", ""), "홈페이지": s.get("HMPG_ADRES", "")})
             total = block[0]["head"][0].get("list_total_count", 0)
             if page * 1000 >= total or not rows:
