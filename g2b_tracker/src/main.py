@@ -101,22 +101,19 @@ def filter_license(items, days, rules):
         rg = cache[rkey]
         names = " · ".join(rg or [])
         rec = R.normalize(it)
-        home = R.region_of(rec, rules)  # 기관이 대구·경북인지
-        if rg is None:  # 지역 조회 실패 → 기관 위치로 판단
-            elig = home
-        elif not rg:
-            elig = home or "전국(지역제한 없음)"
-        elif any(x in names for x in ("경상북도", "경북", "칠곡")):
-            elig = home or "참가가능(경북)"
-        else:
+        home = R.region_of(rec, rules)  # 일하는 곳(수요기관)이 대구·경북인지
+        local_rg = bool(rg) and all(any(k in n for k in ("대구", "경상북도", "경북")) for n in rg)
+        can_bid = (not rg) or any(k in names for k in ("경상북도", "경북", "칠곡"))  # 본사 칠곡(경북)
+        # 대구·경북 일만: 기관이 대구·경북이거나, 참가지역을 대구·경북으로 묶은 공고. 그리고 경북 업체가 참가할 수 있어야 함
+        if not can_bid or not (home or local_rg):
             out_of_area += 1
             continue
-        it["_eligible_rgn"], it["_rgn_names"] = elig or "", names or ("전국" if rg == [] else "")
-        if elig:
-            ok.append(it)
+        it["_eligible_rgn"] = home or "대구경북(참가지역)"
+        it["_rgn_names"] = names or "제한 없음"
+        ok.append(it)
     LIC_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     note = (f"업종 필터({name}/{code}): 전국 입찰공고 {len(bids)}건 중 7605 업종 {len(keep)}건 → "
-            f"우리가 참가 가능한 지역 {len(ok)}건 (지역 제한으로 참가 불가 {out_of_area}건)")
+            f"대구·경북 일 + 경북 업체 참가 가능 {len(ok)}건 (타 지역·참가 불가 {out_of_area}건 제외)")
     return ok, note
 
 
