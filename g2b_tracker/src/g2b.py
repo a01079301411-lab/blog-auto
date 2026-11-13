@@ -28,6 +28,7 @@ OPS = {
     "award": "getScsbidListSttus{k}",
     "award_search": "getScsbidListSttus{k}PPSSrch",
     "license": "getBidPblancListInfoLicenseLimit",
+    "region": "getBidPblancListInfoPrtcptPsblRgn",
     "contract": "getCntrctInfoList{k}",
     "contract_search": "getCntrctInfoList{k}PPSSrch",
 }
@@ -292,6 +293,18 @@ def licenses_for(no, ord_="000"):
             if v:
                 names.append(v)
     return names
+
+
+def regions_for(no, ord_="000"):
+    """공고 하나의 참가가능지역 이름들. 빈 목록 = 지역 제한 없음(전국)."""
+    params = {"inqryDiv": 2, "bidNtceNo": no, "bidNtceOrd": str(ord_ or "000").zfill(3)}
+    try:
+        items, _ = call("bid", OPS["region"], params)
+    except ApiError as e:
+        if str(e).startswith(("03", "INFO-200")):
+            return []
+        raise
+    return [str(it.get("prtcptPsblRgnNm") or "").strip() for it in items if it.get("prtcptPsblRgnNm")]
 
 
 def check():

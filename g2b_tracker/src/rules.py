@@ -132,12 +132,16 @@ def normalize(item):
     }
     # 지역·키워드 판정은 모든 글자를 합쳐서 (필드 이름이 바뀌어도 놓치지 않게)
     rec["_license_ok"] = bool(item.get("_license_ok"))
+    rec["_eligible_rgn"] = item.get("_eligible_rgn", "")
+    rec["참가가능지역"] = item.get("_rgn_names", "")
     rec["_all"] = " ".join(str(v) for k, v in item.items() if not str(k).startswith("_") and isinstance(v, (str, int)))
     rec["_key"] = item.get("_src", "") + ":" + (rec["번호"] or hashlib.md5((title + org).encode()).hexdigest()[:12])
     return rec
 
 
 def region_of(rec, rules):
+    if rec.get("_eligible_rgn"):  # 7605 공고: 참가가능지역에 경북(본사 칠곡)이 있거나 전국이면 참가 가능
+        return rec["_eligible_rgn"]
     head = " ".join([rec["수요기관"], rec["공고기관"], rec["제목"]])
     # 수요기관이 다른 시·도면 무조건 제외 (조달청 대구지청이 대신 낸 서울·대전 공고 등)
     if _hits(rec["수요기관"], rules.get("타지역", [])) and not _hits(rec["수요기관"], ["대구", "경북", "경상북도"]):
@@ -215,6 +219,8 @@ def grade(s):
 
 def next_action(rec):
     """점수 이유를 보고 오늘 할 일을 한 줄로."""
+    if rec.get("_license_ok"):
+        return "7605 업종 참가 가능 → 공고문·과업지시서 확인 → 마감 전 투찰·견적 제출 (필요하면 현장설명·실사 신청)"
     src = rec["출처"]
     if src.startswith("낙찰"):
         who = rec["낙찰업체"] or "낙찰업체"

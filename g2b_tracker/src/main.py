@@ -86,10 +86,38 @@ def filter_license(items, days, rules):
             it["_license_ok"] = True
             it["_license"] = ", ".join(dict.fromkeys(hit))
             keep.append(it)
+    # 참가가능지역: 기관 위치가 아니라 '우리(경북 칠곡)가 참가할 수 있는지'로 판단
+    ok, out_of_area = [], 0
+    for it in keep:
+        no = str(it.get("bidNtceNo", "")).strip()
+        od = str(it.get("bidNtceOrd") or "000").zfill(3)
+        rkey = f"rgn:{no}-{od}"
+        if rkey not in cache:
+            try:
+                cache[rkey] = g2b.regions_for(no, od)
+            except g2b.ApiError as e:
+                logging.warning("참가가능지역 %s 실패: %s", rkey, e)
+                cache[rkey] = None
+        rg = cache[rkey]
+        names = " · ".join(rg or [])
+        rec = R.normalize(it)
+        home = R.region_of(rec, rules)  # 기관이 대구·경북인지
+        if rg is None:  # 지역 조회 실패 → 기관 위치로 판단
+            elig = home
+        elif not rg:
+            elig = home or "전국(지역제한 없음)"
+        elif any(x in names for x in ("경상북도", "경북", "칠곡")):
+            elig = home or "참가가능(경북)"
+        else:
+            out_of_area += 1
+            continue
+        it["_eligible_rgn"], it["_rgn_names"] = elig or "", names or ("전국" if rg == [] else "")
+        if elig:
+            ok.append(it)
     LIC_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-    note = (f"업종 필터({name}/{code}): 입찰공고 {len(bids)}건 중 {len(keep)}건만 추적 "
-            f"(사전규격·발주계획·낙찰은 업종 정보가 없어 제외)")
-    return keep, note
+    note = (f"업종 필터({name}/{code}): 전국 입찰공고 {len(bids)}건 중 7605 업종 {len(keep)}건 → "
+            f"우리가 참가 가능한 지역 {len(ok)}건 (지역 제한으로 참가 불가 {out_of_area}건)")
+    return ok, note
 
 
 def run_daily():
@@ -101,7 +129,6 @@ def run_daily():
     items, errors = g2b.collect_daily(days)
     if config.LICENSE_CODE:
         items, note = filter_license(items, days, rules)
-        print(note)
         logging.info(note)
     recs = R.evaluate(items, rules)
     # 낙찰된 건·마감된 공고는 빼고, 지금 참가할 수 있는 것만
@@ -109,7 +136,8 @@ def run_daily():
     moves = []
     try:
         from datetime import datetime, timedelta
-        citems, cerr = g2b.collect_contracts(datetime.now() - timedelta(days=days), datetime.now())
+        citems, cerr = g2b.collect_contracts(datetime.now() - timedelta(days=days), datetime.now(),
+                                             ["이사", "이전", "이삿짐", "재배치", "문서고", "이송", "보관"])
         errors += cerr
         for it in citems:
             c = R.normalize(it)
@@ -142,10 +170,11 @@ def run_daily():
 
     hot = [r for r in recs if r["_key"] in new_keys and r["등급"] != "마감" and r["점수"] >= config.ALERT_MIN_SCORE]
     closed = sum(1 for r in recs if r["등급"] == "마감")
-    msg = [f"[나라장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건, 마감 {closed}건은 원도급사 추적으로)"]
+    msg = [f"[나라장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건)"]
     for r in hot[:12]:
         who = r["담당전화"] or r["낙찰업체전화"] or ""
         msg.append(f"\n■ {r['등급']} {r['점수']}점 [{r['출처']}] {r['제목']}\n  {r['수요기관'] or r['공고기관']}"
+                   f"{' · 참가지역 ' + r['참가가능지역'] if r.get('참가가능지역') else ''}"
                    f"{' · 마감 ' + r['마감일'] if r['마감일'] else ''}{' · ☎ ' + who if who else ''}\n  → {r['다음행동']}"
                    + (f"\n  🔗 {r['링크']}" if r.get("링크") else ""))
     new_moves = [m for m in moves if m["_key"] not in seen]

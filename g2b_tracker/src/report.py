@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 from config import DATA, OUTPUT, ROOT
 
 COLS = ["신규", "등급", "점수", "출처", "구분", "지역", "링크", "제목", "수요기관", "공고기관", "공고일", "마감일", "금액",
-        "계약방법", "참가업종", "담당자", "담당전화", "담당메일", "낙찰업체", "낙찰업체전화", "낙찰업체대표", "이유", "다음행동", "번호"]
+        "계약방법", "참가업종", "참가가능지역", "담당자", "담당전화", "담당메일", "낙찰업체", "낙찰업체전화", "낙찰업체대표", "이유", "다음행동", "번호"]
 WIDTH = {"링크": 11, "제목": 48, "수요기관": 24, "공고기관": 20, "이유": 40, "다음행동": 60, "링크": 30, "낙찰업체": 18}
 FILL = {"즉시": PatternFill("solid", fgColor="FFD6D6"), "추적": PatternFill("solid", fgColor="FFF3C4"),
         "마감": PatternFill("solid", fgColor="E6E6E6")}
@@ -75,7 +75,7 @@ def write_html(recs, errors, day, new_keys, moves=()):
         tel = re.sub(r"[^0-9]", "", who)
         who_html = f'<a href="tel:{tel}">{html.escape(who)}</a>' if len(tel) >= 9 else html.escape(who or "-")
         return (f'<tr class="g-{r["등급"]}"><td class="sc">{r["점수"]}</td><td>{html.escape(r["출처"])}</td>'
-                f'<td>{new}{link}<div class="muted">{html.escape(r["수요기관"] or r["공고기관"])}{" · 업종 " + html.escape(r.get("참가업종", "")) if r.get("참가업종") else ""}</div></td>'
+                f'<td>{new}{link}<div class="muted">{html.escape(r["수요기관"] or r["공고기관"])}{" · 업종 " + html.escape(r.get("참가업종", "")) if r.get("참가업종") else ""}{" · 참가지역 " + html.escape(r.get("참가가능지역", "")) if r.get("참가가능지역") else ""}</div></td>'
                 f'<td>{html.escape(r["마감일"] or "-")}</td><td>{who_html}</td><td class="act">{html.escape(r["다음행동"])}</td></tr>')
 
     def table(title, rows):
