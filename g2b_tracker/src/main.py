@@ -42,6 +42,56 @@ def load_seen():
         return set()
 
 
+LIC_CACHE = config.DATA / "license_cache.json"
+
+
+def filter_license(items, days, rules):
+    """입찰공고 중 참가자격 업종에 화물자동차운송주선사업(7605)이 있는 것만 남긴다.
+    사전규격·발주계획·낙찰은 업종 정보가 없어서 이 모드에서는 추적하지 않는다."""
+    from datetime import datetime, timedelta
+    code, name = config.LICENSE_CODE, config.LICENSE_NAME
+    bids = [it for it in items if it.get("_src") == "bid"]
+    end = datetime.now()
+    by_range = g2b.licenses_by_range(end - timedelta(days=days), end)
+    try:
+        cache = json.loads(LIC_CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    if by_range is not None:
+        for (no, od), names in by_range.items():
+            cache[f"{no}-{od}"] = names
+    asked = 0
+    keep = []
+    for it in bids:
+        no = str(it.get("bidNtceNo", "")).strip()
+        od = str(it.get("bidNtceOrd") or "000").zfill(3)
+        key = f"{no}-{od}"
+        if key not in cache:
+            if by_range is not None:
+                cache[key] = []  # 기간조회에 없음 = 업종 제한 없음
+            else:
+                # 기간조회가 안 되면 대구·경북 공고만 하나씩 물어본다 (하루 호출 한도 보호)
+                rec = R.normalize(it)
+                if not R.region_of(rec, rules) or asked >= 400:
+                    continue
+                try:
+                    cache[key] = g2b.licenses_for(no, od)
+                    asked += 1
+                except g2b.ApiError as e:
+                    logging.warning("면허제한 %s 실패: %s", key, e)
+                    continue
+        names = cache.get(key, [])
+        hit = [n for n in names if code in n or name in n.replace(" ", "")]
+        if hit:
+            it["_license_ok"] = True
+            it["_license"] = ", ".join(dict.fromkeys(hit))
+            keep.append(it)
+    LIC_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    note = (f"업종 필터({name}/{code}): 입찰공고 {len(bids)}건 중 {len(keep)}건만 추적 "
+            f"(사전규격·발주계획·낙찰은 업종 정보가 없어 제외)")
+    return keep, note
+
+
 def run_daily():
     rules = R.load_rules()
     seen = load_seen()
@@ -49,6 +99,10 @@ def run_daily():
     days = 30 if first_run else config.LOOKBACK_DAYS
     print(f"나라장터 최근 {days}일치를 훑는 중... (처음엔 몇 분 걸려요)")
     items, errors = g2b.collect_daily(days)
+    if config.LICENSE_CODE:
+        items, note = filter_license(items, days, rules)
+        print(note)
+        logging.info(note)
     recs = R.evaluate(items, rules)
     moves = []
     try:

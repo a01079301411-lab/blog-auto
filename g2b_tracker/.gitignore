@@ -18,3 +18,4 @@ data/sent.json
 data/dm_sent.csv
 data/dm_exclude.csv
 data/dm_extra.csv
+data/license_cache.json

@@ -27,6 +27,7 @@ OPS = {
     "plan": "getOrderPlanSttusList{k}",
     "award": "getScsbidListSttus{k}",
     "award_search": "getScsbidListSttus{k}PPSSrch",
+    "license": "getBidPblancListInfoLicenseLimit",
     "contract": "getCntrctInfoList{k}",
     "contract_search": "getCntrctInfoList{k}PPSSrch",
 }
@@ -46,6 +47,10 @@ def _fmt(dt, with_time=True):
 
 def _items(payload):
     """data.go.kr 응답에서 item 목록과 전체 건수를 꺼낸다."""
+    err_key = next((k for k in payload if "ResponseError" in k), None)  # 나라장터 오류 모양 (HTTP 200)
+    if err_key:
+        h = (payload[err_key] or {}).get("header", {}) or {}
+        raise ApiError(f"{h.get('resultCode', '')} {h.get('resultMsg', '')}".strip())
     resp = payload.get("response", payload)
     header = resp.get("header", {}) or {}
     code = str(header.get("resultCode", "00"))
@@ -252,6 +257,44 @@ def collect_contracts(start, end, keywords=None):
     return rows, errors
 
 
+def licenses_by_range(start, end):
+    """기간 안 입찰공고의 면허(업종)제한 전부 → {(공고번호, 차수): [업종명/코드, ...]}. 안 되면 None."""
+    try:
+        got = fetch_range("bid", OPS["license"], start, end)
+    except ApiError as e:
+        log.warning("면허제한 기간조회 실패: %s", e)
+        return None
+    out = {}
+    for it in got:
+        key = (str(it.get("bidNtceNo", "")).strip(), str(it.get("bidNtceOrd") or "000").zfill(3))
+        for f in ("lcnsLmtNm", "permsnIndstrytyList", "indstrytyMfrcFldList"):
+            v = str(it.get(f) or "").strip()
+            if v:
+                out.setdefault(key, []).append(v)
+    log.info("면허제한 %d건 (공고 %d개)", len(got), len(out))
+    if not out:  # 기간조회를 지원하지 않거나 빈 응답 → 공고별 조회로
+        return None
+    return out
+
+
+def licenses_for(no, ord_="000"):
+    """공고 하나의 면허(업종)제한 (inqryDiv=2 + 공고번호 + 차수 필수)."""
+    params = {"inqryDiv": 2, "bidNtceNo": no, "bidNtceOrd": str(ord_ or "000").zfill(3)}
+    try:
+        items, _ = call("bid", OPS["license"], params)
+    except ApiError as e:
+        if str(e).startswith(("03", "INFO-200")):  # 데이터 없음 = 업종 제한 없는 공고
+            return []
+        raise
+    names = []
+    for it in items:
+        for f in ("lcnsLmtNm", "permsnIndstrytyList", "indstrytyMfrcFldList"):
+            v = str(it.get(f) or "").strip()
+            if v:
+                names.append(v)
+    return names
+
+
 def check():
     """서비스별로 1건씩 불러서 활용신청·키가 정상인지 확인."""
     end = datetime.now()
@@ -259,6 +302,7 @@ def check():
     tests = [
         ("입찰공고정보서비스", "bid", OPS["bid"].format(k="Servc"), {}),
         ("입찰공고 검색(공고명)", "bid", OPS["bid_search"].format(k="Servc"), {"bidNtceNm": "이전"}),
+        ("면허(업종)제한정보", "bid", OPS["license"], {}),
         ("사전규격정보서비스", "pre", OPS["pre"].format(k="Servc"), {}),
         ("낙찰정보서비스", "award", OPS["award"].format(k="Servc"), {}),
         ("낙찰 검색(공고명)", "award", OPS["award_search"].format(k="Servc"), {"bidNtceNm": "이전"}),

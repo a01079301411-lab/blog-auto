@@ -125,8 +125,10 @@ def normalize(item):
         "낙찰률": pick(item, ("sucsfbidRate",)),
         "참가업체수": pick(item, ("prtcptCnum",)),
         "공고번호": pick(item, ("bidNtceNo",)),
+        "참가업종": item.get("_license", ""),
     }
     # 지역·키워드 판정은 모든 글자를 합쳐서 (필드 이름이 바뀌어도 놓치지 않게)
+    rec["_license_ok"] = bool(item.get("_license_ok"))
     rec["_all"] = " ".join(str(v) for k, v in item.items() if not str(k).startswith("_") and isinstance(v, (str, int)))
     rec["_key"] = item.get("_src", "") + ":" + (rec["번호"] or hashlib.md5((title + org).encode()).hexdigest()[:12])
     return rec
@@ -159,11 +161,14 @@ def score(rec, rules):
     move = _hits(title, rules["이전개청"])
     pre = _hits(title, rules["선행신호"])
 
-    if excl and not direct and not watch:
+    lic = rec.get("_license_ok")
+    if lic:  # 화물자동차운송주선사업(7605) 업종 공고: 키워드와 상관없이 우리 일감
+        s += 60; reasons.append(f"참가업종 {rec.get('참가업종', '7605')}")
+    if excl and not direct and not watch and not lic:
         return 0, []
     if _hits(title, rules.get("강제제외", [])) and not _hits(title, ["이사", "집기", "문서", "청사 이전", "사무실 이전"]):
         return 0, []
-    if not (direct or move or pre or watch):
+    if not (direct or move or pre or watch or lic):
         return 0, []
 
     if direct:
