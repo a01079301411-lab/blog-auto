@@ -104,6 +104,8 @@ def run_daily():
         print(note)
         logging.info(note)
     recs = R.evaluate(items, rules)
+    # 낙찰된 건·마감된 공고는 빼고, 지금 참가할 수 있는 것만
+    recs = [r for r in recs if r["등급"] != "마감" and not r["출처"].startswith("낙찰")]
     moves = []
     try:
         from datetime import datetime, timedelta

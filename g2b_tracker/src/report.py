@@ -48,11 +48,9 @@ def write_daily(recs, errors, day, moves=()):
     ws.title = "오늘의영업"
     main = [r for r in recs if r["출처"] == "입찰공고" and r["등급"] != "마감"]
     _sheet(ws, main, COLS)
-    _sheet(wb.create_sheet("원도급사(낙찰)"), [r for r in recs if r["출처"].startswith("낙찰")], COLS)
     _sheet(wb.create_sheet("사전규격·발주계획"), [r for r in recs if r["출처"] in ("사전규격", "발주계획")], COLS)
     mcols = ["공고일", "지역", "링크", "제목", "수요기관", "공고기관", "낙찰금액", "계약방법", "계약업체", "담당부서", "담당자", "담당전화", "담당메일", "번호"]
     _sheet(wb.create_sheet("이사계약 체결(수의 포함)"), list(moves), mcols)
-    _sheet(wb.create_sheet("마감(원도급사로)"), [r for r in recs if r["등급"] == "마감"], COLS)
     _sheet(wb.create_sheet("전체"), recs, COLS)
     if errors:
         e = wb.create_sheet("오류")
@@ -111,7 +109,7 @@ tr.g-즉시 td:first-child{{border-left:4px solid #c0392b}} tr.g-추적 td:first
 </style></head><body>
 <h1>나라장터 영업 브리핑 {day}</h1>
 <div class="sum">즉시 {len(hot)}건 · 추적 {len(track)}건 · 새로 뜬 것 {len(new_keys)}건 — 공고 제목을 누르면 나라장터 상세화면이 열립니다 (처음엔 나라장터 로그인이 필요할 수 있어요)</div>
-{table("즉시 연락 (60점 이상)", hot)}{table("추적 (40~59점)", track)}{mv}{table("마감 → 원도급사로", closed)}
+{table("즉시 연락 (60점 이상)", hot)}{table("추적 (40~59점)", track)}{mv}
 {f"<h2>조회 실패</h2><ul>{err}</ul>" if err else ""}
 </body></html>"""
     path = OUTPUT / f"브리핑_{day}.html"

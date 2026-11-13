@@ -128,8 +128,7 @@ def collect_daily(days):
     rows, errors = [], []
     jobs = []
     for kind, k in KINDS.items():
-        jobs += [("bid", OPS["bid"].format(k=k), kind), ("pre", OPS["pre"].format(k=k), kind),
-                 ("award", OPS["award"].format(k=k), kind)]
+        jobs += [("bid", OPS["bid"].format(k=k), kind), ("pre", OPS["pre"].format(k=k), kind)]  # 낙찰은 추적하지 않음
     for src, op, kind in jobs:
         try:
             got = fetch_range(src, op, start, end)

@@ -83,9 +83,12 @@ def g2b_link(item):
     if not no:  # 발주계획·사전규격에 연결된 공고번호 목록 (쉼표로 여러 개)
         no = (pick(item, ("bidNtceNoList",)).split(",") or [""])[0].strip()
     if no:
-        no, _, ord_ = no.partition("-")
-        ord_ = str(item.get("bidNtceOrd") or ord_ or "000").zfill(3)
-        return NOTICE_URL.format(no=no.strip(), ord=ord_)
+        no, _, ord_ = no.strip().partition("-")
+        m = re.fullmatch(r"(R\d{2}[A-Z]{2}\d{8})(\d{3})", no)  # 'R26BK01804551000' 처럼 차수가 붙어 온 번호
+        if m:
+            no, ord_ = m.group(1), ord_ or m.group(2)
+        ord_ = str(item.get("bidNtceOrd") or ord_ or "000").zfill(3)[-3:]
+        return NOTICE_URL.format(no=no, ord=ord_)
     return ""
 
 
