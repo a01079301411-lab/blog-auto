@@ -74,11 +74,11 @@ def _xml_error(text):
     return text[:200]
 
 
-def call(base_key, op, params, page=1):
+def call(base_key, op, params, page=1, rows=None):
     if not DATA_GO_KR_KEY:
         raise ApiError("DATA_GO_KR_KEY 가 비어 있어요. 0_처음설치.bat 을 다시 실행해서 키를 넣어 주세요.")
     url = f"{BASES[base_key]}/{op}"
-    q = {"serviceKey": DATA_GO_KR_KEY, "pageNo": page, "numOfRows": ROWS, "type": "json", **params}
+    q = {"serviceKey": DATA_GO_KR_KEY, "pageNo": page, "numOfRows": rows or ROWS, "type": "json", **params}
     last = None
     for attempt in range(3):
         try:
@@ -98,27 +98,74 @@ def call(base_key, op, params, page=1):
     raise ApiError(f"연결 실패: {last}")
 
 
+MIN_WINDOW = timedelta(hours=6)   # 07(입력범위 초과)이 나면 이 크기까지 반씩 줄여 본다
+
+
+def _is_range_error(e):
+    return str(e).startswith("07") or "입력범위" in str(e)
+
+
+def _fetch_window(base_key, op, cur, nxt, extra, with_time, date_keys, rows=None):
+    """한 구간을 끝까지 받는다. 07 오류면 ApiError 그대로 올려 보낸다."""
+    params = {"inqryDiv": 1, date_keys[0]: _fmt(cur, with_time), date_keys[1]: _fmt(nxt, with_time)}
+    params.update(extra or {})
+    out, page = [], 1
+    while True:
+        items, total = call(base_key, op, params, page, rows)
+        out.extend(items)
+        size = rows or ROWS
+        if page * size >= total or not items or page >= MAX_PAGES:
+            if page >= MAX_PAGES and page * size < total:
+                log.warning("%s %s: %d건 중 일부만 받음 (한도)", op, params[date_keys[0]], total)
+            return out
+        page += 1
+
+
+def _fetch_split(base_key, op, cur, nxt, extra, with_time, date_keys, fails):
+    """07(입력범위값 초과)이면 기간을 반으로 나눠 다시. 최소 크기에서도 안 되면 건수를 줄여 한 번 더."""
+    try:
+        return _fetch_window(base_key, op, cur, nxt, extra, with_time, date_keys)
+    except ApiError as e:
+        if not _is_range_error(e):
+            raise
+        if len(fails) >= 3:  # 잘게 나눠도 계속 실패 → 기간 문제가 아님. 호출 한도 아끼려고 더 안 나눔
+            fails.append(f"{_fmt(cur)}~{_fmt(nxt)} {e}")
+            return []
+        span = nxt - cur
+        if span > MIN_WINDOW and (with_time or span > timedelta(days=1)):
+            mid = cur + span / 2
+            if not with_time:  # 날짜만 쓰는 API 는 하루 단위로 자른다
+                mid = datetime(mid.year, mid.month, mid.day)
+                if mid <= cur:
+                    mid = cur + timedelta(days=1)
+            log.info("%s: 기간이 넓어 반으로 나눔 %s~%s", op, _fmt(cur), _fmt(nxt))
+            return (_fetch_split(base_key, op, cur, mid, extra, with_time, date_keys, fails)
+                    + _fetch_split(base_key, op, mid, nxt, extra, with_time, date_keys, fails))
+        try:
+            return _fetch_window(base_key, op, cur, nxt, extra, with_time, date_keys, rows=100)
+        except ApiError as e2:
+            fails.append(f"{_fmt(cur)}~{_fmt(nxt)} {e2}")
+            log.warning("%s %s~%s 구간 건너뜀: %s", op, _fmt(cur), _fmt(nxt), e2)
+            return []
+
+
 def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_days=WINDOW_DAYS,
                 date_keys=("inqryBgnDt", "inqryEndDt")):
-    """start~end 기간을 잘라서 전부 받아 온다. 행마다 _src(출처), _op 를 붙인다."""
-    out = []
+    """start~end 기간을 잘라서 전부 받아 온다. 행마다 _src(출처), _op 를 붙인다.
+    07(입력범위 초과)이 나면 그 구간만 자동으로 잘게 나눠 다시 받고, 끝내 안 되는 구간만 건너뛴다."""
+    out, fails, windows = [], [], 0
     cur = start
     while cur < end:
         nxt = min(cur + timedelta(days=window_days), end)
-        params = {"inqryDiv": 1, date_keys[0]: _fmt(cur, with_time), date_keys[1]: _fmt(nxt, with_time)}
-        params.update(extra or {})
-        page = 1
-        while True:
-            items, total = call(base_key, op, params, page)
-            for it in items:
-                it["_src"], it["_op"] = base_key, op
-            out.extend(items)
-            if page * ROWS >= total or not items or page >= MAX_PAGES:
-                if page >= MAX_PAGES and page * ROWS < total:
-                    log.warning("%s %s: %d건 중 일부만 받음 (한도)", op, params[date_keys[0]], total)
-                break
-            page += 1
+        out.extend(_fetch_split(base_key, op, cur, nxt, extra, with_time, date_keys, fails))
+        windows += 1
         cur = nxt
+    for it in out:
+        it["_src"], it["_op"] = base_key, op
+    if fails and not out:
+        raise ApiError(f"07 입력범위값 초과 (전 구간 실패: {fails[0]})")
+    if fails:
+        log.warning("%s: %d개 구간 실패, 나머지는 받음", op, len(fails))
     return out
 
 
@@ -130,7 +177,7 @@ def collect_bids(days):
     for kind, k in KINDS.items():
         op = OPS["bid"].format(k=k)
         try:
-            got = fetch_range("bid", op, start, end)
+            got = fetch_range("bid", op, start, end, window_days=3)
             for it in got:
                 it["_kind"] = kind
             rows += got
@@ -278,7 +325,7 @@ def collect_contracts(start, end, keywords=None):
 def licenses_by_range(start, end):
     """기간 안 입찰공고의 면허(업종)제한 전부 → {(공고번호, 차수): [업종명/코드, ...]}. 안 되면 None."""
     try:
-        got = fetch_range("bid", OPS["license"], start, end)
+        got = fetch_range("bid", OPS["license"], start, end, window_days=3)
     except ApiError as e:
         log.warning("면허제한 기간조회 실패: %s", e)
         return None
