@@ -21,7 +21,7 @@ TITLE = ("bidNtceNm", "prdctClsfcNoNm", "bizNm", "cntrctNm", "bsnsNm")
 ORG = ("dminsttNm", "rlDminsttNm", "orderInsttNm", "ntceInsttNm", "insttNm", "rlDminsttNm", "cntrctInsttNm")
 NOTICE_ORG = ("ntceInsttNm", "orderInsttNm")
 DATE = ("cntrctCnclsDate", "cntrctDate", "bidNtceDt", "rgstDt", "rcptDt", "nticeDt", "opengDt", "fnlSucsfDate", "rlOpengDt")
-DEADLINE = ("bidClseDt", "opninRgstClseDt", "rcptClseDt")
+DEADLINE = ("bidClseDt", "opninRgstClseDt", "rcptClseDt", "bidQlfctRgstDt", "prtcptAplDocRcptClseDt", "opengDt")
 AMOUNT = ("presmptPrce", "asignBdgtAmt", "bdgtAmt", "sumOrderAmt", "orderAmt", "sucsfbidAmt", "thtmCntrctAmt", "totCntrctAmt", "cntrctAmt", "totCnstwkScle")
 METHOD = ("cntrctCnclsMthdNm", "bidMethdNm", "prcrmntMethd", "cntrctMthdNm", "sucsfbidMthdNm")
 OFFICER = ("cntrctInsttOfclNm", "ntceInsttOfclNm", "ofclNm", "dminsttOfclNm", "exctvNm", "orderInsttOfclNm")
@@ -208,6 +208,10 @@ def score(rec, rules):
     sub = rules.get("부대공종", [])
     if rec["구분"] == "공사" and not direct and re.search(r"\((" + "|".join(sub) + r")\)|(" + "|".join(sub) + r")\s*공사", title):
         s -= 10; reasons.append("부대공종 −10")
+    if lic and not (direct or move):  # 7605 이지만 이사·이전이 아닌 일반 운송·배송·우편 → 추적(참고)으로 내림
+        inc = rules.get("이사판정_포함")
+        if not (inc and re.search(inc, title)) and not re.search(r"이전|이사|반출|반입|재배치|보관", title):
+            s -= 20; reasons.append("이사 아닌 운송·배송 −20")
     if _hits(title, rules["특수운송감점"]):
         s -= 20; reasons.append("특수운송 −20")
     return s, reasons
