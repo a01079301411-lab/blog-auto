@@ -122,6 +122,24 @@ def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_day
     return out
 
 
+def collect_bids(days):
+    """입찰공고만 (용역·공사·물품) 최근 N일."""
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    rows, errors = [], []
+    for kind, k in KINDS.items():
+        op = OPS["bid"].format(k=k)
+        try:
+            got = fetch_range("bid", op, start, end)
+            for it in got:
+                it["_kind"] = kind
+            rows += got
+            log.info("%-6s %-38s %5d건", "bid", op, len(got))
+        except ApiError as e:
+            errors.append(f"{op}: {e}")
+    return rows, errors
+
+
 def collect_daily(days):
     """매일 추적: 입찰공고·사전규격·낙찰 (용역·공사·물품) + 발주계획."""
     end = datetime.now()

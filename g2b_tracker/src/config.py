@@ -30,6 +30,8 @@ ALERT_MIN_SCORE = int(os.getenv("ALERT_MIN_SCORE") or 40)
 # 입찰공고 참가자격 업종 필터: 이 코드(업종)가 있는 공고만 추적. 비우면 업종 필터 끔.
 LICENSE_CODE = (os.getenv("LICENSE_CODE") if os.getenv("LICENSE_CODE") is not None else "7605").strip()
 LICENSE_NAME = os.getenv("LICENSE_NAME") or "화물자동차운송주선사업"
+# 7605 공고 범위: 전국 = 지역 제한이 없거나 경북이 들어간 공고는 전국 어디든 / 대경 = 대구·경북 일만
+SCOPE = (os.getenv("SCOPE") or "전국").strip()
 
 # 조달청 나라장터 OpenAPI 주소 (2025년 차세대 나라장터 기준). 바뀌면 .env 에서 덮어쓸 수 있다.
 BASES = {

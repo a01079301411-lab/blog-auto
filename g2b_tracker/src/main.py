@@ -104,17 +104,44 @@ def filter_license(items, days, rules):
         home = R.region_of(rec, rules)  # 일하는 곳(수요기관)이 대구·경북인지
         local_rg = bool(rg) and all(any(k in n for k in ("대구", "경상북도", "경북")) for n in rg)
         can_bid = (not rg) or any(k in names for k in ("경상북도", "경북", "칠곡"))  # 본사 칠곡(경북)
-        # 대구·경북 일만: 기관이 대구·경북이거나, 참가지역을 대구·경북으로 묶은 공고. 그리고 경북 업체가 참가할 수 있어야 함
-        if not can_bid or not (home or local_rg):
+        # 참가 가능: 지역 제한이 없거나(전국 공고) 참가지역에 경북(본사 칠곡)이 들어 있어야 함
+        # SCOPE=대경 이면 여기에 더해 일하는 곳이 대구·경북인 것만
+        if not can_bid or (config.SCOPE == "대경" and not (home or local_rg)):
             out_of_area += 1
             continue
-        it["_eligible_rgn"] = home or "대구경북(참가지역)"
+        it["_eligible_rgn"] = home or ("대구경북(참가지역)" if local_rg else "전국 공고")
         it["_rgn_names"] = names or "제한 없음"
         ok.append(it)
     LIC_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     note = (f"업종 필터({name}/{code}): 전국 입찰공고 {len(bids)}건 중 7605 업종 {len(keep)}건 → "
-            f"대구·경북 일 + 경북 업체 참가 가능 {len(ok)}건 (타 지역·참가 불가 {out_of_area}건 제외)")
+            f"경북 업체(우리) 참가 가능 {len(ok)}건 (참가지역이 다른 시·도로 묶여 참가 불가 {out_of_area}건 제외)")
     return ok, note
+
+
+def run_scan(days):
+    """지금 열려 있는 7605 공고 다시 뽑기: 최근 N일 입찰공고 전부 → 7605 + 참가 가능 + 마감 전."""
+    rules = R.load_rules()
+    print(f"최근 {days}일 전국 입찰공고에서 7605 업종 공고를 다시 뽑는 중... (몇 분 걸려요)")
+    items, errors = g2b.collect_bids(days)
+    items, note = filter_license(items, days, rules)
+    print(note)
+    recs = R.evaluate(items, rules)
+    recs = [r for r in recs if r["등급"] != "마감"]
+    order = {"대구근교": 0, "경북": 1, "대구경북(주소)": 1, "대구경북(참가지역)": 1}
+    recs.sort(key=lambda r: (order.get(r["지역"], 2), r["마감일"] or "9999"))
+    for r in recs:
+        r["신규"] = ""
+    day = f"{R.today()}_전국7605"
+    xlsx = report.write_daily(recs, errors, day)
+    page = report.write_html(recs, errors, day, set())
+    print(f"\n열려 있는 7605 공고 {len(recs)}건 (대구·경북 {sum(1 for r in recs if r['지역'] in order)}건 · 전국 공고 {sum(1 for r in recs if r['지역'] not in order)}건)")
+    for r in recs[:30]:
+        print(f"  · [{r['지역'] or '전국'}] {r['제목'][:40]} | {r['수요기관'] or r['공고기관']} | 마감 {r['마감일'] or '-'} | 참가지역 {r.get('참가가능지역') or '-'}")
+    if not QUIET:
+        import webbrowser
+        webbrowser.open(page.resolve().as_uri())
+    print(f"\n저장: {xlsx}\n      {page}")
+    notifier.notify(f"[나라장터] 열려 있는 7605 공고 {len(recs)}건 다시 뽑음 → {page.name}")
 
 
 def run_daily():
@@ -305,6 +332,7 @@ def main():
     ap.add_argument("--mailtest", action="store_true")
     ap.add_argument("--sentcheck", action="store_true")
     ap.add_argument("--dm", action="store_true")
+    ap.add_argument("--scan", type=int)
     ap.add_argument("--dmdone", type=int)
     a = ap.parse_args()
     setup_log(a.quiet)
@@ -313,6 +341,8 @@ def main():
     try:
         if a.selftest:
             run_selftest()
+        elif a.scan:
+            run_scan(a.scan)
         elif a.dm:
             import dm
             dm.write()
