@@ -150,14 +150,17 @@ def _fetch_split(base_key, op, cur, nxt, extra, with_time, date_keys, fails):
 
 
 def fetch_range(base_key, op, start, end, extra=None, with_time=True, window_days=WINDOW_DAYS,
-                date_keys=("inqryBgnDt", "inqryEndDt")):
+                date_keys=("inqryBgnDt", "inqryEndDt"), split=True):
     """start~end 기간을 잘라서 전부 받아 온다. 행마다 _src(출처), _op 를 붙인다.
     07(입력범위 초과)이 나면 그 구간만 자동으로 잘게 나눠 다시 받고, 끝내 안 되는 구간만 건너뛴다."""
     out, fails, windows = [], [], 0
     cur = start
     while cur < end:
         nxt = min(cur + timedelta(days=window_days), end)
-        out.extend(_fetch_split(base_key, op, cur, nxt, extra, with_time, date_keys, fails))
+        if split:
+            out.extend(_fetch_split(base_key, op, cur, nxt, extra, with_time, date_keys, fails))
+        else:
+            out.extend(_fetch_window(base_key, op, cur, nxt, extra, with_time, date_keys))
         windows += 1
         cur = nxt
     for it in out:
@@ -187,6 +190,28 @@ def collect_bids(days):
     return rows, errors
 
 
+def _fetch_plan(op, end, days):
+    """발주계획. 발주월 범위가 넓으면 07 이 나므로 범위를 줄여 가며 시도한다."""
+    start = end - timedelta(days=max(days, 30))
+    ym = lambda d: d.strftime("%Y%m")
+    variants = [
+        {"orderBgnYm": ym(end), "orderEndYm": ym(end + timedelta(days=330))},  # 약 12개월
+        {"orderBgnYm": ym(end), "orderEndYm": ym(end + timedelta(days=150))},  # 약 6개월
+        {"orderBgnYm": ym(end), "orderEndYm": ym(end)},                         # 이번 달
+        {},                                                                       # 발주월 없이
+    ]
+    last = None
+    for extra in variants:
+        try:
+            return fetch_range("plan", op, start, end, extra=extra, window_days=7, split=False)
+        except ApiError as e:
+            if not _is_range_error(e):
+                raise
+            last = e
+            log.info("%s: 발주월 범위 %s 거절(07) → 좁혀서 다시", op, extra or "없음")
+    raise last
+
+
 def collect_daily(days):
     """매일 추적: 입찰공고·사전규격·낙찰 (용역·공사·물품) + 발주계획."""
     end = datetime.now()
@@ -209,10 +234,7 @@ def collect_daily(days):
     for kind, k in KINDS.items():
         op = OPS["plan"].format(k=k)
         try:
-            ym_from = end.strftime("%Y%m")
-            ym_to = (end + timedelta(days=400)).strftime("%Y%m")
-            got = fetch_range("plan", op, end - timedelta(days=max(days, 30)), end,
-                              extra={"orderBgnYm": ym_from, "orderEndYm": ym_to}, window_days=30)
+            got = _fetch_plan(op, end, days)
             for it in got:
                 it["_kind"] = kind
             rows += got
