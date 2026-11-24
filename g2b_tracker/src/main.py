@@ -157,6 +157,13 @@ def run_daily():
     recs = R.evaluate(items, rules)
     # 낙찰된 건·마감된 공고는 빼고, 지금 참가할 수 있는 것만
     recs = [r for r in recs if r["등급"] != "마감" and not r["출처"].startswith("낙찰")]
+    try:  # 학교장터(S2B) 이사·집기 이전 견적요청
+        import s2b
+        srows, serr = s2b.collect(days)
+        recs += s2b.to_recs(srows)
+        errors += serr
+    except Exception as e:  # 학교장터가 막혀도 나라장터 추적은 계속
+        errors.append(f"학교장터: {e}")
     moves = []
     try:
         from datetime import datetime, timedelta
@@ -179,7 +186,7 @@ def run_daily():
     md = report.write_brief(recs, errors, day, new_keys)
     page = report.write_html(recs, errors, day, new_keys, moves)
     db = report.ensure_sales_db()
-    added, total = contacts.update([r for r in recs if r["등급"] != "마감"])
+    added, total = contacts.update([r for r in recs if r["등급"] != "마감" and r["출처"] != "학교장터"])
     a2, total = contacts.update(moves, move_contract=True)
     added += a2
     try:
@@ -194,7 +201,7 @@ def run_daily():
 
     hot = [r for r in recs if r["_key"] in new_keys and r["등급"] != "마감" and r["점수"] >= config.ALERT_MIN_SCORE]
     closed = sum(1 for r in recs if r["등급"] == "마감")
-    msg = [f"[나라장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건)"]
+    msg = [f"[나라장터·학교장터 {day}] 받은 공고 {len(items)}건 → 우리 일감 {len(recs)}건 (새로 뜬 것 {len(new_keys)}건)"]
     for r in hot[:12]:
         who = r["담당전화"] or r["낙찰업체전화"] or ""
         msg.append(f"\n■ {r['등급']} {r['점수']}점 [{r['출처']}] {r['제목']}\n  {r['수요기관'] or r['공고기관']}"
@@ -333,7 +340,8 @@ def main():
     ap.add_argument("--sentcheck", action="store_true")
     ap.add_argument("--dm", action="store_true")
     ap.add_argument("--scan", type=int)
-    ap.add_argument("--dmdone", type=int)
+    ap.add_argument("--dmdone")
+    ap.add_argument("--s2b", type=int)
     a = ap.parse_args()
     setup_log(a.quiet)
     global QUIET
@@ -346,6 +354,22 @@ def main():
         elif a.dm:
             import dm
             dm.write()
+        elif a.s2b:
+            import s2b
+            import report
+            srows, serr = s2b.collect(a.s2b)
+            recs = s2b.to_recs(srows)
+            recs.sort(key=lambda r: (-r["점수"], r["마감일"] or "9999"))
+            day = f"{R.today()}_학교장터{a.s2b}일"
+            page = report.write_html(recs, serr, day, {r["_key"] for r in recs})
+            print(f"학교장터 이사·이전 견적요청 {len(recs)}건 (대구·경북 {sum(r['등급'] == '즉시' for r in recs)}건) → {page}")
+            for r in recs:
+                print(f"  [{r['등급']}] {r['제목']} / {r['수요기관']} / 마감 {r['마감일'] or '-'} / 번호 {r['번호']}")
+            for e in serr:
+                print("  ⚠", e)
+            if not QUIET:
+                import webbrowser
+                webbrowser.open(page.resolve().as_uri())
         elif a.dmdone:
             import dm
             dm.mark_sent(a.dmdone)

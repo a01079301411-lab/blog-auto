@@ -46,7 +46,7 @@ def write_daily(recs, errors, day, moves=()):
     wb = Workbook()
     ws = wb.active
     ws.title = "오늘의영업"
-    main = [r for r in recs if r["출처"] == "입찰공고" and r["등급"] != "마감"]
+    main = [r for r in recs if r["출처"] in ("입찰공고", "학교장터") and r["등급"] != "마감"]
     _sheet(ws, main, COLS)
     _sheet(wb.create_sheet("사전규격·발주계획"), [r for r in recs if r["출처"] in ("사전규격", "발주계획")], COLS)
     mcols = ["공고일", "지역", "링크", "제목", "수요기관", "공고기관", "낙찰금액", "계약방법", "계약업체", "담당부서", "담당자", "담당전화", "담당메일", "번호"]
@@ -81,7 +81,7 @@ def write_html(recs, errors, day, new_keys, moves=()):
     def table(title, rows):
         if not rows:
             return ""
-        return (f"<h2>{title} <small>{len(rows)}건</small></h2><table><tr><th>점수</th><th>출처</th><th>공고 (누르면 나라장터)</th>"
+        return (f"<h2>{title} <small>{len(rows)}건</small></h2><table><tr><th>점수</th><th>출처</th><th>공고 (누르면 나라장터·학교장터)</th>"
                 f"<th>마감</th><th>담당</th><th>다음 행동</th></tr>{''.join(row(r) for r in rows)}</table>")
 
     hot = [r for r in recs if r["등급"] == "즉시"]
