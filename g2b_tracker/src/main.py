@@ -217,6 +217,15 @@ def run_daily():
                        f"{' ☎ ' + m['담당부서'] + ' ' + m['담당전화'] if m['담당전화'] else ''}"
                        + (f" 🔗 {m['링크']}" if m.get("링크") else ""))
     seen |= {m["_key"] for m in moves}
+    try:  # 우편 DM 주소록: 일주일에 한 번 자동으로 새로 (학교·병원·기관, 보낸 곳·메일 받은 곳 자동 제외)
+        import time as _t
+        import dm
+        last = sorted(config.OUTPUT.glob("우편DM_주소록_*.xlsx"), key=lambda p: p.stat().st_mtime)
+        if not last or _t.time() - last[-1].stat().st_mtime > 7 * 86400:
+            dpath = dm.write()
+            msg.append(f"\n📮 우편 DM 주소록 새로 만듦: {dm.LAST_SUMMARY}\n  → {dpath.name} (보낼 때만 e-그린우편에 올리면 됨)")
+    except Exception as e:
+        logging.warning("우편 DM 주소록 건너뜀: %s", e)
     if errors:
         msg.append(f"\n⚠ 조회 실패 {len(errors)}건 → 1_연결점검.bat 실행")
     if first_run:

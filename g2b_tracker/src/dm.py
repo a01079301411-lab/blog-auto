@@ -18,6 +18,7 @@ from config import DATA, OUTPUT
 import neis
 
 BATCH = 300
+LAST_SUMMARY = ""
 NEAR = ("경산", "칠곡", "고령", "성주", "군위", "달성", "왜관", "하양", "진량")
 LEVEL = {"고등학교": 0, "특수학교": 1, "중학교": 2, "초등학교": 3,
          "상급종합병원": 0, "종합병원": 1, "병원": 2, "요양병원": 3, "정신병원": 4, "치과병원": 5, "한방병원": 6,
@@ -125,6 +126,8 @@ def write():
     by = {}
     for r in rows:
         by[r["그룹"]] = by.get(r["그룹"], 0) + 1
+    global LAST_SUMMARY
+    LAST_SUMMARY = f"{len(rows)}곳 ({', '.join(f'{k} {v}' for k, v in by.items())})"
     print(f"우편 DM 대상 {len(rows)}곳 ({', '.join(f'{k} {v}' for k, v in by.items())}) → {path}")
     if not by.get("학교"):
         print("· 학교가 0곳: .env 에 NEIS_KEY(나이스 인증키)를 넣으면 대구·경북 학교 행정실이 자동으로 들어갑니다.")
