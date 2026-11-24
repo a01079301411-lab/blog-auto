@@ -157,3 +157,31 @@ def mark_sent(label):
         for r in rows:
             w.writerow([day, label, r["받는분"], r["전화번호"]])
     print(f"{label} {len(rows)}곳을 '우편 발송'으로 기록했어요. 다음 주소록부터 빠집니다.")
+
+
+def upload_file(label):
+    """e-그린우편에 바로 올릴 엑셀 하나 (그 묶음만, 받는분·우편번호·주소·상세주소). 반환 (경로, 동봉 PDF 이름, 곳 수)."""
+    from report import _sheet
+    label = str(label).strip()
+    rows = [r for r in build() if r["묶음"] == label]
+    if not rows:
+        return None, "", 0
+    wb = Workbook()
+    wb.active.title = label
+    _sheet(wb.active, rows, UPLOAD)
+    path = OUTPUT / f"e그린우편_올릴파일_{label}.xlsx"
+    wb.save(path)
+    return path, rows[0]["동봉 PDF"], len(rows)
+
+
+def next_label():
+    """아직 안 보낸 묶음 중 먼저 보낼 것: 기관 → 병원 → 학교."""
+    labels = []
+    for r in build():
+        if r["묶음"] != "주소필요" and r["묶음"] not in labels:
+            labels.append(r["묶음"])
+    for g in ("기관", "병원", "학교"):
+        for lb in labels:
+            if lb.startswith(g):
+                return lb
+    return ""

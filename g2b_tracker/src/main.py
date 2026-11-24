@@ -351,6 +351,7 @@ def main():
     ap.add_argument("--scan", type=int)
     ap.add_argument("--dmdone")
     ap.add_argument("--s2b", type=int)
+    ap.add_argument("--dmfile", nargs="?", const="auto")
     a = ap.parse_args()
     setup_log(a.quiet)
     global QUIET
@@ -379,6 +380,15 @@ def main():
             if not QUIET:
                 import webbrowser
                 webbrowser.open(page.resolve().as_uri())
+        elif a.dmfile:
+            import dm
+            label = dm.next_label() if a.dmfile == "auto" else a.dmfile
+            path, pdf, n = dm.upload_file(label) if label else (None, "", 0)
+            if not path:
+                print("보낼 묶음이 없어요 (모두 보냈거나 주소록이 비어 있음).")
+            else:
+                (config.OUTPUT / "_다음묶음.txt").write_text(f"{label}\n{path}\n{pdf}\n{n}", encoding="utf-8")
+                print(f"이번에 보낼 묶음: {label} ({n}곳)\n  올릴 주소 파일: {path}\n  올릴 PDF: docs\\우편DM\\{pdf}")
         elif a.dmdone:
             import dm
             dm.mark_sent(a.dmdone)
