@@ -20,7 +20,7 @@ LAST_ERROR = ""
 
 
 def _get(params):
-    """심평원 서버가 느려서 시간 넉넉히, 세 번까지, https 가 안 되면 http 로."""
+    """심평원 서버가 느리거나 바쁘면(99) 잠깐 쉬고 다시, https 가 안 되면 http 로."""
     last = None
     for attempt in range(3):
         for url in (URL, URL.replace("https://", "http://")):
@@ -29,7 +29,12 @@ def _get(params):
                 return _parse(r.text.strip())
             except requests.RequestException as e:
                 last = e
-        time.sleep(3 * (attempt + 1))
+            except ValueError as e:
+                last = e
+                if not str(e).startswith("99"):
+                    raise
+                break  # 서버 바쁨: http 로 바꿔 봐야 같음 → 쉬었다가 다시
+        time.sleep(10 * (attempt + 1))
     raise ValueError(f"심평원 서버 응답 없음: {last}")
 
 
@@ -51,38 +56,42 @@ def _parse(text):
     return items or [], int(b.get("totalCount") or 0)
 
 
-def load(force=False):
+def _read_cache():
+    try:
+        data = json.loads(CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data.get("parts", {}) if isinstance(data, dict) else {}
+
+
+def load(force=False, cache_only=False):
+    """종류(시도×종별)마다 따로 저장. 30일 지난 것·실패한 것만 다시 받는다. cache_only 면 서버에 묻지 않음."""
     global LAST_ERROR
-    if CACHE.exists() and not force and time.time() - CACHE.stat().st_mtime < 30 * 86400:
-        return json.loads(CACHE.read_text(encoding="utf-8"))
-    out, fails = [], []
-    for sido, region in SIDO.items():
-        for cl, kind in KINDS.items():
-            page = 1
-            try:
-                while True:
-                    items, total = _get({"sidoCd": sido, "clCd": cl, "pageNo": page, "numOfRows": 100})
-                    for h in items:
-                        addr = str(h.get("addr") or "")
-                        if not addr.startswith(("대구", "경상북도", "경북")):
-                            continue
-                        out.append({"병원명": h.get("yadmNm", ""), "종별": h.get("clCdNm") or kind,
-                                    "시도": region, "시군구": h.get("sgguCdNm", ""), "주소": addr,
-                                    "우편번호": str(h.get("postNo") or "").strip(), "전화": h.get("telno", "")})
-                    if page * 100 >= total or not items:
-                        break
-                    page += 1
-            except ValueError as e:  # 한 종류가 실패해도 나머지는 계속
-                fails.append(f"{region} {kind}: {e}")
-                log.warning("병원정보 %s %s 실패: %s", region, kind, e)
-    if fails:
-        LAST_ERROR = fails[0] + (f" 외 {len(fails) - 1}건" if len(fails) > 1 else "")
-    if not out:
-        return json.loads(CACHE.read_text(encoding="utf-8")) if CACHE.exists() else []
-    if out:
-        CACHE.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
-        if fails:  # 일부만 받았으면 내일 자동 실행 때 다시 받도록 캐시를 '오래된 것'으로 표시
-            import os
-            old = time.time() - 29.5 * 86400
-            os.utime(CACHE, (old, old))
-    return out
+    parts = _read_cache()
+    fails = []
+    if not cache_only:
+        for sido, region in SIDO.items():
+            for cl, kind in KINDS.items():
+                key = f"{sido}-{cl}"
+                if not force and time.time() - parts.get(key, {}).get("t", 0) < 30 * 86400:
+                    continue
+                rows, page = [], 1
+                try:
+                    while True:
+                        items, total = _get({"sidoCd": sido, "clCd": cl, "pageNo": page, "numOfRows": 100})
+                        for h in items:
+                            addr = str(h.get("addr") or "")
+                            if addr.startswith(("대구", "경상북도", "경북")):
+                                rows.append({"병원명": h.get("yadmNm", ""), "종별": h.get("clCdNm") or kind,
+                                             "시도": region, "시군구": h.get("sgguCdNm", ""), "주소": addr,
+                                             "우편번호": str(h.get("postNo") or "").strip(), "전화": h.get("telno", "")})
+                        if page * 100 >= total or not items:
+                            break
+                        page += 1
+                    parts[key] = {"t": time.time(), "rows": rows}
+                    CACHE.write_text(json.dumps({"parts": parts}, ensure_ascii=False), encoding="utf-8")
+                except ValueError as e:  # 이 종류만 다음에 다시 (받아 둔 옛 자료는 그대로 씀)
+                    fails.append(f"{region} {kind}: {e}")
+                    log.warning("병원정보 %s %s 실패(다음 실행 때 다시): %s", region, kind, e)
+    LAST_ERROR = (fails[0] + (f" 외 {len(fails) - 1}건" if len(fails) > 1 else "")) if fails else ""
+    return [r for p in parts.values() for r in p.get("rows", [])]

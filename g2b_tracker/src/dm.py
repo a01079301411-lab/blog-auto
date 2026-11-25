@@ -64,7 +64,7 @@ def _region(addr, hint=""):
     return "대구근교" if any(x in addr + hint for x in NEAR) else "경북"
 
 
-def build():
+def build(cache_only=False):
     """주소록 행 목록. 주소가 없는 기관은 '주소필요' 묶음으로."""
     emailed = _emailed_names()
     exclude = {_name(r.get("기관")) for r in _read(DATA / "dm_exclude.csv")}
@@ -83,7 +83,7 @@ def build():
                      "지역": "대구" if s["시도"] == "대구" and not any(x in s["주소"] + s["교육지원청"] for x in NEAR)
                      else _region(s["주소"], s["교육지원청"]), "구분": s["학교급"], "주소확인": "나이스"})
     import hospitals
-    for h in hospitals.load():
+    for h in hospitals.load(cache_only=cache_only):
         if skip(h["병원명"]):
             continue
         rows.append({"그룹": "병원", "받는분": f'{h["병원명"]} 총무과', "우편번호": h["우편번호"], "기본주소": h["주소"],
@@ -163,7 +163,7 @@ def upload_file(label):
     """e-그린우편에 바로 올릴 엑셀 하나 (그 묶음만, 받는분·우편번호·주소·상세주소). 반환 (경로, 동봉 PDF 이름, 곳 수)."""
     from report import _sheet
     label = str(label).strip()
-    rows = [r for r in build() if r["묶음"] == label]
+    rows = [r for r in build(cache_only=True) if r["묶음"] == label]
     if not rows:
         return None, "", 0
     wb = Workbook()
@@ -177,7 +177,7 @@ def upload_file(label):
 def next_label():
     """아직 안 보낸 묶음 중 먼저 보낼 것: 기관 → 병원 → 학교."""
     labels = []
-    for r in build():
+    for r in build(cache_only=True):
         if r["묶음"] != "주소필요" and r["묶음"] not in labels:
             labels.append(r["묶음"])
     for g in ("기관", "병원", "학교"):
