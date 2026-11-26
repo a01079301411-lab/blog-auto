@@ -36,7 +36,11 @@ def _cut_ranges(args, path: str, start: float, end: float) -> list[media.Segment
 
 def _get_transcript(args, path: str, workdir: str):
     name = os.path.splitext(os.path.basename(path))[0]
-    cache = os.path.join(workdir, f"{name}.{args.model}.transcript.json")
+    # 같은 이름이라도 내용이 바뀌면(예: 다른 영상들로 다시 합친 _합친영상.mp4) 다시 인식한다.
+    # 예전에는 이름만 봐서, 새 영상에 지난 영상의 말이 자막으로 나왔다
+    st = os.stat(path)
+    sig = hashlib.md5(f"{st.st_size}:{int(st.st_mtime)}".encode()).hexdigest()[:8]
+    cache = os.path.join(workdir, f"{name}.{args.model}.{sig}.transcript.json")
     print("[음성 인식]")
     return transcribe(path, model=args.model, language=args.language or None, cache=cache,
                       device=args.device)
@@ -470,11 +474,36 @@ def _where(t: float, sources) -> str:
 
 
 def _guide_text(args) -> str:
-    """영상 종류 가이드 + 지난 숏폼 성과 (있으면)."""
+    """영상 종류 가이드 + 지난 숏폼 성과 + 레퍼런스 설계도 (있으면)."""
     text = guides.brief(args.guide)
     if getattr(args, "lessons", ""):
         text += "\n\n" + args.lessons
+    if getattr(args, "blueprint_text", ""):
+        text += "\n\n" + args.blueprint_text
     return text
+
+
+def _research(args, transcript) -> None:
+    """편집 전에 같은 주제로 잘된 숏폼을 찾아 설계도를 만든다 (항상)."""
+    from . import progress, research
+
+    print("[레퍼런스 조사] 같은 주제로 터진 숏폼·릴스를 찾아 공식을 뽑는 중... "
+          "(처음엔 1~3분, 같은 주제는 7일 동안 다시 쓰기)", flush=True)
+    progress.report(0.0, "레퍼런스 조사")
+    g = guides.get(args.guide)
+    sample = " ".join(x.text for x in transcript.sentences)[:3000] if transcript else ""
+    bp = research.blueprint(guide_key=args.guide, guide_name=g.get("name", args.guide),
+                            topic=args.context or "", direction=getattr(args, "direction", "") or "",
+                            target=f"{args.min_len:g}~{args.max_len:g}초, {args.count}개",
+                            sample=sample)
+    research.log(bp)
+    args.blueprint_text = research.prompt_text(bp)
+    if bp:
+        try:
+            with open(os.path.join(args.output, "레퍼런스.txt"), "w", encoding="utf-8") as f:
+                f.write(research.report(bp))
+        except OSError:
+            pass
 
 
 def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
@@ -529,8 +558,11 @@ def cmd_shorts(args) -> None:
 
     picks_path = os.path.join(args.output, "highlights.json")
     # 고르는 방식이 바뀌면 앞의 v2를 올려서 예전에 고른 결과를 다시 쓰지 않게 한다
-    key = (f"v6:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
-           else f"v6:{args.count}")
+    key = (f"v7:accounts:{','.join(map(str, accts))}:{args.per_account}" if accts
+           else f"v7:{args.count}")
+    if transcript is not None:  # 같은 폴더·같은 이름이라도 다른 영상이면 다시 고른다
+        key += ":src:" + hashlib.md5(" ".join(x.text for x in transcript.sentences[:200])
+                                     .encode("utf-8")).hexdigest()[:8]
     key += f":len:{args.min_len:g}-{args.max_len:g}"
     if args.context or getattr(args, "direction", ""):  # 영상 설명·편집 지시가 바뀌면 다시 고른다
         key += ":ctx:" + hashlib.md5(f"{args.context}|{getattr(args, 'direction', '')}".encode()
@@ -560,6 +592,8 @@ def cmd_shorts(args) -> None:
         if performance.fetch_youtube():
             print("[성과 학습] 유튜브에서 지난 숏폼 조회수를 가져왔어요.")
         args.lessons = performance.lessons(args.guide)
+        if getattr(args, "research", True):
+            _research(args, transcript)
         if args.lessons:
             print("[성과 학습] 지난 숏폼 성과를 반영해서 골라요.")
         args.frames = _frames_for_ai(args, total, transcript)
@@ -849,6 +883,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="캡컷 프로젝트도 만들기: 모든 글자를 캡컷에서 고칠 수 있게 yes/no (기본 yes)")
     s.add_argument("--cover-intro", type=_yesno, default=True,
                    help="영상 첫 화면 0.4초를 썸네일로 yes/no (기본 yes)")
+    s.add_argument("--research", type=_yesno, default=True,
+                   help="편집 전에 같은 주제로 잘된 숏폼을 웹에서 찾아 참고하기 yes/no (기본 yes)")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
                    help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")
@@ -914,6 +950,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="자동 색 보정: 어두우면 밝게, 흐리면 선명하게 yes/no")
     s.add_argument("--capcut", type=_yesno, default=True,
                    help="캡컷 프로젝트도 만들기: 자막·챕터 제목을 캡컷에서 고칠 수 있게 yes/no")
+    s.add_argument("--research", type=_yesno, default=True,
+                   help="편집 전에 같은 주제로 잘된 영상을 웹에서 찾아 참고하기 yes/no (기본 yes)")
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)

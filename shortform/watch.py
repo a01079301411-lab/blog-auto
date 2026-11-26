@@ -208,6 +208,8 @@ class Watcher:
                 for f in files:
                     if f.startswith(prefix) and (f.endswith(".mp4") or "_썸네일" in f):
                         shutil.copyfile(os.path.join(dirpath, f), os.path.join(out, f))
+                if "레퍼런스.txt" in files:  # 어떤 잘된 영상을 참고했는지
+                    shutil.copyfile(os.path.join(dirpath, "레퍼런스.txt"), os.path.join(out, "레퍼런스.txt"))
                 with open(os.path.join(out, "설명글.txt"), "w", encoding="utf-8-sig") as fh:
                     fh.write(f"{title}\n\n{h.get('caption', '')}\n")
                 made.append(os.path.basename(out))

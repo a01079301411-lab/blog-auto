@@ -159,6 +159,18 @@ def duration(path: str) -> float:
     return float(probe(path)["format"]["duration"])
 
 
+def video_duration(path: str) -> float:
+    """화면(영상 스트림)의 길이. 소리가 더 길거나 짧아도 화면 기준으로 잰다."""
+    info = probe(path)
+    for st in info["streams"]:
+        if st.get("codec_type") == "video" and st.get("duration") not in (None, "N/A"):
+            try:
+                return float(st["duration"])
+            except ValueError:
+                break
+    return float(info["format"]["duration"])
+
+
 def subtitle_style(font: str | None) -> str:
     """가로 원본 영상에 SRT 자막을 입힐 때의 스타일."""
     style = [
@@ -449,13 +461,14 @@ def merge_videos(inputs: list[str], out: str) -> list[tuple[str, float, float]]:
     """
     spans, t = [], 0.0
     for p in inputs:
-        d = duration(p)
+        d = video_duration(p)
         spans.append((p, t, t + d))
         t += d
     stamp = out + ".json"
     with open(out + ".sources.json", "w", encoding="utf-8") as f:  # AI에게 영상 구성을 알려 줄 때 쓴다
         json.dump([(os.path.basename(p), a, b) for p, a, b in spans], f, ensure_ascii=False)
-    sig = [[os.path.abspath(p), os.path.getmtime(p)] for p in inputs]
+    # "sync2": 영상마다 소리를 화면 길이에 딱 맞춰 잇는 방식 (예전 합친 영상은 다시 만든다)
+    sig = [["sync2"]] + [[os.path.abspath(p), os.path.getmtime(p)] for p in inputs]
     try:
         with open(stamp, encoding="utf-8") as f:
             if json.load(f) == sig and os.path.exists(out):
@@ -470,12 +483,19 @@ def merge_videos(inputs: list[str], out: str) -> list[tuple[str, float, float]]:
         args += ["-i", os.path.abspath(p)]
     n = len(inputs)
     for i, p in enumerate(inputs):
+        # 화면과 소리를 정확히 같은 길이(d)로 맞춘다. 한 영상이라도 소리가 화면보다 짧거나 길면
+        # 그 뒤 영상들의 말과 입 모양·자막이 계속 어긋나기 때문
+        d = spans[i][2] - spans[i][1]
         parts.append(f"[{i}:v]{hdr_to_sdr(p)}scale={w}:{h}:force_original_aspect_ratio=decrease,"
-                     f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p[v{i}]")
+                     f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p,"
+                     f"trim=duration={d:.3f},setpts=PTS-STARTPTS,tpad=stop_mode=clone:"
+                     f"stop_duration=3,trim=duration={d:.3f}[v{i}]")
         if has_audio(p):
-            parts.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo[a{i}]")
+            parts.append(f"[{i}:a]aresample=48000:async=1:first_pts=0,"
+                         f"aformat=channel_layouts=stereo,atrim=duration={d:.3f},"
+                         f"apad=whole_dur={d:.3f},asetpts=PTS-STARTPTS[a{i}]")
         else:
-            args += ["-f", "lavfi", "-t", f"{duration(p):.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+            args += ["-f", "lavfi", "-t", f"{d:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
             parts.append(f"[{n}:a]anull[a{i}]")
             n += 1
         labels.append(f"[v{i}][a{i}]")

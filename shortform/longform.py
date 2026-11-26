@@ -541,6 +541,24 @@ def run(args) -> str:
                 from . import references
                 print("  레퍼런스 읽는 중...")
                 ref_blocks = references.blocks(refs)
+            if getattr(args, "research", True):  # 같은 주제로 잘된 롱폼을 먼저 찾아 설계도로
+                from . import research
+                print("  [레퍼런스 조사] 같은 주제로 잘된 유튜브 영상을 찾아 구성 공식을 뽑는 중...",
+                      flush=True)
+                sample = " ".join(x.text for t in transcripts for x in t.sentences)[:3000]
+                bp = research.blueprint(guide_key="long", guide_name="유튜브 롱폼",
+                                        topic=f"{args.context or ''}\n{plan_text[:1500]}",
+                                        target=f"{args.minutes:g}분" if args.minutes else "", sample=sample,
+                                        fmt="롱폼(가로 유튜브 영상)")
+                research.log(bp)
+                if bp:
+                    ref_blocks = (ref_blocks or []) + [{"type": "text",
+                                                        "text": research.prompt_text(bp)}]
+                    try:
+                        with open(os.path.join(work, "레퍼런스.txt"), "w", encoding="utf-8") as f:
+                            f.write(research.report(bp))
+                    except OSError:
+                        pass
             progress.set_range(0.25, 0.32)
             progress.report(0.2, "편집 순서")
             edl = ask_claude(clips, durations, verticals, transcripts, plan=plan_text,
