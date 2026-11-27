@@ -637,7 +637,7 @@ class App:
             anchor="w", pady=(6, 2))
         self.direction = tk.Text(sf, height=3, width=40, wrap="word")
         style_field(self.direction)
-        self.direction.insert("1.0", c.get("direction", "").replace(" // ", "\n"))
+        # 편집 지시는 영상마다 다르니 늘 빈 칸으로 시작
         self.direction.pack(fill="x")
         ttk.Label(sf, style="Sub.Card.TLabel", wraplength=380, justify="left",
                   text="예) 영상 2개를 다 보고 이어서 50초짜리 1개 / 웃긴 장면만 / "
