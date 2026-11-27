@@ -32,6 +32,8 @@ GUIDE_FOLDERS = {
     "강의·인터뷰": "lecture", "브이로그": "vlog", "이사현장": "moving", "제품·광고": "commerce",
     "웃긴장면": "funny", "감동·인생": "story", "꿀팁": "howto", "크로스핏 카드와드": "workout",
 }
+LINK = ".편집팀.json"   # 완성 폴더 → 작업 폴더·숏폼 번호
+FIX_NAMES = ("수정.txt", "수정요청.txt")
 SETTLE = 120      # 마지막 영상이 들어오고 이만큼(초) 지나야 시작 (여러 개를 올리는 중일 수 있어서)
 SCAN = 15         # 폴더를 살펴보는 간격(초)
 
@@ -212,8 +214,65 @@ class Watcher:
                     shutil.copyfile(os.path.join(dirpath, "레퍼런스.txt"), os.path.join(out, "레퍼런스.txt"))
                 with open(os.path.join(out, "설명글.txt"), "w", encoding="utf-8-sig") as fh:
                     fh.write(f"{title}\n\n{h.get('caption', '')}\n")
+                # 휴대폰에서 '수정.txt'를 넣으면 이 숏폼을 고칠 수 있게 작업 위치를 적어 둔다
+                with open(os.path.join(out, LINK), "w", encoding="utf-8") as fh:
+                    json.dump({"stamp": stamp, "rel": os.path.relpath(dirpath, work), "clip": k,
+                               "prefix": prefix}, fh, ensure_ascii=False)
                 made.append(os.path.basename(out))
         return made
+
+    # ---------- 휴대폰 수정 요청: 완성 폴더에 '수정.txt' ----------
+
+    def ready_fixes(self) -> list[tuple[str, str]]:
+        now = time.time()
+        out = []
+        for name in sorted(os.listdir(self.outbox)) if os.path.isdir(self.outbox) else []:
+            folder = os.path.join(self.outbox, name)
+            if not os.path.isfile(os.path.join(folder, LINK)):
+                continue
+            for fx in FIX_NAMES:
+                path = os.path.join(folder, fx)
+                if os.path.isfile(path) and self._stable(path, now) and \
+                        now - self.seen.get(path, now) >= 20:
+                    out.append((folder, path))
+        return out
+
+    def run_fix(self, folder: str, note: str) -> bool:
+        with open(os.path.join(folder, LINK), encoding="utf-8") as f:
+            link = json.load(f)
+        work = os.path.normpath(os.path.join(self.inbox, "_완료", link["stamp"], link["rel"]))
+        stamp = datetime.now().strftime("%m%d_%H%M")
+        self.sizes.pop(note, None)
+        self.seen.pop(note, None)
+        if not os.path.isdir(work):
+            print(f"[폰 수정] 작업 폴더를 찾지 못했어요: {work}", flush=True)
+            os.replace(note, os.path.join(folder, f"수정실패_{stamp}.txt"))
+            return False
+        print(f"\n[폰 수정] {os.path.basename(folder)}", flush=True)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+        env.pop("SHORTFORM_GUI", None)
+        code = subprocess.run([sys.executable, "-m", "shortform", "revise", work,
+                               "--request-file", note, "--clip", str(link["clip"])],
+                              cwd=ROOT, env=env).returncode
+        if code != 0:
+            os.replace(note, os.path.join(folder, f"수정실패_{stamp}.txt"))
+            print("[폰 수정] 실패했어요. 요청을 조금 더 구체적으로 적어 주세요.", flush=True)
+            return False
+        # 고친 숏폼으로 바꿔 넣는다 (영상·썸네일·설명글)
+        prefix = link.get("prefix", f"{link['clip']:02d}_")
+        for f in os.listdir(work):
+            if f.startswith(prefix) and (f.endswith(".mp4") or "_썸네일" in f):
+                shutil.copyfile(os.path.join(work, f), os.path.join(folder, f))
+        try:
+            from . import staff
+            h = staff.Record(work, link["clip"]).data.get("highlight", {})
+            with open(os.path.join(folder, "설명글.txt"), "w", encoding="utf-8-sig") as fh:
+                fh.write(f"{h.get('title', '')}\n\n{h.get('caption', '')}\n")
+        except (OSError, ValueError):
+            pass
+        os.replace(note, os.path.join(folder, f"수정완료_{stamp}.txt"))
+        print(f"[폰 수정] 고친 숏폼을 넣었어요 → {folder}", flush=True)
+        return True
 
     def loop(self) -> None:
         print(f"[폴더 지켜보기] '{self.inbox}'에 영상이 들어오면 숏폼을 만들어 "
@@ -222,6 +281,8 @@ class Watcher:
             try:
                 for folder, vids, notes in self.ready_groups():
                     self.run_group(folder, vids, notes)
+                for folder, note in self.ready_fixes():
+                    self.run_fix(folder, note)
             except Exception as e:  # 한 번 실패해도 계속 지켜본다
                 print(f"[폴더 지켜보기] 문제가 생겼지만 계속 지켜봐요: {type(e).__name__}: {e}", flush=True)
             time.sleep(SCAN)

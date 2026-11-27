@@ -532,11 +532,16 @@ class App:
         short.pack(fill="both", expand=True)
         self.long_tab = ttk.Frame(long_box.inner, style="Panel.TFrame", padding=12)
         self.long_tab.pack(fill="both", expand=True)
+        fix_box = ScrollFrame(self.tabs)
+        fix = ttk.Frame(fix_box.inner, style="Panel.TFrame", padding=12)
+        fix.pack(fill="both", expand=True)
         self.tabs.add(short_box, text="숏폼 만들기")
         self.tabs.add(long_box, text="롱폼 만들기")
+        self.tabs.add(fix_box, text="수정 요청 (편집팀)")
         self.tabs.bind("<<NotebookTabChanged>>", self._on_tab)
         self._build_short(short)
         self._build_long(self.long_tab)
+        self._build_fix(fix)
 
         # 오른쪽: 진행 기록 (위에서 아래까지 길게)
         lf = ttk.Frame(outer, style="Card.TFrame", padding=(14, 12))
@@ -725,6 +730,10 @@ class App:
             "글자 없는 영상 위에 제목·훅·자막·인물 소개·썸네일 글자를 캡컷 텍스트로 올린 "
             "캡컷 프로젝트를 만들어요. 캡컷 PC를 열면 홈 화면에 바로 보이고, 모든 글자를 "
             "캡컷에서 고칠 수 있어요. (영상을 한 번 더 뽑아서 조금 더 걸려요)")
+        self.flags["pd_review"] = self._check(
+            cr, "PD 검수 (완성본 보고 고치기)", on("pd_review"),
+            "다 만든 숏폼을 PD가 직접 보고, 훅·스토리·자막·제목·썸네일에 문제가 있으면 "
+            "담당자(기획자·작가·편집자·음향·디자이너)에게 고치게 해서 다시 만들어요. (최대 2번)")
         row = self._row(sf, "배경음악")
         self.bgm_src = tk.StringVar(value=BGM_SOURCES.get(c.get("bgm_source", "auto"),
                                                           BGM_SOURCES["auto"]))
@@ -899,8 +908,93 @@ class App:
     def _on_tab(self, _event=None) -> None:
         if not hasattr(self, "start_btn"):
             return
-        long = self.tabs.index(self.tabs.select()) == 1
-        self.start_btn.configure(text="▶  롱폼 만들기" if long else "▶  숏폼 만들기")
+        tab = self.tabs.index(self.tabs.select())
+        self.start_btn.configure(text=["▶  숏폼 만들기", "▶  롱폼 만들기", "▶  수정 시작"][tab])
+        if tab == 2 and not self.fix_folder.get() and self.last_output:
+            self.fix_folder.set(self.last_output)
+            self._load_fix_clips()
+
+    # ---------- 수정 요청 (편집팀) ----------
+
+    def _build_fix(self, tab: ttk.Frame) -> None:
+        ff = self._card(tab, "① 고칠 결과 폴더", "숏폼을 만든 결과 폴더")
+        ff.outer.pack(fill="x")
+        self.fix_folder = tk.StringVar()
+        row = ttk.Frame(ff, style="Card.TFrame")
+        row.pack(fill="x")
+        e = ttk.Entry(row, textvariable=self.fix_folder)
+        e.pack(side="left", fill="x", expand=True)
+        ttk.Button(row, text="폴더 고르기", style="Soft.TButton",
+                   command=self._pick_fix_folder).pack(side="left", padx=(6, 0))
+        self.fix_clips = ttk.Label(ff, style="Sub.Card.TLabel", wraplength=520, justify="left",
+                                   text="방금 만든 결과 폴더가 자동으로 들어가요.")
+        self.fix_clips.pack(anchor="w", pady=(6, 0))
+
+        rf = self._card(tab, "② 수정 요청", "PD가 읽고 담당자에게 나눠 줘요")
+        rf.outer.pack(fill="x", pady=(10, 0))
+        self.fix_text = tk.Text(rf, height=5, wrap="word")
+        style_field(self.fix_text)
+        self.fix_text.pack(fill="x")
+        ttk.Label(rf, style="Sub.Card.TLabel", wraplength=520, justify="left",
+                  text="예) 2번 제목 더 자극적으로 / 음악 빼줘 / 1번 앞 2초 잘라 / "
+                       "썸네일 얼굴 크게, 글자 '연봉 1억'으로 / 3번은 카드 뒤집는 장면으로 다시").pack(
+            anchor="w", pady=(4, 0))
+        nr = ttk.Frame(rf, style="Card.TFrame")
+        nr.pack(fill="x", pady=(8, 0))
+        ttk.Label(nr, text="고칠 숏폼", style="Card.TLabel").pack(side="left")
+        self.fix_clip = ttk.Combobox(nr, values=["요청 보고 PD가 판단"], state="readonly", width=24)
+        self.fix_clip.current(0)
+        self.fix_clip.pack(side="left", padx=8)
+
+        tf = self._card(tab, "편집팀", "수정하면 그 담당자만 다시 일하고 나머지는 그대로")
+        tf.outer.pack(fill="x", pady=(10, 0))
+        for who, job in [("리서처", "같은 주제로 터진 영상을 찾아 편집 설계도"),
+                         ("기획자", "스토리, 쓸 장면, 훅, 상황 설명 글자 순서"),
+                         ("작가", "제목, 자막 문장, 상황 설명 문구, 업로드 설명글"),
+                         ("편집자", "앞뒤 자르기, 색 보정, 짤, 군말·무음 자르기"),
+                         ("음향", "배경음악 켜기·끄기·분위기·크기, 목소리 보정"),
+                         ("디자이너", "썸네일 글자·장면, 자막 효과"),
+                         ("PD", "요청을 담당자에게 나누고, 완성본을 보고 검수해서 되돌려 보내요")]:
+            ttk.Label(tf, text=f"{who}  ·  {job}", style="Card.TLabel").pack(anchor="w")
+        ttk.Label(tf, style="Sub.Card.TLabel", wraplength=520, justify="left",
+                  text="휴대폰: 드라이브 '숏폼_완성'의 영상 폴더에 '수정.txt'를 넣으면 그 숏폼을 고쳐서 "
+                       "다시 넣어 줘요. 고친 기록은 결과 폴더의 '수정기록.txt'에 남아요.").pack(
+            anchor="w", pady=(6, 0))
+
+    def _pick_fix_folder(self) -> None:
+        d = filedialog.askdirectory(title="숏폼 결과 폴더 고르기")
+        if d:
+            self.fix_folder.set(os.path.abspath(d))
+            self._load_fix_clips()
+
+    def _load_fix_clips(self) -> None:
+        from . import staff
+        folder = self.fix_folder.get().strip()
+        recs = staff.records(folder) if folder else []
+        names = [f"{r.number}번  {r.highlight.title.replace(chr(10), ' ')}" for r in recs]
+        self.fix_clip.configure(values=["요청 보고 PD가 판단", *names])
+        self.fix_clip.current(0)
+        self.fix_clips.configure(text=("숏폼 " + " / ".join(names)) if names else
+                                 "이 폴더에는 편집팀 기록이 없어요 (새 버전으로 만든 폴더를 골라 주세요).")
+
+    def _start_revise(self) -> None:
+        folder = self.fix_folder.get().strip()
+        request = self.fix_text.get("1.0", "end").strip()
+        if not folder or not os.path.isdir(os.path.join(folder, "_작업")):
+            messagebox.showinfo(APP_TITLE, "편집팀 기록이 있는 결과 폴더를 골라 주세요.\n"
+                                "(이번 버전부터 만든 숏폼 결과 폴더)")
+            return
+        if not request:
+            messagebox.showinfo(APP_TITLE, "무엇을 고칠지 적어 주세요. 예) 2번 제목 더 자극적으로")
+            return
+        argv = ["revise", folder, "--request", request]
+        pick = self.fix_clip.get()
+        if pick and pick[0].isdigit():
+            argv += ["--clip", pick.split("번")[0]]
+        self.last_output = folder
+        self.stopping = False
+        self._set_running(True)
+        threading.Thread(target=self._run_long, args=(argv, "수정 요청"), daemon=True).start()
 
     def _pick_clips(self) -> None:
         for p in filedialog.askopenfilenames(title="촬영본 고르기", filetypes=VIDEO_TYPES):
@@ -1007,7 +1101,7 @@ class App:
         env = {**os.environ, "SHORTFORM_GUI": "1", "PYTHONUNBUFFERED": "1",
                "PYTHONIOENCODING": "utf-8"}
         self.queue.put(("status", name))
-        self.queue.put(("log", f"\n===== 롱폼: {name} =====\n", False))
+        self.queue.put(("log", f"\n===== {'' if name == '수정 요청' else '롱폼: '}{name} =====\n", False))
         kwargs = {"creationflags": NO_WINDOW} if sys.platform == "win32" else \
             {"start_new_session": True}
         self.proc = subprocess.Popen(
@@ -1061,6 +1155,7 @@ class App:
             "auto_color": yes("auto_color"),
             "merge": "yes" if self.merge_var.get() else "no",
             "capcut": yes("capcut"), "cover_intro": yes("cover_intro"),
+            "pd_review": yes("pd_review"),
             "bgm_volume": f"{self.bgm_var.get():.2f}",
             "upload": {v: k for k, v in UPLOADS}.get(self.upload_var.get(), "no"),
         }
@@ -1180,7 +1275,9 @@ class App:
     # ---------- 실행 ----------
 
     def _start(self) -> None:
-        if self.tabs.index(self.tabs.select()) == 1:
+        if self.tabs.index(self.tabs.select()) == 2:
+            self._start_revise()
+        elif self.tabs.index(self.tabs.select()) == 1:
             self._start_long()
         else:
             self._start_short()

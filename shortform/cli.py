@@ -42,6 +42,7 @@ def _get_transcript(args, path: str, workdir: str):
     sig = hashlib.md5(f"{st.st_size}:{int(st.st_mtime)}".encode()).hexdigest()[:8]
     cache = os.path.join(workdir, f"{name}.{args.model}.{sig}.transcript.json")
     print("[음성 인식]")
+    args.transcript_cache = cache
     return transcribe(path, model=args.model, language=args.language or None, cache=cache,
                       device=args.device)
 
@@ -93,7 +94,7 @@ def _add_retention(args, subs, h, keeps, kept, font, style) -> None:
 
 
 def _render_clip(args, src, start, end, out, transcript, style=None,
-                 highlight: Highlight | None = None, acct=None) -> None:
+                 highlight: Highlight | None = None, acct=None, rec=None) -> None:
     """style이 None이면 원본 비율 그대로, 있으면 세로 숏폼으로 만든다.
 
     acct(코시 계정)가 있으면 그 계정 가이드의 글꼴·색·배치로 만든다.
@@ -151,13 +152,17 @@ def _render_clip(args, src, start, end, out, transcript, style=None,
     cues = []
     if own_subs and words:
         cues = None
-        if args.fix_subtitles:
+        if rec is not None and (cues := rec.load_cues()) is not None:
+            print("  자막: 작가가 다듬어 둔 자막을 그대로 써요")
+        elif args.fix_subtitles:
             print("  자막 다듬는 중 (오타 교정·말한 사람·표정 자막·짤 고르기)...")
             cues = fix_cues(words, max_chars=max_chars,
                             context=" ".join(filter(None, [args.context, speaker])),
                             images=list(pics) if pics else None)
         if cues is None:
             cues = build_cues(words, max_chars=max_chars)
+        if rec is not None:
+            rec.save_cues(cues)
 
     # 3) 화면 잡기: 원본 자막이 다 들어오게, 사람은 사람이 찍듯 자연스럽게 따라가기
     sw, sh = media.display_size(src)
@@ -529,6 +534,41 @@ def _pick_for_accounts(args, transcript, accts) -> list[Highlight]:
     return picked
 
 
+def _base_style(args, quiet: bool = False):
+    style = load_style(args.style, font=args.font)
+    vertical = media.is_vertical(args.input)
+    if vertical and style.video_height < 1500:
+        # 세로로 찍은 영상을 가로 영상용 상자(디자인)에 넣으면 영상이 손바닥만 해진다: 화면을 꽉 채운다
+        from dataclasses import replace as _replace
+        style = _replace(style, video_top=0, video_height=1920, video_fit="fill")
+        if not quiet:
+            print("[화면] 세로로 찍은 영상이라 디자인의 영상 상자 대신 화면을 꽉 채워요.")
+    return style, vertical
+
+
+def _render_record(args, rec, transcript, style, vertical, total) -> None:
+    """편집팀 기록(rec)대로 숏폼 하나를 만든다 (처음 만들 때·수정할 때 같이 쓴다)."""
+    from .accounts import ACCOUNTS
+
+    h = rec.highlight
+    h.start, h.end = max(0.0, h.start), min(total, h.end)
+    acct = ACCOUNTS.get(h.account) if h.account else None
+    cargs = rec.apply(args)
+    cargs.clip_index = rec.number - 1
+    clip_style = account_box_style(vertical) if acct else style
+    out = rec.out
+    _render_clip(cargs, args.input, h.start, h.end, out,
+                 None if args.no_subtitles else transcript, clip_style, h, acct=acct, rec=rec)
+    if h.caption or h.title:
+        with open(os.path.splitext(out)[0] + ".txt", "w", encoding="utf-8") as f:
+            head = f"[계정] {acct.no}번 {acct.name} ({acct.handle})\n\n" if acct else ""
+            f.write(f"{head}[제목]\n{h.title}\n\n[부제목] {h.sub_title}\n"
+                    f"[알약 문구] {h.label}\n[설명자막] {h.speaker}\n"
+                    f"[하단자막] {h.bottom}\n\n[업로드 설명]\n{h.caption}\n\n"
+                    f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
+                    f"[선정 이유] {h.reason}\n")
+
+
 def cmd_shorts(args) -> None:
     from .accounts import ACCOUNTS
     from .accounts import parse as parse_accounts
@@ -536,19 +576,13 @@ def cmd_shorts(args) -> None:
     accts = parse_accounts(args.accounts or "")
     if guides.get(args.guide).get("silence_cut") is False:
         args.no_silence_cut = True  # 운동처럼 숨소리·동작 소리만 있는 영상은 무음으로 자르지 않는다
-    style = load_style(args.style, font=args.font)
     os.makedirs(args.output, exist_ok=True)
     total = media.duration(args.input)
     if total < args.min_len:  # 영상이 숏폼 최소 길이보다 짧으면 영상 길이에 맞춘다
         print(f"[길이] 영상이 {_hms(total)}라 숏폼 길이 {args.min_len:g}~{args.max_len:g}초를 "
               f"만들 수 없어서, 이 영상은 {max(5.0, total * 0.6):.0f}~{total:.0f}초로 맞춰요.")
         args.min_len, args.max_len = max(5.0, total * 0.6), max(total, 6.0)
-    vertical = media.is_vertical(args.input)
-    if vertical and style.video_height < 1500:
-        # 세로로 찍은 영상을 가로 영상용 상자(디자인)에 넣으면 영상이 손바닥만 해진다: 화면을 꽉 채운다
-        from dataclasses import replace as _replace
-        style = _replace(style, video_top=0, video_height=1920, video_fit="fill")
-        print("[화면] 세로로 찍은 영상이라 디자인의 영상 상자 대신 화면을 꽉 채워요.")
+    style, vertical = _base_style(args)
     from . import performance, progress
 
     need_transcript = not args.no_subtitles or not args.ranges
@@ -633,6 +667,10 @@ def cmd_shorts(args) -> None:
 
     made = []
     per_folder: dict[str, int] = {}
+    from . import staff
+    staff.save_project(args.output, args, total=total,
+                       transcript_path=getattr(args, "transcript_cache", ""))
+    recs = []
     if accts:
         kind = "세로 촬영본(N-3)" if vertical else "롱폼 잘라 쓴 숏폼(N-4)"
         print(f"\n[제작 방식] {kind} 가이드로 만들어요.")
@@ -655,20 +693,23 @@ def cmd_shorts(args) -> None:
         per_folder[folder] = per_folder.get(folder, 0) + 1
         num = per_folder[folder] if acct else i
         out = os.path.join(folder, f"{num:02}_{_safe_name(name)}.mp4")
-        args.clip_index = i - 1
-        clip_style = account_box_style(vertical) if acct else style
         progress.set_range(0.5 + 0.5 * (n - 1) / len(numbered), 0.5 + 0.5 * n / len(numbered))
         progress.report(0.1, f"숏폼 {n}/{len(numbered)}")
-        _render_clip(args, args.input, h.start, h.end, out,
-                     None if args.no_subtitles else transcript, clip_style, h, acct=acct)
-        if h.caption or h.title:
-            with open(os.path.splitext(out)[0] + ".txt", "w", encoding="utf-8") as f:
-                head = f"[계정] {acct.no}번 {acct.name} ({acct.handle})\n\n" if acct else ""
-                f.write(f"{head}[제목]\n{h.title}\n\n[부제목] {h.sub_title}\n"
-                        f"[알약 문구] {h.label}\n[설명자막] {h.speaker}\n"
-                        f"[하단자막] {h.bottom}\n\n[업로드 설명]\n{h.caption}\n\n"
-                        f"[원본 구간] {_hms(h.start)} ~ {_hms(h.end)}\n"
-                        f"[선정 이유] {h.reason}\n")
+        # 편집팀 기록: 새로 만들 때는 처음부터 (수정은 '수정 요청'으로)
+        rec = staff.Record(args.output, i)
+        rec.data.update({"out": out, "args": {}, "history": [], "review": []})
+        rec.highlight = h
+        rec.drop_cues()
+        rec.log("기획자", "처음 만듦")
+        rec.save()
+        recs.append(rec)
+        _render_record(args, rec, transcript, style, vertical, total)
+        if getattr(args, "pd_review", True) and not args.ranges:
+            staff.review_loop(rec, staff.load_project(args.output),
+                              lambda r: _render_record(args, r, transcript, style, vertical, total),
+                              transcript=transcript, others=[r for r in recs if r is not rec])
+            h = rec.highlight
+            out = rec.out
         made.append((out, h))
         from . import music
         performance.record(os.path.abspath(out), title=h.title, hook=h.hook,
@@ -757,6 +798,78 @@ def cmd_auto(args) -> None:
     print(f"\n완료! 결과 폴더: {out}")
     if hasattr(os, "startfile") and not os.environ.get("SHORTFORM_GUI"):
         os.startfile(out)  # Windows: 결과 폴더 열기 (프로그램 창에서는 창이 대신 연다)
+
+
+def cmd_revise(args) -> None:
+    """수정 요청: PD가 담당자에게 나눠 주고, 바뀐 숏폼만 다시 만든다."""
+    from . import progress, staff
+    from .transcribe import Transcript
+
+    folder = os.path.abspath(args.folder)
+    request = (args.request or "").strip()
+    if args.request_file:
+        with open(args.request_file, encoding="utf-8-sig") as f:
+            request = (request + "\n" + f.read()).strip()
+    if not request:
+        sys.exit("수정 요청을 적어 주세요. (예: 2번 제목 더 자극적으로, 음악 빼줘)")
+    project = staff.relocate(staff.load_project(folder), folder)
+    a = argparse.Namespace(**project["args"])
+    a.output = folder
+    if not os.path.exists(a.input):
+        sys.exit(f"원본 영상을 찾을 수 없어요: {a.input}\n원본을 옮겼다면 제자리에 두고 다시 해 주세요.")
+    recs = staff.records(folder)
+    if args.clip:
+        recs = [r for r in recs if r.number == args.clip]
+    if not recs:
+        sys.exit("고칠 숏폼을 찾지 못했어요.")
+    transcript = None
+    if project.get("transcript") and os.path.exists(project["transcript"]):
+        transcript = Transcript.load(project["transcript"])
+    from . import __version__
+    print(f"[수정 요청] (v{__version__})\n  {request}", flush=True)
+    print("[PD] 요청을 읽고 담당자에게 나누는 중...", flush=True)
+    progress.report(0.05, "PD")
+    tasks, reply = staff.route(request, recs)
+    if not tasks:
+        sys.exit("요청을 담당자에게 나누지 못했어요. 조금 더 구체적으로 적어 주세요. "
+                 "(예: 1번 영상 첫 3초를 더 세게, 음악 빼줘)")
+    if reply:
+        print(f"  PD: {reply}")
+    by_num = {r.number: r for r in staff.records(folder)}
+    changed, log = [], [f"요청: {request}"]
+    for t in tasks:
+        rec = by_num[t["clip"]]
+        name = staff.STAFF[t["staff"]]
+        print(f"\n[{name}] 숏폼 {t['clip']}: {t['instruction']}", flush=True)
+        did = staff.work(t, rec, project, transcript=transcript,
+                         others=[r for r in by_num.values() if r is not rec])
+        print(f"  → {did}")
+        rec.save()
+        log.append(f"숏폼 {t['clip']} {name}: {t['instruction']} → {did}")
+        if rec not in changed:
+            changed.append(rec)
+    # 리서처가 새 설계도를 만들었으면 다음 수정에도 쓰게 저장
+    with open(os.path.join(staff.work_dir(folder), "project.json"), "w", encoding="utf-8") as f:
+        json.dump(project, f, ensure_ascii=False, indent=1)
+    a.blueprint_text = project["args"].get("blueprint_text", "")
+
+    style, vertical = _base_style(a, quiet=True)
+    total = float(project.get("total") or media.duration(a.input))
+    for n, rec in enumerate(changed, 1):
+        progress.set_range(0.1 + 0.9 * (n - 1) / len(changed), 0.1 + 0.9 * n / len(changed))
+        print(f"\n[다시 만들기 {n}/{len(changed)}] 숏폼 {rec.number}: {rec.highlight.title}", flush=True)
+        _render_record(a, rec, transcript, style, vertical, total)
+        if not args.no_review and getattr(a, "pd_review", True):
+            staff.review_loop(rec, project,
+                              lambda r: _render_record(a, r, transcript, style, vertical, total),
+                              transcript=transcript, rounds=1,
+                              others=[r for r in by_num.values() if r is not rec])
+        rec.save()
+        log.append(f"숏폼 {rec.number} 다시 만듦: {os.path.basename(rec.out)}")
+    staff.write_log(folder, log)
+    print(f"\n수정 완료! 바뀐 숏폼 {len(changed)}개. 기록: {os.path.join(folder, '수정기록.txt')}")
+    if hasattr(os, "startfile") and not os.environ.get("SHORTFORM_GUI"):
+        os.startfile(folder)
 
 
 def cmd_long(args) -> None:
@@ -885,6 +998,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="영상 첫 화면 0.4초를 썸네일로 yes/no (기본 yes)")
     s.add_argument("--research", type=_yesno, default=True,
                    help="편집 전에 같은 주제로 잘된 숏폼을 웹에서 찾아 참고하기 yes/no (기본 yes)")
+    s.add_argument("--pd-review", type=_yesno, default=True,
+                   help="PD가 완성본을 보고 검수해서 담당자에게 고치게 하기 yes/no (기본 yes)")
     s.add_argument("--thumbnail", type=_yesno, default=True, help="썸네일 이미지 만들기 yes/no")
     s.add_argument("--upload", choices=["no", "private", "unlisted", "public"], default="no",
                    help="유튜브 업로드: no / private(비공개) / unlisted(일부 공개) / public")
@@ -955,6 +1070,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--resolution", choices=["auto", "1080", "2160"], default="auto",
                    help="출력 해상도: auto/1080 = 1920x1080, 2160 = 촬영본이 4K면 4K (오래 걸려요)")
     s.set_defaults(func=cmd_long)
+
+    s = sub.add_parser("revise", help="만든 숏폼 고치기: 요청을 PD가 담당자에게 나눠 그 부분만 다시")
+    s.add_argument("folder", help="숏폼 결과 폴더")
+    s.add_argument("--request", default="", help="수정 요청 (예: 2번 제목 더 자극적으로, 음악 빼줘)")
+    s.add_argument("--request-file", default="", help="수정 요청이 적힌 txt 파일")
+    s.add_argument("--clip", type=int, default=0, help="이 번호 숏폼만 (0이면 요청을 보고 판단)")
+    s.add_argument("--no-review", action="store_true", help="고친 뒤 PD 검수 안 함")
+    s.set_defaults(func=cmd_revise)
 
     s = sub.add_parser("longauto", help="settings.ini [longform] 설정으로 롱폼 만들기")
     s.add_argument("inputs", nargs="+")
