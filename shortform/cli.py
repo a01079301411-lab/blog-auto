@@ -574,6 +574,11 @@ def cmd_shorts(args) -> None:
     from .accounts import parse as parse_accounts
 
     accts = parse_accounts(args.accounts or "")
+    g = guides.get(args.guide)
+    if not (args.context or "").strip():  # 고급 설정을 비워 두면 영상 종류의 기본 설명으로
+        args.context = g.get("context", "")
+    if not (args.speaker or "").strip():
+        args.speaker = g.get("speaker", "")
     if guides.get(args.guide).get("silence_cut") is False:
         args.no_silence_cut = True  # 운동처럼 숨소리·동작 소리만 있는 영상은 무음으로 자르지 않는다
     os.makedirs(args.output, exist_ok=True)

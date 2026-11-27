@@ -408,12 +408,9 @@ class App:
         return next((k for k, g in self.guide_list.items() if g["name"] == name), "lecture")
 
     def _on_guide(self, _event=None) -> None:
-        """영상 종류를 바꾸면 영상 설명·인물 소개를 그 종류의 기본값으로 채운다."""
+        """영상 종류를 바꾸면 그 종류에 맞는 설정을 맞춘다. 영상 설명·인물 소개 칸은 비워 둔다
+        (비어 있으면 만들 때 영상 종류의 기본 설명을 쓴다)."""
         g = self.guide_list[self._guide_key()]
-        if g.get("context") or self._guide_key() == "custom":
-            self.context.delete("1.0", "end")
-            self.context.insert("1.0", g.get("context", ""))
-        self.speaker_var.set(g.get("speaker", ""))
         if g.get("settings"):  # 이 영상 종류에 맞는 개수·길이 등을 함께 맞춘다
             self._apply_values(g["settings"])
             self._append("이 영상 종류에 맞게 설정도 바꿨어요: "
@@ -748,10 +745,10 @@ class App:
         ttk.Label(adv, text="영상 설명 (누가, 무슨 내용인지)", style="Card.TLabel").pack(anchor="w")
         self.context = tk.Text(adv, height=3, width=40, wrap="word")
         style_field(self.context)
-        self.context.insert("1.0", c["context"])
+        # 고급 설정은 늘 빈 칸으로 시작 (비워 두면 영상 종류의 기본 설명을 AI가 알아서 써요)
         self.context.pack(fill="x", pady=(2, 6))
         row = self._row(adv, "인물 소개")
-        self.speaker_var = tk.StringVar(value=c["speaker"])
+        self.speaker_var = tk.StringVar(value="")
         ttk.Entry(row, textvariable=self.speaker_var).pack(side="left", fill="x", expand=True)
         row = self._row(adv, "음성 인식")
         self.model_var = tk.StringVar(value=dict(MODELS).get(c["model"], c["model"]))
