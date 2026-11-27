@@ -1,6 +1,7 @@
 """우편 DM 주소록 (11_우편DM주소록.bat) · 발송 기록 (12_우편DM발송기록.bat).
 
 대상 3묶음 (봉투에 넣을 PDF 가 다르다)
+  도서관: 전국도서관표준데이터 공공도서관 (작은도서관 제외)    → 우편DM_도서관_*.pdf
   학교  : 나이스(NEIS) 대구·경북 전체 학교 행정실        → docs/우편DM/우편DM_학교_*.pdf  (NEIS_KEY 필요)
   기관  : data/dm_institutions.csv (지자체·교육청·대학·공공기관) + data/dm_extra.csv → 우편DM_기관_*.pdf
   병원  : 심평원 병원정보 (병원급 이상, data.go.kr 같은 키)   → 우편DM_병원_*.pdf
@@ -23,7 +24,7 @@ NEAR = ("경산", "칠곡", "고령", "성주", "군위", "달성", "왜관", "�
 LEVEL = {"고등학교": 0, "특수학교": 1, "중학교": 2, "초등학교": 3,
          "상급종합병원": 0, "종합병원": 1, "병원": 2, "요양병원": 3, "정신병원": 4, "치과병원": 5, "한방병원": 6,
          "지자체": 0, "교육청": 1, "공공기관": 2, "법원검찰": 3, "대학": 4}
-PDF = {"학교": "우편DM_학교_간편_1장양면.pdf", "기관": "우편DM_기관_간편_1장양면.pdf", "병원": "우편DM_병원_간편_1장양면.pdf"}
+PDF = {"도서관": "우편DM_도서관_간편_1장양면.pdf", "학교": "우편DM_학교_간편_1장양면.pdf", "기관": "우편DM_기관_간편_1장양면.pdf", "병원": "우편DM_병원_간편_1장양면.pdf"}
 COLS = ["묶음", "받는분", "우편번호", "기본주소", "상세주소", "전화번호", "지역", "구분", "동봉 PDF", "주소확인"]
 UPLOAD = ["받는분", "우편번호", "기본주소", "상세주소"]  # e-그린우편 수신자: 성명 · 우편번호 · 주소 순
 
@@ -89,6 +90,13 @@ def build(cache_only=False):
         rows.append({"그룹": "병원", "받는분": f'{h["병원명"]} 총무과', "우편번호": h["우편번호"], "기본주소": h["주소"],
                      "상세주소": "", "전화번호": h["전화"], "지역": _region(h["주소"], h["시군구"]),
                      "구분": h["종별"], "주소확인": "심평원"})
+    import libraries
+    for lb in libraries.load(cache_only=cache_only):
+        if skip(lb["도서관명"]):
+            continue
+        rows.append({"그룹": "도서관", "받는분": f'{lb["도서관명"]} 관장님', "우편번호": "", "기본주소": lb["주소"],
+                     "상세주소": "", "전화번호": lb["전화"], "지역": _region(lb["주소"], lb["시군구"]),
+                     "구분": lb["유형"], "주소확인": "도서관표준데이터"})
     for r in _read(DATA / "dm_institutions.csv") + _read(DATA / "dm_extra.csv"):
         if not r.get("받는분") or skip(r["받는분"].replace(" 행정실", "")):
             continue
@@ -131,6 +139,10 @@ def write():
     print(f"우편 DM 대상 {len(rows)}곳 ({', '.join(f'{k} {v}' for k, v in by.items())}) → {path}")
     if not by.get("학교"):
         print("· 학교가 0곳: .env 에 NEIS_KEY(나이스 인증키)를 넣으면 대구·경북 학교 행정실이 자동으로 들어갑니다.")
+    if not by.get("도서관"):
+        import libraries
+        print("· 도서관이 0곳: data.go.kr '전국도서관표준데이터' 활용신청이 승인되면 다음 실행부터 들어갑니다."
+              + (f" (오류: {libraries.LAST_ERROR})" if libraries.LAST_ERROR else ""))
     if not by.get("병원"):
         print("· 병원이 0곳: data.go.kr 에서 '건강보험심사평가원_병원정보서비스' 활용신청(자동승인) 후 다시 실행하세요."
               + (f" (오류: {hospitals.LAST_ERROR})" if hospitals.LAST_ERROR else ""))
@@ -180,7 +192,7 @@ def next_label():
     for r in build(cache_only=True):
         if r["묶음"] != "주소필요" and r["묶음"] not in labels:
             labels.append(r["묶음"])
-    for g in ("기관", "병원", "학교"):
+    for g in ("기관", "도서관", "병원", "학교"):
         for lb in labels:
             if lb.startswith(g):
                 return lb

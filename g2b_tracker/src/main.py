@@ -382,6 +382,8 @@ def main():
                 webbrowser.open(page.resolve().as_uri())
         elif a.dmfile:
             import dm
+            import libraries
+            libraries.load()  # 도서관은 금방 받아짐 (승인 직후에도 바로 반영)
             label = dm.next_label() if a.dmfile == "auto" else a.dmfile
             path, pdf, n = dm.upload_file(label) if label else (None, "", 0)
             if not path:
